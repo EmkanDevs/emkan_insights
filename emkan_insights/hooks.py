@@ -78,6 +78,10 @@ app_license = "mit"
 # 	"methods": "emkan_insights.utils.jinja_methods",
 # 	"filters": "emkan_insights.utils.jinja_filters"
 # }
+app_include_js = [
+    "/assets/emkan_insights/js/external_sync_global.js"
+]
+
 
 # Installation
 # ------------
@@ -144,6 +148,11 @@ app_license = "mit"
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+    "External Site Configuration": {
+        "before_insert": "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.load_doctypes_before_insert"
+    }
+}
 
 # Scheduled Tasks
 # ---------------
