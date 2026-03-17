@@ -333,6 +333,9 @@ def get_external_sync_info(source_doctype: str):
         "External Expense Claim": {"target": "Expense Claim", "title_field": "employee_name", "force_id": False, "defaults": {}},
         "External Address": {"target": "Address", "title_field": "address_title", "force_id": True, "defaults": {}},
         "External Contact": {"target": "Contact", "title_field": "first_name", "force_id": True, "defaults": {}},
+        "External Sales Stage":{"target":"Sales Stage","title_field":"stage_name","force_id":True,"defaults":{}},
+        "External Lead Source":{"target":"Lead Source","title_field":"source_name","force_id":True,"defaults":{}}
+
     }
 
     # 🟢 2. Return from manual mappings
@@ -586,7 +589,7 @@ def _infer_account_root_type(src, tgt) -> str | None:
         "Fixed Asset": "Asset",
         "Income Account": "Income",
         "Indirect Expense": "Expense",
-        "Indirect Income": "Income",
+        "Indirect Income": "Income", 
         "Liability": "Liability",
         "Payable": "Liability",
         "Receivable": "Asset",

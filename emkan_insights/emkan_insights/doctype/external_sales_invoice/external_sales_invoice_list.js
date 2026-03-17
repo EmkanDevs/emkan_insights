@@ -14,7 +14,7 @@ frappe.listview_settings['External Sales Invoice'] = {
                 __('Sync selected External Sales Invoice records to Sales Invoice master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_si_sync.sync_external_sales_invoice_docs',
                         args: {
                             source_doctype: 'External Sales Invoice',
                             names

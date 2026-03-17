@@ -133,9 +133,9 @@ app_include_js = [
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Contact": "emkan_insights.emkan_insights.override.contact.Contact"
+}
 
 # Document Events
 # ---------------

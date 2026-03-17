@@ -308,7 +308,11 @@ function get_mapping() {
         "Journal Entry": "External Journal Entry",
         "Material Request" : "External Material Request",
         "Lead" : "External Lead",
-        "Opportunity" : "External Opportunity"
+        "Opportunity" : "External Opportunity",
+        "Sales Stage" : "External Sales Stage",
+        "Mode of Payment": "External Mode of Payment",
+        "Payment Term": "External Payment Term",
+        "Email Template": "External Email Template"
 
     };
 

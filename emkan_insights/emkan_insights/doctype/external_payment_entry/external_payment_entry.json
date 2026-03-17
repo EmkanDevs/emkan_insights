@@ -2,7 +2,7 @@
  "actions": [],
  "allow_auto_repeat": 1,
  "allow_import": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2016-06-01 14:38:51.012597",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -792,7 +792,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -812,11 +813,11 @@
    "table_fieldname": "payment_entries"
   }
  ],
- "modified": "2026-02-24 11:14:47.560878",
+ "modified": "2026-03-12 08:43:57.287239",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Payment Entry",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

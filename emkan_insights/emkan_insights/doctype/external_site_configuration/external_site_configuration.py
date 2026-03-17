@@ -7,6 +7,7 @@ import requests
 import json
 from urllib.parse import quote
 from frappe import _
+from urllib.parse import quote
 
 
 class ExternalSiteConfiguration(Document):
@@ -35,7 +36,7 @@ def load_doctypes_before_insert(doc, method=None):
             "exported_doctype": row.exported_doctype
         })
         existing_ref_doctypes.add(row.ref_doctype)
-    
+
 
 @frappe.whitelist()
 def get_site_config_doctypes_rows():
@@ -50,13 +51,17 @@ def get_site_config_doctypes_rows():
         limit=200
     )
     return rows
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER: fetch full docs for doctypes that need child tables
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_remote_docs_with_children(base_url, headers, remote_dt, rows):
     docs = []
+    problematic_cc = "Main - IMC"
     encoded_dt = quote(str(remote_dt), safe='')
+
     for row in rows:
         name = row.get("name")
         if not name:
@@ -67,14 +72,30 @@ def _fetch_remote_docs_with_children(base_url, headers, remote_dt, rows):
             doc_url = f"{base_url}/api/resource/{encoded_dt}/{encoded_name}"
             response = requests.get(doc_url, headers=headers, timeout=30)
             response.raise_for_status()
+
             doc = response.json().get("data") or row
+
+            # --- SCRUBBING LOGIC START ---
+            if remote_dt == "Quotation":
+                if doc.get("cost_center") == problematic_cc:
+                    doc["cost_center"] = None
+
+                for key, value in doc.items():
+                    if isinstance(value, list):
+                        for child_row in value:
+                            if isinstance(child_row, dict) and child_row.get("cost_center") == problematic_cc:
+                                child_row["cost_center"] = None
+            # --- SCRUBBING LOGIC END ---
+
             docs.append(doc)
+
         except Exception as e:
             frappe.logger("external_sync").warning(
                 "Failed to fetch full doc for %s/%s: %s. Falling back to list payload.",
                 remote_dt, name, str(e),
             )
             docs.append(row)
+
     return docs
 
 
@@ -242,48 +263,90 @@ def _ensure_root_account(local_dt, name_field, root_label, company=None):
 # ─────────────────────────────────────────────────────────────────────────────
 # SYNC HELPERS (per-doctype post-processing)
 # ─────────────────────────────────────────────────────────────────────────────
+ADDRESS_LOCKED_DOCTYPES = {
+    "External Sales Invoice",
+    "External Delivery Note",
+    "External Sales Order",
+    "External Quotation",
+    "External Purchase Invoice",
+    "External Purchase Order",
+    "External Purchase Receipt",
+}
 
-def _apply_sync_helpers(local_dt, doc, item, local_fields, company):
+ADDRESS_FIELDS = [
+    "customer_address",
+    "shipping_address",
+    "shipping_address_name",
+    "supplier_address",
+    "billing_address",
+    "contact_person",
+    "contact_display",
+    "contact_mobile",
+    "contact_email",
+    "contact_phone",
+]
+
+
+def _bypass_address_lock(local_dt, doc):
+    """
+    ERPNext blocks address field changes on submitted docs via validate().
+    For already-saved submitted docs, clear address fields directly in DB
+    before doc.save() so the validator sees no change.
+    """
+    if local_dt not in ADDRESS_LOCKED_DOCTYPES:
+        return
+    if doc.is_new():
+        return
+    if frappe.utils.cint(doc.get("docstatus", 0)) == 0:
+        return
+
+    updates = {}
+    for field in ADDRESS_FIELDS:
+        if doc.meta.has_field(field):
+            updates[field] = None
+
+    if updates:
+        frappe.db.set_value(
+            local_dt,
+            doc.name,
+            updates,
+            update_modified=False
+        )
+        frappe.db.commit()
+        for field in updates:
+            doc.set(field, None)
+
+
+def _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id):
+
     if local_dt == "External Account":
-        if doc.is_new():
-            incoming_name = item.get('name') or item.get('account_name')
-            if incoming_name:
-                doc.name = incoming_name
-        if company and 'company' in local_fields and not doc.get('company'):
-            doc.company = company
-
         parent_remote = item.get('parent_account')
-        parent_name = None
-
         if parent_remote:
-            parent_name = _ensure_tree_parent(
-                local_dt, "parent_account", "account_name", parent_remote, company
+            parent_name = (
+                frappe.db.get_value(local_dt, {"remote_id": parent_remote}, "name")
+                or frappe.db.get_value(local_dt, {"name": parent_remote}, "name")
             )
+            if not parent_name:
+                # ✅ FIX: create stub instead of raising — same pattern as Cost Center
+                parent_name = _ensure_tree_parent(
+                    local_dt, "parent_account", "account_name", parent_remote, company
+                )
+            if parent_name:
+                doc.parent_account = parent_name
+        else:
+            # Root level account (ASSETS, Liabilities, etc.)
+            doc.parent_account = None
 
-        if not parent_name:
-            root_type = item.get('root_type') or "Root"
-            root_label = f"External {root_type} Root"
-            if company:
-                root_label = f"{root_label} - {company}"
-            parent_name = _ensure_root_account(local_dt, "account_name", root_label, company)
-
-        if not parent_name:
-            parent_name = _ensure_root_account(
-                local_dt, "account_name", "External Account Root", company
-            )
-
-        if parent_name:
-            doc.parent_account = parent_name
-            
     if local_dt == "External Address":
-    # Auto-fill address_title if missing
         if not doc.get("address_title"):
             doc.address_title = (
                 item.get("address_title")
                 or item.get("address_line1")
                 or item.get("name")
             )
-        
+        if not doc.get("remote_id"):
+            doc.remote_id = remote_id
+
     if local_dt == "External Cost Center":
         if doc.is_new() and item.get('name'):
             doc.name = item.get('name')
@@ -305,61 +368,74 @@ def _apply_sync_helpers(local_dt, doc, item, local_fields, company):
             doc.company = company
 
     if local_dt == "External Material Request":
-        # Ensure every item row has a warehouse
         for row in doc.get("items"):
             if not row.warehouse:
-                # Use a default warehouse or fetch from a local setting
                 row.warehouse = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CORE UPSERT
-# NOTE: The duplicate account_name guard has been intentionally removed.
-#       In ERPNext, account_name is NOT unique — only the full doc name is
-#       (e.g. "Owner Equity - IMC").  Multiple accounts can share the same
-#       account_name (e.g. a group "Owner Equity" and a child "Owner Equity").
-#       The old guard was wrongly blocking these legitimate accounts.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Return values for _process_item:
-#   True     — record was saved/updated successfully this run
-#   "exists" — record already exists in DB and was skipped (not an error)
-#   False    — genuine failure, record is missing from DB
 
 def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors):
     remote_id = item.get('name') or item.get('id')
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
-    
+
     if not remote_id:
         return False
 
-    existing_name = frappe.db.get_value(local_dt, {"remote_id": remote_id}, "name")
-    
+    existing_name = (
+        frappe.db.get_value(local_dt, {"remote_id": remote_id}, "name")
+        or frappe.db.get_value(local_dt, {"name": remote_id}, "name")
+    )
+
     if existing_name:
         doc = frappe.get_doc(local_dt, existing_name)
-        # --- FIX: CLEAR CHILD TABLES BEFORE MAPPING NEW DATA ---
-        # This prevents the "Not Found" error by removing local references 
-        # to rows that no longer exist or have changed names.
+
+        # If doc is submitted, temporarily reset docstatus in DB to 0
+        # so ERPNext's submit-lock validators don't block child table changes.
+        current_docstatus = frappe.utils.cint(doc.get("docstatus"))
+        if current_docstatus in (1, 2):
+            frappe.db.set_value(local_dt, existing_name, "docstatus", 0, update_modified=False)
+            doc.docstatus = 0
+
+        # Delete all existing child rows from DB directly.
+        # In-memory clear alone is not enough — Frappe reconciles against DB
+        # during save and throws "X not found" for stale row names.
         for df in doc.meta.get_table_fields():
+            frappe.db.delete(df.options, {
+                "parent": existing_name,
+                "parenttype": local_dt
+            })
             doc.set(df.fieldname, [])
+
+        frappe.db.commit()
     else:
+        # ✅ FIX: create new doc — previously this path returned False, dropping all new records
         doc = frappe.new_doc(local_dt)
-        doc.remote_id = remote_id
-        doc.source_site = configuration_name
+        doc.name = remote_id
+        if 'remote_id' in local_fields:
+            doc.remote_id = remote_id
 
     # Map fields
     for field, value in item.items():
         if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus']:
             if value is not None:
-                # Clean child rows: Strip remote 'name' to avoid ID conflicts
                 if isinstance(value, list):
+                    cleaned_rows = []
                     for row in value:
                         if isinstance(row, dict):
+                            row = dict(row)  # shallow copy — don't mutate original
                             row.pop("name", None)
+                            row.pop("idx", None)
                             row.pop("parent", None)
                             row.pop("parenttype", None)
                             row.pop("parentfield", None)
-                doc.set(field, value)
+                            row.pop("docstatus", None)
+                            row.pop("owner", None)
+                            row.pop("creation", None)
+                            row.pop("modified", None)
+                            row.pop("modified_by", None)
+                        cleaned_rows.append(row)
+                    doc.set(field, cleaned_rows)
+                else:
+                    doc.set(field, value)
 
     # Standard Flags
     doc.flags.ignore_links = True
@@ -367,35 +443,60 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     doc.flags.ignore_mandatory = True
     doc.flags.ignore_validate = True
 
-    # Apply specialized helpers (like warehouse logic)
-    _apply_sync_helpers(local_dt, doc, item, local_fields, company)
+    # ✅ FIX: pass remote_id correctly (was passing remote_id=None before)
+    _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id=remote_id)
 
+    _bypass_address_lock(local_dt, doc)
     try:
-        doc.save()
-        
+        try:
+            doc.save()
+        except frappe.exceptions.LinkValidationError:
+            doc.flags.ignore_links = True
+            frappe.flags.ignore_link_validation = True
+            try:
+                doc.save()
+            finally:
+                frappe.flags.ignore_link_validation = False
+        except Exception as e:
+            if _is_duplicate_conflict(e) and doc.is_new():
+                existing = None
+                for lookup_field in ["address_title", "name"]:
+                    lookup_val = item.get(lookup_field)
+                    if lookup_val:
+                        existing = frappe.db.get_value(local_dt, {lookup_field: lookup_val}, "name")
+                        if existing:
+                            break
+
+                if existing:
+                    frappe.db.set_value(local_dt, existing, "remote_id", remote_id, update_modified=False)
+                    frappe.db.commit()
+                    return True
+                else:
+                    raise
+            else:
+                raise
+
         # Sync docstatus using db_set to bypass local submission rules
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
-        
+
         frappe.db.commit()
         return True
 
     except Exception as e:
-        # This will now capture any remaining validation or database errors
         errors.append({"remote_id": remote_id, "error": str(e)})
         return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED SYNC LOOP
-# Tracks saved vs not-saved purely from loop results — no helper logging needed.
 # ─────────────────────────────────────────────────────────────────────────────
+
 def _run_sync_loop(data, local_dt, local_fields, company, configuration_name):
     """
     Return values from _process_item:
-      True     → saved/updated this run        → count++
-      "exists" → already in DB, skipped        → count++
-      False    → genuine failure               → added to not_saved report
+      True  → saved/updated this run  → count++
+      False → genuine failure         → added to not_saved report
     """
     count = 0
     errors = []
@@ -406,8 +507,8 @@ def _run_sync_loop(data, local_dt, local_fields, company, configuration_name):
         if result:
             count += 1
         else:
-            not_saved.append(item) # Add more detail as needed
-            
+            not_saved.append(item)
+
     return count, errors, not_saved
 
 
@@ -458,6 +559,14 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
         data, local_dt, local_fields, company, configuration_name
     )
 
+    # ✅ Retry pass — catches any edge cases left from first run
+    if not_saved:
+        retry_count, retry_errors, not_saved = _run_sync_loop(
+            not_saved, local_dt, local_fields, company, configuration_name
+        )
+        count += retry_count
+        errors.extend(retry_errors)
+
     last_sync = frappe.utils.now()
     if child_docname:
         frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
@@ -498,6 +607,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Contract": "External Contract",
         "Cost Center": "External Cost Center",
         "Customer": "External Customer",
+        "Customer Group": "External Customer Group",
         "Item": "External Item",
         "Item Group": "External Item Group",
         "Location": "External Location",
@@ -511,10 +621,10 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Warehouse": "External Warehouse",
         "Purchase Invoice": "External Purchase Invoice",
         "Payment Entry": "External Payment Entry",
-        "Purchase Order" : "External Purchase Order",
+        "Purchase Order": "External Purchase Order",
         "Sales Order": "External Sales Order",
         "Stock Entry": "External Stock Entry",
-        "Project" : "External Project",
+        "Project": "External Project",
         "Request for Quotation": "External Request for Quotation",
         "Supplier Quotation": "External Supplier Quotation",
         "Purchase Receipt": "External Purchase Receipt",
@@ -529,8 +639,15 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Sales Person": "External Sales Person",
         "Terms and Conditions": "External Terms and Conditions",
         "Journal Entry": "External Journal Entry",
-        "Material Request" : "External Material Request"
+        "Material Request": "External Material Request",
+        "Prospect": "External Prospect",
+        "Sales Stage": "External Sales Stage",
+        "Payment Term": "External Payment Term",
+        "Mode of Payment": "External Mode of Payment",
+        "Lead Source": "External Lead Source",
+        "Email Template": "External Email Template"
     }
+
     reverse_doctype_map = {local: remote for remote, local in doctype_map.items()}
     remote_dt = reverse_doctype_map.get(ref_doctype, ref_doctype)
     local_dt = doctype_map.get(remote_dt)
@@ -568,7 +685,14 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
     except Exception as e:
         frappe.throw(_("Sync failed: {0}").format(str(e)))
 
-    if remote_dt in ["Asset Category", "Purchase Invoice", "Payment Entry" , "Purchase Order","Stock Entry","Purchase Receipt","Request for Quotation","Supplier Quotation","Quotation","Delivery Note","Sales Invoice","Sales Taxes and Charges Template","Purchase Taxes and Charges Template","Letter Head","Expense Claim","Payment Terms Template","Sales Person","Terms and Conditions","Sales Order","Material Request"] and data:
+    if remote_dt in [
+        "Asset Category", "Purchase Invoice", "Payment Entry", "Purchase Order",
+        "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation",
+        "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
+        "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
+        "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order",
+        "Material Request", "Contact", "Address"
+    ] and data:
         data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
 
     local_meta = frappe.get_meta(local_dt)
@@ -584,6 +708,14 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
     count, errors, not_saved = _run_sync_loop(
         data, local_dt, local_fields, company, configuration_name
     )
+
+    # ✅ Retry pass — catches any edge cases left from first run
+    if not_saved:
+        retry_count, retry_errors, not_saved = _run_sync_loop(
+            not_saved, local_dt, local_fields, company, configuration_name
+        )
+        count += retry_count
+        errors.extend(retry_errors)
 
     last_sync = frappe.utils.now()
     frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
@@ -618,13 +750,9 @@ def _clean_child_rows(doc):
         cleaned = []
         for row in rows:
             row = row.as_dict()
-
-            # Remove remote linkage fields
             row.pop("name", None)
             row.pop("parent", None)
             row.pop("parenttype", None)
             row.pop("parentfield", None)
-
             cleaned.append(row)
-
         doc.set(table_field.fieldname, cleaned)

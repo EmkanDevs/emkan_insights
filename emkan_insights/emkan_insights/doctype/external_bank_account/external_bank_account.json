@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:account_name",
+ "autoname": "field:remote_id",
  "creation": "2017-05-29 21:35:13.136357",
  "doctype": "DocType",
  "document_type": "Setup",
@@ -217,7 +217,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -269,7 +270,7 @@
    "link_fieldname": "default_bank_account"
   }
  ],
- "modified": "2026-02-19 13:04:45.339965",
+ "modified": "2026-03-16 11:51:52.455836",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Bank Account",

@@ -19,7 +19,7 @@ frappe.listview_settings['External Purchase Invoice'] = {
 
             frappe.call({
                 method:
-                    'emkan_insights.emkan_insights.external_pi_sync.sync_purchase_invoice_docs',
+                    'emkan_insights.emkan_insights.external_pi_sync.sync_external_purchase_invoice_docs',
 
                 args: {
                     source_doctype: 'External Purchase Invoice',

@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_import": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2022-01-25 10:29:57.771398",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -2192,7 +2192,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -2211,11 +2212,11 @@
    "link_fieldname": "consolidated_invoice"
   }
  ],
- "modified": "2026-03-05 13:01:06.496219",
+ "modified": "2026-03-12 08:44:48.659593",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Invoice",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

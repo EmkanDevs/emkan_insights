@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "Prompt",
+ "autoname": "field:remote_id",
  "creation": "2014-06-19 05:20:26.331041",
  "doctype": "DocType",
  "document_type": "Document",
@@ -13,7 +13,9 @@
   "response_html",
   "response",
   "section_break_4",
-  "email_reply_help"
+  "email_reply_help",
+  "remote_id",
+  "source_site"
  ],
  "fields": [
   {
@@ -53,15 +55,26 @@
    "fieldtype": "Code",
    "label": "Response ",
    "options": "Jinja"
+  },
+  {
+   "fieldname": "remote_id",
+   "fieldtype": "Data",
+   "label": "Remote ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Data",
+   "label": "Source Site"
   }
  ],
  "icon": "fa fa-comment",
  "links": [],
- "modified": "2023-12-12 20:01:07.080625",
+ "modified": "2026-03-16 11:14:55.926231",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
- "name": "External Email Template",     
- "naming_rule": "Set by user",
+ "name": "External Email Template",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -81,6 +94,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

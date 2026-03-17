@@ -14,7 +14,7 @@ frappe.listview_settings['External Sales Order'] = {
                 __('Sync selected External Sales Order records to Sales Order master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_sales_order_sync.sync_external_sales_order_docs',
                         args: {
                             source_doctype: 'External Sales Order',
                             names

@@ -35,10 +35,7 @@ def sync_external_account(external_name, company):
 
     if external_parent:
         parent_account = sync_external_account(external_parent, company)
-    else:
-        parent_account = get_or_create_company_root(company, external.root_type)
-
-    # ✅ Create Account
+   
     account = frappe.get_doc({
         "doctype": "Account",
         "account_name": external.account_name,
@@ -55,7 +52,7 @@ def sync_external_account(external_name, company):
     account.insert(ignore_permissions=True)
 
     return account.name
-def get_or_create_company_root(company, root_type):
+
 
     root = frappe.get_value(
         "Account",

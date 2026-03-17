@@ -14,7 +14,7 @@ frappe.listview_settings['External Purchase Receipt'] = {
                 __('Sync selected External Purchase Receipt records to Purchase Receipt master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_pr_sync.sync_purchase_receipt_docs',
+                        method: 'emkan_insights.emkan_insights.external_pr_sync.sync_external_purchase_receipt_docs',
                         args: {
                             source_doctype: 'External Purchase Receipt',
                             names

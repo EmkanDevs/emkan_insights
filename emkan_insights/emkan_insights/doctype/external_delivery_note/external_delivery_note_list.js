@@ -14,7 +14,7 @@ frappe.listview_settings['External Delivery Note'] = {
                 __('Sync selected External Delivery Note records to Delivery Note master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_delivery_note_sync.sync_external_delivery_note_docs',
                         args: {
                             source_doctype: 'External Delivery Note',
                             names

@@ -14,7 +14,7 @@ frappe.listview_settings['External Quotation'] = {
                 __('Sync selected External Quotation records to Quotation master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_quotation_sync.sync_external_quotation_docs',
                         args: {
                             source_doctype: 'External Quotation',
                             names

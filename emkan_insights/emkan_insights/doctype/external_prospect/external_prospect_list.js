@@ -1,22 +1,22 @@
-frappe.listview_settings['External Contact'] = {
+frappe.listview_settings['External Prospect'] = {
     onload(listview) {
-        listview.page.add_inner_button(__('Sync to Contact'), () => {
+        listview.page.add_inner_button(__('Sync to Prospect'), () => {
             const selected = listview.get_checked_items();
 
             if (!selected.length) {
-                frappe.msgprint(__('Please select at least one External Contact'));
+                frappe.msgprint(__('Please select at least one External Prospect'));
                 return;
             }
 
             const names = selected.map(row => row.name);
 
             frappe.confirm(
-                __('Sync selected External Contact records to Contact master?'),
+                __('Sync selected External Prospect records to Prospect master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_contact_sync.sync_external_contact_docs',
+                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
                         args: {
-                            source_doctype: 'External Contact',
+                            source_doctype: 'External Prospect',
                             names
                         },
                         freeze: true,
@@ -24,7 +24,7 @@ frappe.listview_settings['External Contact'] = {
                         callback(r) {
                             if (!r.exc) {
                                 frappe.show_alert({
-                                    message: __('Contact synced successfully'),
+                                    message: __('Prospect synced successfully'),
                                     indicator: 'green'
                                 });
                                 listview.refresh();

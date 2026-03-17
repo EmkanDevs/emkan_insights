@@ -3,6 +3,7 @@
  "allow_events_in_timeline": 1,
  "allow_import": 1,
  "allow_rename": 1,
+ "autoname": "field:remote_id",
  "creation": "2013-01-10 16:34:32",
  "doctype": "DocType",
  "document_type": "Setup",
@@ -256,9 +257,10 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
@@ -270,11 +272,11 @@
  "image_field": "image",
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-05 14:55:40.929961",
+ "modified": "2026-03-11 11:38:54.332218",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Contact",
- "naming_rule": "By script",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

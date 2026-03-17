@@ -1,22 +1,21 @@
-frappe.listview_settings['External Contact'] = {
+frappe.listview_settings['External Payment Term'] = {
     onload(listview) {
-        listview.page.add_inner_button(__('Sync to Contact'), () => {
-            const selected = listview.get_checked_items();
-
+    listview.page.add_inner_button(__('Sync to Payment Term'), () => {
+    const selected = listview.get_checked_items();
             if (!selected.length) {
-                frappe.msgprint(__('Please select at least one External Contact'));
+                frappe.msgprint(__('Please select at least one External Payment Term'));
                 return;
             }
-
+    
             const names = selected.map(row => row.name);
-
+    
             frappe.confirm(
-                __('Sync selected External Contact records to Contact master?'),
+                __('Sync selected External Payment Term records to Payment Term master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_contact_sync.sync_external_contact_docs',
+                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
                         args: {
-                            source_doctype: 'External Contact',
+                            source_doctype: 'External Payment Term',
                             names
                         },
                         freeze: true,
@@ -24,7 +23,7 @@ frappe.listview_settings['External Contact'] = {
                         callback(r) {
                             if (!r.exc) {
                                 frappe.show_alert({
-                                    message: __('Contact synced successfully'),
+                                    message: __('Payment Term synced successfully'),
                                     indicator: 'green'
                                 });
                                 listview.refresh();
@@ -35,4 +34,5 @@ frappe.listview_settings['External Contact'] = {
             );
         });
     }
-};
+    
+    };

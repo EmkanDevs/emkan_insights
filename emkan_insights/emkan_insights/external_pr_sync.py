@@ -1,88 +1,155 @@
 import frappe
 import json
 
+SYSTEM_FIELDS = {
+    "name", "owner", "creation", "modified", "modified_by",
+    "docstatus", "idx", "doctype", "__last_sync_on",
+    "parent", "parentfield", "parenttype"
+}
+
+IGNORE_ITEM_FIELDS = {
+    "purchase_order_item",
+    "prevdoc_doctype",
+    "prevdoc_docname"
+}
+
+DEFAULT_WAREHOUSE = "Stores - IMC"
+
+
 @frappe.whitelist()
-def sync_purchase_receipt_docs(source_doctype: str, names):
+def sync_external_purchase_receipt_docs(source_doctype, names):
+
     if isinstance(names, str):
         names = json.loads(names)
 
+    results = []
+
     for name in names:
-        external = frappe.get_doc("External Purchase Receipt", name)
+        try:
+            ext_pr = frappe.get_doc(source_doctype, name)
 
-        if not external.company:
-            frappe.throw(f"Company missing in External Purchase Receipt: {name}")
+            # Check if already synced
+            existing_pr = frappe.db.get_value(
+                "Purchase Receipt",
+                {"remote_id": ext_pr.name},
+                "name"
+            )
 
-        sync_external_pr(name, external.company)
+            if existing_pr:
+                results.append({
+                    "name": existing_pr,
+                    "status": "exists"
+                })
+                continue
 
-    return "Success"
+            pr = frappe.new_doc("Purchase Receipt")
 
+            # Store remote reference
+            pr.remote_id = ext_pr.name
 
-def sync_external_pr(external_name, company):
-    external = frappe.get_doc("External Purchase Receipt", external_name)
-    
-    # 🟢 This is the ID we want to force
-    target_name = external.remote_id or external.name
+            if hasattr(pr, "source_site"):
+                pr.source_site = ext_pr.source_site
 
-    # Check if it already exists to avoid SQL Duplicate errors
-    if frappe.db.exists("Purchase Receipt", target_name):
-        return target_name
+            # -----------------------------
+            # COPY MAIN FIELDS
+            # -----------------------------
+            for field, value in ext_pr.as_dict().items():
 
-    # ... [Keep your Parent and Cost Center resolution logic here] ...
+                if (
+                    field not in SYSTEM_FIELDS
+                    and field not in ["items", "taxes", "remote_id"]
+                    and hasattr(pr, field)
+                ):
+                    pr.set(field, value)
 
-    pr = frappe.new_doc("Purchase Receipt")
-    
-    # 1. Set the name directly on the object
-    pr.name = target_name
-    
-    # 2. Map your fields
-    pr.company = company
-    pr.supplier = external.supplier
-    pr.posting_date = external.posting_date
-    pr.supplier_delivery_note = external.supplier_delivery_note
-    pr.status = external.status or "Open"
-    pr.conversion_rate = external.conversion_rate or 1
-    pr.base_net_total = external.base_net_total
+            # -----------------------------
+            # ITEMS
+            # -----------------------------
+            pr.set("items", [])
 
-    for row in external.items:
-        pr.append("items", {
-            "item_code": row.item_code,
-            "item_name": row.item_name,
+            for row in ext_pr.items:
 
-            "qty": row.qty or 0,
-            "received_qty": row.received_qty or row.qty or 0,
-            "rejected_qty": row.rejected_qty or 0,
+                item_row = {}
 
-            "uom": row.uom,
-            "stock_uom": row.stock_uom,
+                for field, value in row.as_dict().items():
 
-            "conversion_factor": row.conversion_factor or 1,
+                    if (
+                        field not in SYSTEM_FIELDS
+                        and field not in IGNORE_ITEM_FIELDS
+                    ):
+                        item_row[field] = value
 
-            "rate": row.rate or 0,
-            "amount": row.amount or 0,
-            "base_rate": row.rate or 0,
-            "base_amount": row.amount or 0,
+                if not item_row.get("warehouse"):
+                    item_row["warehouse"] = DEFAULT_WAREHOUSE
 
-            "billed_amt": row.billed_amt or 0,
+                pr.append("items", item_row)
 
-            "warehouse": row.warehouse,
-            "project": row.project,
-            "purchase_order": row.purchase_order,
-            "purchase_order_item": row.purchase_order_item,
-            "cost_center": row.cost_center,
-            "schedule_date": row.schedule_date,
-            "billed_amt": 0
-        })
+            # -----------------------------
+            # FLAGS
+            # -----------------------------
+            pr.flags.ignore_permissions = True
+            pr.flags.ignore_mandatory = True
+            pr.flags.ignore_validate = True
+            frappe.flags.ignore_stock_validation = True
 
-    pr.flags.ignore_permissions = True
-    pr.flags.ignore_validate = True
+            # -----------------------------
+            # INSERT
+            # -----------------------------
+            pr.insert(
+                ignore_permissions=True,
+                ignore_links=True,
+                ignore_mandatory=True
+            )
 
-    pr.billing_address = None
-    pr.shipping_address = None
+            # -----------------------------
+            # FORCE SAME NAME AS EXTERNAL
+            # -----------------------------
+            if pr.name != ext_pr.name:
 
-    pr.insert(ignore_permissions=True)
+                frappe.db.sql("""
+                    UPDATE `tabPurchase Receipt`
+                    SET name = %s
+                    WHERE name = %s
+                """, (ext_pr.name, pr.name))
 
-    if external.docstatus == 1:
-        pr.flags.ignore_permissions = True
-        pr.submit()
+                for child_table in ["Purchase Receipt Item"]:
+                    frappe.db.sql("""
+                        UPDATE `tab{0}`
+                        SET parent = %s
+                        WHERE parent = %s
+                    """.format(child_table), (ext_pr.name, pr.name))
 
-    return pr.name
+                frappe.db.commit()
+                pr.name = ext_pr.name
+
+            # -----------------------------
+            # DOCSTATUS SYNC
+            # -----------------------------
+            if ext_pr.docstatus == 1:
+                pr.submit()
+
+            elif ext_pr.docstatus == 2:
+                pr.submit()
+                pr.cancel()
+
+            results.append({
+                "name": pr.name,
+                "status": "synced"
+            })
+
+        except Exception as e:
+
+            error = frappe.get_traceback()
+
+            frappe.log_error(
+                title=f"Purchase Receipt Sync Error: {name}",
+                message=error
+            )
+
+            results.append({
+                "name": name,
+                "status": "failed",
+                "error": str(e)
+            })
+
+    return results

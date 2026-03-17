@@ -1,245 +1,282 @@
 import frappe
 import json
 
+SYSTEM_FIELDS = {
+    "name", "owner", "creation", "modified", "modified_by",
+    "docstatus", "idx", "doctype", "__last_sync_on",
+    "parent", "parentfield", "parenttype"
+}
+
+IGNORE_ITEM_FIELDS = {
+    "purchase_order_item",
+    "purchase_receipt_item",
+    "prevdoc_doctype",
+    "prevdoc_docname"
+}
+
+
+# -----------------------------------------------------
+# HELPER FUNCTIONS
+# -----------------------------------------------------
+
+def get_po_detail(purchase_order, item_code):
+
+    if not purchase_order:
+        return None
+
+    return frappe.db.get_value(
+        "Purchase Order Item",
+        {
+            "parent": purchase_order,
+            "item_code": item_code
+        },
+        "name"
+    )
+
+
+def get_pr_detail(purchase_receipt, item_code):
+
+    if not purchase_receipt:
+        return None
+
+    return frappe.db.get_value(
+        "Purchase Receipt Item",
+        {
+            "parent": purchase_receipt,
+            "item_code": item_code
+        },
+        "name"
+    )
+
+
+# -----------------------------------------------------
+# MAIN SYNC
+# -----------------------------------------------------
 
 @frappe.whitelist()
-def sync_purchase_invoice_docs(source_doctype: str, names):
+def sync_external_purchase_invoice_docs(source_doctype, names):
 
     if isinstance(names, str):
         names = json.loads(names)
 
-    created_docs = []
+    results = []
 
     for name in names:
-        external = frappe.get_doc("External Purchase Invoice", name)
 
-        if not external.company:
-            frappe.throw(f"Company missing in External Purchase Invoice: {name}")
+        try:
 
-        docname = sync_external_pi(name, external.company)
-        created_docs.append(docname)
+            ext_pi = frappe.get_doc(source_doctype, name)
 
-    return created_docs
+            # -------------------------------------------------
+            # ALREADY SYNCED
+            # -------------------------------------------------
 
+            existing = frappe.db.get_value(
+                "Purchase Invoice",
+                {"remote_id": ext_pi.name},
+                "name"
+            )
 
-def get_po_detail(purchase_order, item_code, qty):
-    """
-    Fetch the Purchase Order Item row name (po_detail) by matching
-    item_code and qty from the given Purchase Order.
-    """
-    if not purchase_order:
-        return None
+            if not existing:
+                existing = frappe.db.exists("Purchase Invoice", ext_pi.name)
 
-    # Try exact match on item_code + qty first
-    po_detail = frappe.db.get_value(
-        "Purchase Order Item",
-        {
-            "parent": purchase_order,
-            "item_code": item_code,
-            "qty": qty,
-        },
-        "name",
-    )
+            if existing:
+                results.append({
+                    "name": existing,
+                    "status": "exists"
+                })
+                continue
 
-    # Fallback: match on item_code only (first row found)
-    if not po_detail:
-        po_detail = frappe.db.get_value(
-            "Purchase Order Item",
-            {
-                "parent": purchase_order,
-                "item_code": item_code,
-            },
-            "name",
-        )
+            pi = frappe.new_doc("Purchase Invoice")
 
-    return po_detail
+            # -------------------------------------------------
+            # REMOTE TRACKING
+            # -------------------------------------------------
 
+            pi.remote_id = ext_pi.name
 
-def get_pr_detail(purchase_receipt, item_code, qty):
-    """
-    Fetch the Purchase Receipt Item row name (pr_detail) by matching
-    item_code and qty from the given Purchase Receipt.
-    """
-    if not purchase_receipt:
-        return None
+            if hasattr(pi, "source_site"):
+                pi.source_site = ext_pi.source_site
 
-    # Try exact match on item_code + qty first
-    pr_detail = frappe.db.get_value(
-        "Purchase Receipt Item",
-        {
-            "parent": purchase_receipt,
-            "item_code": item_code,
-            "qty": qty,
-        },
-        "name",
-    )
+            # -------------------------------------------------
+            # COPY HEADER FIELDS
+            # -------------------------------------------------
 
-    # Fallback: match on item_code only (first row found)
-    if not pr_detail:
-        pr_detail = frappe.db.get_value(
-            "Purchase Receipt Item",
-            {
-                "parent": purchase_receipt,
-                "item_code": item_code,
-            },
-            "name",
-        )
+            for field, value in ext_pi.as_dict().items():
 
-    return pr_detail
+                if (
+                    field not in SYSTEM_FIELDS
+                    and field not in ["items", "taxes", "payment_schedule"]
+                    and hasattr(pi, field)
+                ):
+                    pi.set(field, value)
 
+            # Fix currency validation
+            if not pi.currency:
+                pi.currency = frappe.get_cached_value("Company", pi.company, "default_currency")
 
-def sync_external_pi(external_name, company):
+            # -------------------------------------------------
+            # HANDLE RETURN
+            # -------------------------------------------------
 
-    external = frappe.get_doc("External Purchase Invoice", external_name)
+            if ext_pi.get("is_return"):
 
-    target_name = external.remote_id or external.name
+                if frappe.db.exists("Purchase Invoice", ext_pi.return_against):
+                    pi.is_return = 1
+                    pi.return_against = ext_pi.return_against
+                else:
+                    pi.is_return = 0
+                    pi.return_against = None
 
-    if frappe.db.exists("Purchase Invoice", target_name):
-        return target_name
+            # -------------------------------------------------
+            # ITEMS
+            # -------------------------------------------------
 
-    pi = frappe.new_doc("Purchase Invoice")
-    pi.name = target_name
+            pi.set("items", [])
 
-    # -------------------------
-    # Parent Fields
-    # -------------------------
+            for row in ext_pi.items:
 
-    pi.company = company
-    pi.supplier = external.supplier
-    pi.supplier_name = external.supplier_name
+                item_row = {}
 
-    pi.posting_date = external.posting_date
-    pi.posting_time = external.posting_time
+                for field, value in row.as_dict().items():
 
-    pi.due_date = external.due_date
+                    if (
+                        field not in SYSTEM_FIELDS
+                        and field not in IGNORE_ITEM_FIELDS
+                    ):
+                        item_row[field] = value
 
-    pi.bill_no = (
-        getattr(external, "bill_no", None)
-        or getattr(external, "supplier_invoice_no", None)
-    )
-    pi.bill_date = (
-        getattr(external, "bill_date", None)
-        or getattr(external, "supplier_invoice_date", None)
-    )
+                # PO mapping
+                if row.purchase_order:
+                    item_row["purchase_order"] = row.purchase_order
+                    item_row["po_detail"] = get_po_detail(
+                        row.purchase_order,
+                        row.item_code
+                    )
 
-    pi.currency = external.currency
-    pi.conversion_rate = external.conversion_rate or 1
+                # PR mapping
+                if row.purchase_receipt:
+                    item_row["purchase_receipt"] = row.purchase_receipt
+                    item_row["pr_detail"] = get_pr_detail(
+                        row.purchase_receipt,
+                        row.item_code
+                    )
 
-    pi.credit_to = external.credit_to
+                pi.append("items", item_row)
 
-    pi.project = external.project
-    pi.cost_center = external.cost_center
+            # -------------------------------------------------
+            # TAXES
+            # -------------------------------------------------
 
-    pi.update_stock = external.update_stock or 0
+            if ext_pi.get("taxes"):
 
-    pi.is_return = external.is_return or 0
-    pi.return_against = external.return_against
+                pi.set("taxes", [])
 
-    pi.remarks = external.remarks
+                for row in ext_pi.taxes:
 
-    # -------------------------
-    # Items
-    # -------------------------
+                    tax_row = {}
 
-    for row in external.items:
+                    for field, value in row.as_dict().items():
 
-        item = pi.append("items", {})
+                        if field not in SYSTEM_FIELDS:
+                            tax_row[field] = value
 
-        item.item_code = row.item_code
-        item.item_name = row.item_name
-        item.description = row.description
+                    pi.append("taxes", tax_row)
 
-        item.qty = row.qty or 0
+            # -------------------------------------------------
+            # PAYMENT SCHEDULE
+            # -------------------------------------------------
 
-        item.uom = row.uom
-        item.stock_uom = row.stock_uom
+            if ext_pi.get("payment_schedule"):
 
-        item.conversion_factor = row.conversion_factor or 1
+                pi.set("payment_schedule", [])
 
-        item.rate = row.rate or 0
-        item.amount = row.amount or 0
+                for row in ext_pi.payment_schedule:
 
-        item.base_rate = row.base_rate or row.rate or 0
-        item.base_amount = row.base_amount or row.amount or 0
+                    pay_row = {}
 
-        item.net_rate = row.net_rate or row.rate or 0
-        item.net_amount = row.net_amount or row.amount or 0
+                    for field, value in row.as_dict().items():
 
-        item.warehouse = row.warehouse
+                        if field not in SYSTEM_FIELDS:
+                            pay_row[field] = value
 
-        item.expense_account = row.expense_account
-        item.cost_center = row.cost_center
+                    pi.append("payment_schedule", pay_row)
 
-        item.project = row.project
+            # -------------------------------------------------
+            # FLAGS
+            # -------------------------------------------------
 
-        # -------------------------
-        # PO reference: look up the actual PO Item row name
-        # -------------------------
-        item.purchase_order = row.purchase_order
-        item.po_detail = (
-            # use whatever was stored on external row if present
-            getattr(row, "purchase_order_item", None)
-            or getattr(row, "po_detail", None)
-            # otherwise look it up from the PO by item + qty
-            or get_po_detail(row.purchase_order, row.item_code, row.qty)
-        )
+            pi.flags.ignore_permissions = True
+            pi.flags.ignore_validate = True
+            pi.flags.ignore_mandatory = True
 
-        # -------------------------
-        # PR reference: look up the actual PR Item row name
-        # -------------------------
-        item.purchase_receipt = row.purchase_receipt
-        item.pr_detail = (
-            getattr(row, "purchase_receipt_item", None)
-            or getattr(row, "pr_detail", None)
-            or get_pr_detail(row.purchase_receipt, row.item_code, row.qty)
-        )
+            # -------------------------------------------------
+            # INSERT
+            # -------------------------------------------------
 
-        item.batch_no = row.batch_no
-        item.serial_no = row.serial_no
+            pi.insert(
+                ignore_permissions=True,
+                ignore_links=True,
+                ignore_mandatory=True
+            )
 
-    # -------------------------
-    # Taxes
-    # -------------------------
+            # -------------------------------------------------
+            # FORCE SAME NAME
+            # -------------------------------------------------
 
-    if hasattr(external, "taxes"):
-        for tax in external.taxes:
-            t = pi.append("taxes", {})
-            t.charge_type = tax.charge_type
-            t.account_head = tax.account_head
-            t.description = tax.description
-            t.rate = tax.rate
-            t.tax_amount = tax.tax_amount
-            t.base_tax_amount = tax.base_tax_amount
-            t.cost_center = tax.cost_center
+            if pi.name != ext_pi.name:
 
-    # -------------------------
-    # Payment Schedule
-    # -------------------------
+                frappe.db.sql("""
+                    UPDATE `tabPurchase Invoice`
+                    SET name=%s
+                    WHERE name=%s
+                """, (ext_pi.name, pi.name))
 
-    if hasattr(external, "payment_schedule"):
-        for pay in external.payment_schedule:
-            ps = pi.append("payment_schedule", {})
-            ps.payment_term = pay.payment_term
-            ps.due_date = pay.due_date
-            ps.invoice_portion = pay.invoice_portion
-            ps.payment_amount = pay.payment_amount
-            ps.mode_of_payment = pay.mode_of_payment
+                for child in [
+                    "Purchase Invoice Item",
+                    "Purchase Taxes and Charges",
+                    "Payment Schedule"
+                ]:
 
-    # -------------------------
-    # Flags
-    # -------------------------
+                    frappe.db.sql(f"""
+                        UPDATE `tab{child}`
+                        SET parent=%s
+                        WHERE parent=%s
+                    """, (ext_pi.name, pi.name))
 
-    pi.flags.ignore_permissions = True
-    pi.flags.ignore_validate = True
-    pi.flags.ignore_mandatory = True
+                frappe.db.commit()
 
-    pi.billing_address = None
-    pi.shipping_address = None
+                pi.name = ext_pi.name
 
-    pi.insert(ignore_permissions=True)
+            # -------------------------------------------------
+            # DOCSTATUS
+            # -------------------------------------------------
 
-    if external.docstatus == 1:
-        pi.flags.ignore_permissions = True
-        pi.submit()
+            if ext_pi.docstatus == 1:
+                pi.submit()
 
-    return pi.name
+            elif ext_pi.docstatus == 2:
+                pi.submit()
+                pi.cancel()
+
+            results.append({
+                "name": pi.name,
+                "status": "synced"
+            })
+
+        except Exception as e:
+
+            error = frappe.get_traceback()
+
+            frappe.log_error(
+                title=f"Purchase Invoice Sync Error: {name}",
+                message=error
+            )
+
+            results.append({
+                "name": name,
+                "status": "failed",
+                "error": str(e)
+            })
+
+    return results

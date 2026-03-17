@@ -3,39 +3,66 @@ import json
 
 
 # ==========================================================
+# CONSTANTS
+# ==========================================================
+
+SYSTEM_FIELDS = {
+    "name", "owner", "creation", "modified", "modified_by",
+    "docstatus", "idx", "doctype", "__last_sync_on",
+    "parent", "parentfield", "parenttype"
+}
+
+
+# ==========================================================
 # ENTRY POINT
 # ==========================================================
 
 @frappe.whitelist()
-def sync_payment_entry_docs(source_doctype: str, names):
+def sync_payment_entry_docs(source_doctype, names):
 
     if isinstance(names, str):
         names = json.loads(names)
 
-    for name in names:
-        sync_external_payment_entry(name)
+    results = []
 
-    return "Success"
+    for name in names:
+        try:
+            result = sync_external_payment_entry(source_doctype, name)
+            results.append({"name": name, "status": "synced", "payment_entry": result})
+
+        except Exception:
+            error = frappe.get_traceback()
+
+            frappe.log_error(
+                title=f"Payment Entry Sync Error: {name}",
+                message=error
+            )
+
+            results.append({
+                "name": name,
+                "status": "failed"
+            })
+
+    return results
 
 
 # ==========================================================
 # MAIN SYNC FUNCTION
 # ==========================================================
 
-def sync_external_payment_entry(external_name):
+def sync_external_payment_entry(source_doctype, external_name):
 
-    src = frappe.get_doc("External Payment Entry", external_name)
-
-    if not src.company:
-        frappe.throw(f"Company missing in External Payment Entry: {external_name}")
+    src = frappe.get_doc(source_doctype, external_name)
 
     # ------------------------------------------------------
-    # Prevent duplicate (ERPNext is master)
+    # Prevent duplicate
     # ------------------------------------------------------
-    existing = None
 
-    if src.remote_id:
-        existing = frappe.db.exists("Payment Entry", src.remote_id)
+    existing = frappe.db.get_value(
+        "Payment Entry",
+        {"remote_id": src.name},
+        "name"
+    )
 
     if existing:
         return existing
@@ -49,10 +76,10 @@ def sync_external_payment_entry(external_name):
             frappe.throw(f"{src.party_type} {src.party} not found. Sync master first.")
 
     if src.paid_from and not frappe.db.exists("Account", src.paid_from):
-        frappe.throw(f"Account {src.paid_from} not found. Sync Account first.")
+        frappe.throw(f"Account {src.paid_from} not found.")
 
     if src.paid_to and not frappe.db.exists("Account", src.paid_to):
-        frappe.throw(f"Account {src.paid_to} not found. Sync Account first.")
+        frappe.throw(f"Account {src.paid_to} not found.")
 
     # ------------------------------------------------------
     # Create Payment Entry
@@ -60,37 +87,37 @@ def sync_external_payment_entry(external_name):
 
     doc = frappe.new_doc("Payment Entry")
 
-    doc.company = src.company
-    doc.posting_date = src.posting_date
-    doc.payment_type = src.payment_type
-    doc.mode_of_payment = src.mode_of_payment
-
-    doc.party_type = src.party_type
-    doc.party = src.party
-
-    doc.paid_from = src.paid_from
-    doc.paid_to = src.paid_to
-    doc.paid_amount = src.paid_amount
-    doc.received_amount = src.received_amount
-
-    doc.reference_no = src.reference_no
-    doc.reference_date = src.reference_date
-    doc.remarks = src.remarks
-
-    # Optional external tracking fields
-    if hasattr(doc, "source_site") and src.get("source_site"):
-        doc.source_site = src.source_site
+    doc.remote_id = src.name
 
     # ------------------------------------------------------
-    # References Table (If Exists)
+    # Copy Main Fields
     # ------------------------------------------------------
+
+    for field, value in src.as_dict().items():
+
+        if (
+            field not in SYSTEM_FIELDS
+            and field not in ["references", "remote_id"]
+            and hasattr(doc, field)
+        ):
+            doc.set(field, value)
+
+    # ------------------------------------------------------
+    # References Table
+    # ------------------------------------------------------
+
+    doc.set("references", [])
 
     for row in src.get("references") or []:
-        doc.append("references", {
-            "reference_doctype": row.reference_doctype,
-            "reference_name": row.reference_name,
-            "allocated_amount": row.allocated_amount
-        })
+
+        ref_row = {}
+
+        for field, value in row.as_dict().items():
+
+            if field not in SYSTEM_FIELDS:
+                ref_row[field] = value
+
+        doc.append("references", ref_row)
 
     # ------------------------------------------------------
     # Safe Flags
@@ -98,15 +125,48 @@ def sync_external_payment_entry(external_name):
 
     doc.flags.ignore_validate = True
     doc.flags.ignore_permissions = True
-
-    doc.insert()
-    doc.submit()
+    doc.flags.ignore_mandatory = True
 
     # ------------------------------------------------------
-    # Write Back ERPNext Name to External
+    # Insert
     # ------------------------------------------------------
 
-    if hasattr(src, "remote_id") and src.remote_id != doc.name:
-        src.db_set("remote_id", doc.name)
+    doc.insert(
+        ignore_permissions=True,
+        ignore_mandatory=True
+    )
+
+    # ------------------------------------------------------
+    # FORCE SAME NAME AS EXTERNAL (same logic as DN / PR / PI)
+    # ------------------------------------------------------
+
+    if doc.name != src.name:
+
+        frappe.db.sql("""
+            UPDATE `tabPayment Entry`
+            SET name = %s
+            WHERE name = %s
+        """, (src.name, doc.name))
+
+        frappe.db.sql("""
+            UPDATE `tabPayment Entry Reference`
+            SET parent = %s
+            WHERE parent = %s
+        """, (src.name, doc.name))
+
+        frappe.db.commit()
+
+        doc.name = src.name
+
+    # ------------------------------------------------------
+    # Sync Docstatus
+    # ------------------------------------------------------
+
+    if src.docstatus == 1:
+        doc.submit()
+
+    elif src.docstatus == 2:
+        doc.submit()
+        doc.cancel()
 
     return doc.name
