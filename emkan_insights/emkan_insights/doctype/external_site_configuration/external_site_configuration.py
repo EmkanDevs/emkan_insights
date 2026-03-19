@@ -645,7 +645,9 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Payment Term": "External Payment Term",
         "Mode of Payment": "External Mode of Payment",
         "Lead Source": "External Lead Source",
-        "Email Template": "External Email Template"
+        "Email Template": "External Email Template",
+        "Lead" : "External Lead",
+        "Opportunity" : "External Opportunity"
     }
 
     reverse_doctype_map = {local: remote for remote, local in doctype_map.items()}
