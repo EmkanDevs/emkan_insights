@@ -30,11 +30,19 @@ def sync_doc_by_key(
 ):
     src = frappe.get_doc(source_doctype, source_name)
     key_value = src.get(key_field)
+    info = get_external_sync_info(source_doctype)
+
     enforce_remote_name = (
-        target_doctype == "Supplier"
+        info
+        and info.get("force_id")
         and key_field == "remote_id"
         and bool(key_value)
     )
+    # enforce_remote_name = (
+    #     target_doctype == "Supplier"
+    #     and key_field == "remote_id"
+    #     and bool(key_value)
+    # )
 
     if not key_value:
         frappe.throw(f"{key_field} is mandatory to sync {target_doctype}")
@@ -43,7 +51,7 @@ def sync_doc_by_key(
     target_fields = {df.fieldname for df in target_meta.fields}
 
     actual_target_key = _get_actual_target_key(target_doctype, key_field)
-
+    
     existing_name = None
     if actual_target_key:
         existing_name = frappe.db.get_value(target_doctype, {actual_target_key: key_value}, "name")
@@ -65,35 +73,125 @@ def sync_doc_by_key(
         tgt = frappe.new_doc(target_doctype)
         is_new = True
         if enforce_remote_name:
-            tgt.set_new_name(key_value)
             tgt.name = key_value
+            tgt.flags.name_set = True   # 🔥 IMPORTANT: prevent autoname override
+        # if enforce_remote_name:
+        #     tgt.set_new_name(key_value)
+        #     tgt.name = key_value
 
-    if target_doctype == "Item Group" and _is_root_item_group_doc(tgt=tgt, src=src, title_field_source=title_field_source):
+    # if target_doctype == "Item Group" and _is_root_item_group_doc(tgt=tgt, src=src, title_field_source=title_field_source):
+    #     return {
+    #         "doctype": target_doctype,
+    #         "name": tgt.name or src.get(title_field_source) or src.name,
+    #         "action": "skipped",
+    #     }
+    if target_doctype == "Item Group" and _is_root_item_group_doc(
+        tgt=tgt, src=src, title_field_source=title_field_source
+    ):
+
+        if not frappe.db.exists("Item Group", "All Item Groups"):
+            root = frappe.get_doc({
+                "doctype": "Item Group",
+                "item_group_name": "All Item Groups",
+                "is_group": 1
+            })
+            if actual_target_key:
+                root.set(actual_target_key, key_value)
+            root.insert(ignore_permissions=True)
+        elif actual_target_key:
+            frappe.db.set_value("Item Group", "All Item Groups", actual_target_key, key_value, update_modified=False)
+
         return {
             "doctype": target_doctype,
-            "name": tgt.name or src.get(title_field_source) or src.name,
-            "action": "skipped",
+            "name": "All Item Groups",
+            "action": "ensured",
         }
     if target_doctype == "Supplier Group" and _is_root_supplier_group_doc(
         tgt=tgt, src=src, title_field_source=title_field_source
     ):
+
+        if not frappe.db.exists("Supplier Group", "All Supplier Groups"):
+            root = frappe.get_doc({
+                "doctype": "Supplier Group",
+                "supplier_group_name": "All Supplier Groups",
+                "is_group": 1
+            })
+            if actual_target_key:
+                root.set(actual_target_key, key_value)
+            root.insert(ignore_permissions=True)
+        elif actual_target_key:
+            frappe.db.set_value("Supplier Group", "All Supplier Groups", actual_target_key, key_value, update_modified=False)
+
         return {
             "doctype": target_doctype,
-            "name": tgt.name or src.get(title_field_source) or src.name,
-            "action": "skipped",
-        }
-    if target_doctype == "Territory" and _is_root_territory_doc(tgt=tgt, src=src, title_field_source=title_field_source):
-        return {
-            "doctype": target_doctype,
-            "name": tgt.name or src.get(title_field_source) or src.name,
-            "action": "skipped",
+            "name": "All Supplier Groups",
+            "action": "ensured",
         }
 
-    ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {"remote_id"}
+    if target_doctype == "Territory" and _is_root_territory_doc(
+        tgt=tgt, src=src, title_field_source=title_field_source
+    ):
+
+        if not frappe.db.exists("Territory", "All Territories"):
+
+            root = frappe.get_doc({
+                "doctype": "Territory",
+                "territory_name": "All Territories",
+                "is_group": 1,
+                "parent_territory": None   # ⭐ VERY IMPORTANT
+            })
+
+            if actual_target_key:
+                root.set(actual_target_key, key_value)
+
+            root.insert(ignore_permissions=True)
+
+        else:
+            # ⭐ FORCE ROOT TO BE ROOT (Fix corrupted tree)
+            frappe.db.set_value(
+                "Territory",
+                "All Territories",
+                {
+                    "parent_territory": None,
+                    "is_group": 1
+                },
+                update_modified=False
+            )
+
+            if actual_target_key:
+                frappe.db.set_value(
+                    "Territory",
+                    "All Territories",
+                    actual_target_key,
+                    key_value,
+                    update_modified=False
+                )
+
+        return {
+            "doctype": target_doctype,
+            "name": "All Territories",
+            "action": "ensured",
+        }
+
+    # ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {
+    # "remote_id",
+    # "status",
+    # "workflow_state"
+    # }  
+
+    ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {"remote_id"} 
     if frappe.utils.cint(getattr(target_meta, "is_tree", 0)):
         # Never map nested-set internals from external payloads.
         ignore |= {"lft", "rgt", "old_parent"}
 
+    # target_meta = frappe.get_meta(target_doctype)
+
+    # # ⭐⭐⭐ VERY IMPORTANT — call once
+    # _sync_child_tables(
+    #     src,
+    #     tgt,
+    #     target_meta
+#)
     for field, value in src.as_dict().items():
         # Sync child tables
         if target_doctype in ["Purchase Invoice", "Payment Entry"]:
@@ -127,6 +225,9 @@ def sync_doc_by_key(
             # so resolve it explicitly after base field mapping.
             continue
 
+        if target_doctype == "Contract" and field in ["party_name", "party_type"]:
+            continue
+
         if target_field in target_fields:
             df = target_meta.get_field(target_field)
             if df and df.fieldtype == "Link" and value:
@@ -151,6 +252,46 @@ def sync_doc_by_key(
     if target_doctype == "Supplier":
         _apply_supplier_sync_rules(tgt=tgt)
 
+    if target_doctype == "Contract":
+
+        party_type = src.get("party_type")
+        party_name = src.get("party_name")
+
+        tgt.party_type = party_type
+
+        resolved = None
+
+        if party_type and party_name:
+            resolved = frappe.db.get_value(
+                party_type,
+                {"remote_id": party_name},
+                "name"
+            )
+
+        if not resolved and frappe.db.exists(party_type, party_name):
+            resolved = party_name
+
+        if not resolved and party_type == "Customer":
+            sync_doc_by_key(
+                source_doctype="External Customer",
+                source_name=party_name,
+                target_doctype="Customer",
+                key_field=key_field,
+                title_field_source="customer_name"
+            )
+
+            resolved = frappe.db.get_value(
+                "Customer",
+                {"remote_id": party_name},
+                "name"
+            )
+
+        if not resolved:
+            frappe.throw(f"Customer not found for Contract: {party_name}")
+
+        # ✅ MOVE HERE
+        tgt.party_name = resolved
+
     if target_doctype == "Account":
         _apply_account_sync_rules(src=src, tgt=tgt, key_field=key_field)
         # External sync can create accounts directly in child companies;
@@ -163,6 +304,8 @@ def sync_doc_by_key(
             key_field=key_field,
             title_field_source=title_field_source,
         )
+    elif target_doctype == "Contact":
+        _apply_contact_sync_rules(tgt)
     elif target_doctype == "Territory":
         _apply_territory_sync_rules(
             src=src,
@@ -192,25 +335,8 @@ def sync_doc_by_key(
     elif target_doctype == "Expense Claim":
         _apply_expense_claim_sync_rules(src, tgt)
 
-    # messages = []
-
-    # # check child tables
-    # for table_field in target_meta.get_table_fields():
-    #     rows = tgt.get(table_field.fieldname) or []
-    #     child_meta = frappe.get_meta(table_field.options)
-
-    #     for row in rows:
-    #         for df in child_meta.fields:
-    #             if df.fieldtype == "Link":
-    #                 val = row.get(df.fieldname)
-    #                 if val:
-    #                     messages.append(
-    #                         f"TABLE: {table_field.fieldname} | CHILD FIELD: {df.fieldname} | "
-    #                         f"LABEL: {df.label} | OPTIONS: {df.options} | VALUE: {val}"
-    #                     )
-
-    # if messages:
-    #     frappe.throw("<br>".join(messages))   
+    elif target_doctype == "Address":
+        _apply_address_sync_rules(src, tgt)
 
     try:
         tgt.save(ignore_permissions=True)
@@ -240,6 +366,55 @@ def sync_doc_by_key(
         "action": "created" if is_new else "updated",
     }
 
+def _apply_address_sync_rules(src, tgt):
+    tgt.flags.ignore_links = True
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_mandatory = True
+
+    
+
+def _apply_contact_sync_rules(tgt):
+    # Bypass strict validations
+    tgt.flags.ignore_links = True
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_mandatory = True
+
+    # Remove problematic link fields
+    tgt.lead = None
+    tgt.prospect = None
+
+    # Fix: ensure only one email is marked as primary
+    if tgt.get("email_ids"):
+        found_primary = False
+        for row in tgt.email_ids:
+            if row.get("is_primary"):
+                if found_primary:
+                    row.is_primary = 0  # unset duplicate primaries
+                else:
+                    found_primary = True
+        # If none were marked primary, mark the first one
+        if not found_primary and tgt.email_ids:
+            tgt.email_ids[0].is_primary = 1
+
+    # Fix: ensure only one phone is marked as primary
+    if tgt.get("phone_nos"):
+        found_primary = False
+        for row in tgt.phone_nos:
+            if row.get("is_primary_phone"):
+                if found_primary:
+                    row.is_primary_phone = 0
+                else:
+                    found_primary = True
+
+    
+def ensure_territory_root():
+    if not frappe.db.exists("Territory", "All Territories"):
+        frappe.get_doc({
+            "doctype": "Territory",
+            "territory_name": "All Territories",
+            "is_group": 1
+        }).insert(ignore_permissions=True)
+
 
 @frappe.whitelist()
 def sync_external_docs(
@@ -263,6 +438,10 @@ def sync_external_docs(
 
     if not target_doctype:
         frappe.throw(f"Target doctype could not be determined for {source_doctype}")
+    
+    # 🔥 Ensure Territory Root before syncing
+    if target_doctype == "Territory":
+        ensure_territory_root()
 
     results = []
     for source_name in names:
@@ -276,6 +455,7 @@ def sync_external_docs(
         )
         results.append(res["name"])
 
+    frappe.db.commit()
     return results
 
 
@@ -365,66 +545,6 @@ def get_external_sync_info(source_doctype: str):
         }
 
     return None
-
-# 🟢 4. The actual Sync Function (separate from mapping)
-# @frappe.whitelist()
-# def sync_external_docs(source_doctype: str, names):
-#     if isinstance(names, str):
-#         names = json.loads(names)
-
-#     info = get_external_sync_info(source_doctype)
-#     results = []
-
-#     for name in names:
-#         # Resolve target name
-#         external = frappe.get_doc(source_doctype, name)
-#         target_name = external.remote_id or external.name
-
-#         if frappe.db.exists(info["target"], target_name):
-#             results.append(target_name)
-#             continue
-
-#         # Create doc
-#         doc = frappe.new_doc(info["target"])
-        
-#         # Set forced name if applicable
-#         if info.get("force_id"):
-#             doc.name = target_name
-
-#         # Map fields (excluding internal ones)
-#         for field in doc.meta.fields:
-#             if hasattr(external, field.fieldname):
-#                 doc.set(field.fieldname, external.get(field.fieldname))
-
-#         # Apply defaults
-#         for field, value in info.get("defaults", {}).items():
-#             if not doc.get(field):
-#                 doc.set(field, value)
-
-#         # Bypass naming/validation
-#         doc.db_insert()
-
-#         for table_field in doc.meta.get_table_fields():
-#             if hasattr(external, table_field.fieldname):
-#                 for row in external.get(table_field.fieldname):
-#                     row.parent = doc.name
-#                     row.parenttype = doc.doctype
-#                     row.parentfield = table_field.fieldname
-#                     if not row.name:
-#                         row.set_new_name()
-#                     row.db_insert()
-
-#         remote_docstatus = frappe.utils.cint(external.docstatus)
-#         if remote_docstatus > 0:
-#             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
-        
-#         # Link back
-#         external.db_set("remote_id", doc.name)
-#         results.append(doc.name)
-
-#     frappe.db.commit()
-#     return results
-
 
 def resolve_link_value(doctype: str, value: str) -> str:
     if not value:
@@ -545,18 +665,23 @@ def _apply_account_sync_rules(src, tgt, key_field: str) -> None:
     )
 
 def _apply_bank_account_sync_rules(src, tgt, key_field: str):
+    # Add bypass flags
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_mandatory = True
+    tgt.flags.ignore_links = True
+    
     if not tgt.get("account"):
         external_account = src.get("account")
 
         if external_account:
-            resolved = _resolve_ta
-            rget_account_from_external(
+            resolved = _resolve_target_account_from_external(
                 external_account,
                 key_field,
                 tgt.company
             )
             if resolved:
                 tgt.account = resolved
+
 
 def _apply_expense_claim_sync_rules(src, tgt):
     # Clear link fields that may not exist in target instance
@@ -1161,46 +1286,225 @@ def _is_root_item_group_doc(tgt, src, title_field_source: str | None) -> bool:
 
 
 def _apply_supplier_group_sync_rules(src, tgt, key_field: str, title_field_source: str | None) -> None:
+    """
+    Apply supplier group specific sync rules with loop prevention.
+    """
+    # Add flags to bypass validation during sync
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_links = True
+    tgt.flags.ignore_mandatory = True
+    
     # ERPNext disallows leaf nodes that already have children.
     if _supplier_group_has_children(src=src, tgt=tgt, key_field=key_field, title_field_source=title_field_source):
         tgt.is_group = 1
 
-    # Avoid nested-set reparenting issues on existing nodes; keep current tree
-    # stable and only set parent when creating a new Supplier Group.
+    # For existing documents, don't modify parent during sync if it already has one
     if not tgt.is_new():
-        if hasattr(tgt, "old_parent"):
-            tgt.old_parent = tgt.get("parent_supplier_group")
-        return
+        db_parent = frappe.db.get_value("Supplier Group", tgt.name, "parent_supplier_group")
+        if db_parent:
+            frappe.logger().debug(f"Supplier Group {tgt.name} already exists with parent {db_parent}, skipping parent assignment")
+            tgt.parent_supplier_group = db_parent
+            if hasattr(tgt, "old_parent"):
+                tgt.old_parent = db_parent
+            return
 
+    # For new documents, set parent carefully
     parent_external = src.get("parent_supplier_group")
     if not parent_external:
+        frappe.logger().debug(f"No parent specified for {src.name}")
         return
 
-    self_markers = {
-        src.name,
-        src.get(key_field),
-        src.get(title_field_source) if title_field_source else None,
-        tgt.name,
+    # Get all possible identifiers for this node to prevent self-reference
+    self_identifiers = {
+        str(v) for v in [
+            src.name,
+            src.get(key_field),
+            src.get(title_field_source) if title_field_source else None,
+            tgt.name,
+            src.get("supplier_group_name"),  # Common field name
+        ] if v
     }
-    if parent_external in {v for v in self_markers if v}:
+    
+    frappe.logger().debug(f"Self identifiers for {src.name}: {self_identifiers}")
+    
+    # Don't set parent if it's self
+    if str(parent_external) in self_identifiers:
+        frappe.logger().warning(f"Prevented self-parent reference for {src.name}")
         return
 
+    # Resolve the parent name
     parent_name = _resolve_target_supplier_group_from_external(
         external_supplier_group_name=parent_external,
         key_field=key_field,
         title_field_source=title_field_source,
     )
+    
+    frappe.logger().debug(f"Resolved parent '{parent_external}' to '{parent_name}'")
+    
     if not parent_name:
+        frappe.logger().warning(f"Could not resolve parent '{parent_external}' for {src.name}")
         return
 
-    if tgt.name and parent_name == tgt.name:
+    # Check if parent exists
+    if not frappe.db.exists("Supplier Group", parent_name):
+        frappe.logger().warning(f"Parent '{parent_name}' does not exist in database")
         return
 
-    if tgt.name and frappe.db.exists("Supplier Group", tgt.name):
-        if _is_nestedset_descendant("Supplier Group", parent_name, tgt.name):
+    # For new documents, tgt.name might not be set yet
+    # Use the key_value or title as potential name
+    potential_name = tgt.name or src.get(key_field) or src.get(title_field_source) or src.name
+    
+    # CRITICAL CHECK: Verify this wouldn't create a loop
+    if frappe.db.exists("Supplier Group", potential_name):
+        # Node already exists in DB, check if parent is a descendant
+        if _is_descendant("Supplier Group", parent_name, potential_name):
+            frappe.logger().error(
+                f"PREVENTED LOOP: Cannot set parent '{parent_name}' for '{potential_name}' "
+                f"because parent is a descendant"
+            )
             return
-
+        
+        # Also check if parent is the same as node
+        if parent_name == potential_name:
+            frappe.logger().error(f"PREVENTED SELF-PARENT: Cannot set parent to self for '{potential_name}'")
+            return
+    
+    # All checks passed, set the parent
+    frappe.logger().debug(f"Setting parent for {potential_name} to {parent_name}")
     tgt.parent_supplier_group = parent_name
+
+
+def _is_descendant(doctype: str, potential_parent: str, node_name: str) -> bool:
+    """
+    Check if potential_parent is a descendant of node_name.
+    Returns True if parent is descendant of node.
+    """
+    if not potential_parent or not node_name:
+        return False
+    
+    # Get lft and rgt values
+    node_bounds = frappe.db.get_value(doctype, node_name, ["lft", "rgt"], as_dict=True)
+    parent_bounds = frappe.db.get_value(doctype, potential_parent, ["lft", "rgt"], as_dict=True)
+    
+    if not node_bounds or not parent_bounds:
+        return False
+    
+    # If parent is within node's range, it's a descendant
+    is_descendant = (
+        parent_bounds.lft > node_bounds.lft and 
+        parent_bounds.rgt < node_bounds.rgt
+    )
+    
+    if is_descendant:
+        frappe.logger().debug(
+            f"Parent {potential_parent} (lft:{parent_bounds.lft}, rgt:{parent_bounds.rgt}) "
+            f"is descendant of {node_name} (lft:{node_bounds.lft}, rgt:{node_bounds.rgt})"
+        )
+    
+    return is_descendant
+
+
+def _resolve_target_supplier_group_from_external(
+    external_supplier_group_name: str, key_field: str, title_field_source: str | None
+) -> str | None:
+    """
+    Resolve external supplier group reference to actual Supplier Group name with cycle prevention.
+    """
+    if not external_supplier_group_name:
+        return None
+
+    frappe.logger().debug(f"Resolving external supplier group: {external_supplier_group_name}")
+
+    # Check stack to prevent infinite recursion
+    stack_key = "external_supplier_group_resolution_stack"
+    stack = getattr(frappe.flags, stack_key, [])
+    if not isinstance(stack, list):
+        stack = []
+    
+    if external_supplier_group_name in stack:
+        frappe.logger().warning(f"Cycle detected in resolution: {external_supplier_group_name}")
+        return None
+    
+    stack.append(external_supplier_group_name)
+    frappe.flags.external_supplier_group_resolution_stack = stack
+    
+    try:
+        # Direct match by name
+        if frappe.db.exists("Supplier Group", external_supplier_group_name):
+            frappe.logger().debug(f"Found direct match: {external_supplier_group_name}")
+            return external_supplier_group_name
+
+        # Try by key field
+        target_key_field = _get_actual_target_key("Supplier Group", key_field)
+        if target_key_field:
+            name = frappe.db.get_value(
+                "Supplier Group", 
+                {target_key_field: external_supplier_group_name}, 
+                "name"
+            )
+            if name:
+                frappe.logger().debug(f"Found by key field {target_key_field}: {name}")
+                return name
+
+        # Check if it's an External Supplier Group
+        if not frappe.db.exists("External Supplier Group", external_supplier_group_name):
+            frappe.logger().debug(f"Not an External Supplier Group: {external_supplier_group_name}")
+            return None
+
+        # Get the external doc
+        external_doc = frappe.get_doc("External Supplier Group", external_supplier_group_name)
+        
+        # Try by remote_id
+        remote_id = external_doc.get(key_field)
+        if target_key_field and remote_id:
+            name = frappe.db.get_value(
+                "Supplier Group", 
+                {target_key_field: remote_id}, 
+                "name"
+            )
+            if name:
+                frappe.logger().debug(f"Found by remote_id {remote_id}: {name}")
+                return name
+
+        # Try by title
+        if title_field_source:
+            title = external_doc.get(title_field_source)
+            if title and frappe.db.exists("Supplier Group", title):
+                frappe.logger().debug(f"Found by title {title}: {title}")
+                return title
+
+        # Don't auto-sync parent during resolution to prevent cycles
+        frappe.logger().debug(f"Could not resolve {external_supplier_group_name}")
+        return None
+        
+    finally:
+        # Remove from stack
+        if external_supplier_group_name in stack:
+            stack.remove(external_supplier_group_name)
+        frappe.flags.external_supplier_group_resolution_stack = stack
+
+
+def _would_create_loop(doctype: str, node_name: str | None, parent_name: str) -> bool:
+    """
+    Check if setting parent_name as parent of node_name would create a loop.
+    Returns True if parent_name is a descendant of node_name.
+    """
+    if not node_name or not parent_name:
+        return False
+    
+    # If node doesn't exist yet, it can't have descendants
+    if not frappe.db.exists(doctype, node_name):
+        return False
+    
+    # Get lft and rgt values
+    node_bounds = frappe.db.get_value(doctype, node_name, ["lft", "rgt"], as_dict=True)
+    parent_bounds = frappe.db.get_value(doctype, parent_name, ["lft", "rgt"], as_dict=True)
+    
+    if not node_bounds or not parent_bounds:
+        return False
+    
+    # Check if parent is within node's range (meaning parent is descendant of node)
+    return (parent_bounds.lft > node_bounds.lft and parent_bounds.rgt < node_bounds.rgt)
 
 
 def _resolve_target_supplier_group_from_external(
@@ -1295,41 +1599,77 @@ def _supplier_group_has_children(src, tgt, key_field: str, title_field_source: s
 
     return False
 
-
 def _apply_territory_sync_rules(src, tgt, key_field: str, title_field_source: str | None) -> None:
-    # Avoid nested-set reparenting issues on existing nodes; keep current tree
-    # stable and only set parent when creating a new Territory.
+
+    ROOT = "All Territories"
+
+    # ✅ Ensure ROOT exists
+    if not frappe.db.exists("Territory", ROOT):
+        frappe.get_doc({
+            "doctype": "Territory",
+            "territory_name": ROOT,
+            "is_group": 1
+        }).insert(ignore_permissions=True)
+
+    # ✅ Never re-parent existing nodes (VERY IMPORTANT)
     if not tgt.is_new():
         if hasattr(tgt, "old_parent"):
             tgt.old_parent = tgt.get("parent_territory")
         return
 
-    parent_external = src.get("parent_territory")
-    if not parent_external:
+    # ✅ If this is ROOT itself → don’t set parent
+    if _is_root_territory_doc(tgt=tgt, src=src, title_field_source=title_field_source):
+        tgt.parent_territory = None
+        tgt.is_group = 1
         return
 
+    parent_external = src.get("parent_territory")
+
+    # ✅ No parent → attach to ROOT
+    if not parent_external:
+        tgt.parent_territory = ROOT
+        return
+
+    # ✅ Prevent self-parenting
     self_markers = {
         src.name,
         src.get(key_field),
         src.get(title_field_source) if title_field_source else None,
         tgt.name,
     }
+
     if parent_external in {v for v in self_markers if v}:
+        tgt.parent_territory = ROOT
         return
 
+    # ✅ Resolve parent
     parent_name = _resolve_target_territory_from_external(
         external_territory_name=parent_external,
         key_field=key_field,
         title_field_source=title_field_source,
     )
+
+    # ✅ Parent not resolved → attach to ROOT
     if not parent_name:
+        tgt.parent_territory = ROOT
         return
 
+    # ✅ Prevent self reference again
     if tgt.name and parent_name == tgt.name:
+        tgt.parent_territory = ROOT
         return
 
+    # ✅ MOST IMPORTANT — prevent moving node under its own child
     if tgt.name and frappe.db.exists("Territory", tgt.name):
-        if _is_nestedset_descendant("Territory", parent_name, tgt.name):
+
+        node = frappe.db.get_value("Territory", tgt.name, ["lft", "rgt"], as_dict=True)
+        parent = frappe.db.get_value("Territory", parent_name, ["lft", "rgt"], as_dict=True)
+
+        if node and parent and parent.lft > node.lft and parent.rgt < node.rgt:
+            frappe.logger().warning(
+                f"Prevented Territory loop: {tgt.name} -> {parent_name}"
+            )
+            tgt.parent_territory = ROOT
             return
 
     tgt.parent_territory = parent_name
@@ -1418,7 +1758,7 @@ def _sync_child_tables(src, tgt, target_meta):
     "purchase_order_item",
     "sales_order_item",
     "reference_detail_no",
-    "prevdoc_detail_docname"
+    "prevdoc_detail_docname",
     "cost_center"
     "project"
     }
@@ -1455,6 +1795,9 @@ def _sync_child_tables(src, tgt, target_meta):
             child = tgt.append(child_field, {})
 
             for key, value in row.items():
+
+                if key == "name":
+                    continue
 
                 if key in SYSTEM_FIELDS:
                     continue
