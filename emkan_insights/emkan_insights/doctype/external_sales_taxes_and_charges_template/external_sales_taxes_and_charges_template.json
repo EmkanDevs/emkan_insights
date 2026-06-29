@@ -2,6 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
+ "autoname": "field:remote_id",
  "creation": "2013-01-10 16:34:09",
  "description": "Standard tax template that can be applied to all Sales Transactions. This template can contain a list of tax heads and also other expense/income heads like \"Shipping\", \"Insurance\", \"Handling\" etc.",
  "doctype": "DocType",
@@ -80,7 +81,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -91,10 +93,11 @@
  "icon": "fa fa-money",
  "idx": 1,
  "links": [],
- "modified": "2026-03-05 07:36:37.205136",
+ "modified": "2026-03-18 13:09:12.475182",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Taxes and Charges Template",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

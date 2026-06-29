@@ -49,8 +49,11 @@ def sync_external_account(external_name, company):
         "account_currency": external.account_currency
     })
 
+    
+    account.flags.ignore_root_company_validation = True
+    account.flags.ignore_mandatory = True
+    account.flags.ignore_links = True
     account.insert(ignore_permissions=True)
-
     return account.name
 
 

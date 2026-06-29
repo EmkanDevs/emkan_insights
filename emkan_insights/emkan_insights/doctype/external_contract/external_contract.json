@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "EXT-CON-.YYYY.-.#####",
+ "autoname": "field:remote_id",
  "creation": "2018-04-12 06:32:04.582486",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -258,9 +258,10 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
@@ -270,11 +271,11 @@
  "grid_page_length": 50,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-05 15:21:03.575129",
+ "modified": "2026-03-18 12:48:30.109738",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Contract",
- "naming_rule": "Expression",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

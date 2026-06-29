@@ -25,8 +25,10 @@
   "source_site",
   "customer_details",
   "customer",
+  "client_name",
   "column_break_14",
   "sales_order",
+  "contract_no",
   "users_section",
   "users",
   "copied_from",
@@ -467,6 +469,17 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fetch_from": "customer.customer_name",
+   "fieldname": "client_name",
+   "fieldtype": "Data",
+   "label": "Client Name"
+  },
+  {
+   "fieldname": "contract_no",
+   "fieldtype": "Data",
+   "label": "Contract No"
   }
  ],
  "icon": "fa fa-puzzle-piece",
@@ -474,7 +487,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "max_attachments": 4,
- "modified": "2026-03-03 14:35:15.103933",
+ "modified": "2026-04-20 11:15:14.831812",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Project",

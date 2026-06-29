@@ -1,7 +1,8 @@
 import json
-from typing import List, Union
-
 import frappe
+from frappe import _
+from frappe.utils import flt, cint
+from typing import Union, List  # This fixes the NameError: Union
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -61,7 +62,7 @@ def sync_doc_by_key(
 
     # Additional fallback for doctypes where naming is based on title/source field
     # (for example UOM.name from uom_name), while remote_id is different.
-    if not existing_name and title_field_source:
+    if not existing_name and title_field_source and target_doctype != "Asset":
         title_candidate = src.get(title_field_source)
         if title_candidate and frappe.db.exists(target_doctype, title_candidate):
             existing_name = title_candidate
@@ -173,34 +174,22 @@ def sync_doc_by_key(
             "action": "ensured",
         }
 
-    # ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {
-    # "remote_id",
-    # "status",
-    # "workflow_state"
-    # }  
-
-    ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {"remote_id"} 
+    ignore = SYSTEM_FIELDS | (extra_ignore_fields or set()) | {"remote_id", "status"}
     if frappe.utils.cint(getattr(target_meta, "is_tree", 0)):
         # Never map nested-set internals from external payloads.
         ignore |= {"lft", "rgt", "old_parent"}
 
-    # target_meta = frappe.get_meta(target_doctype)
+    _sync_child_tables(src, tgt, target_meta)
 
-    # # ⭐⭐⭐ VERY IMPORTANT — call once
-    # _sync_child_tables(
-    #     src,
-    #     tgt,
-    #     target_meta
-#)
     for field, value in src.as_dict().items():
         # Sync child tables
-        if target_doctype in ["Purchase Invoice", "Payment Entry"]:
+        # if target_doctype in ["Purchase Invoice", "Payment Entry"]:
 
-            _sync_child_tables(
-                src,
-                tgt,
-                target_meta
-            )
+        #     _sync_child_tables(
+        #         src,
+        #         tgt,
+        #         target_meta
+        #     )
         if field in ignore:
             continue
 
@@ -230,6 +219,8 @@ def sync_doc_by_key(
 
         if target_field in target_fields:
             df = target_meta.get_field(target_field)
+            if df and df.fieldtype == "Table":
+                continue
             if df and df.fieldtype == "Link" and value:
                 resolved = resolve_link_value(df.options, value)
                 if resolved:
@@ -304,6 +295,7 @@ def sync_doc_by_key(
             key_field=key_field,
             title_field_source=title_field_source,
         )
+        tgt.flags.ignore_links = True
     elif target_doctype == "Contact":
         _apply_contact_sync_rules(tgt)
     elif target_doctype == "Territory":
@@ -320,8 +312,42 @@ def sync_doc_by_key(
             key_field=key_field,
             title_field_source=title_field_source,
         )
+
+    elif target_doctype == "Sales Person":
+        _apply_sales_person_sync_rules(tgt)
+    # elif target_doctype == "Asset":
+    #     _apply_asset_sync_rules(src=src, tgt=tgt, key_field=key_field)
+    #     tgt.insert()
+        
+    #     if tgt.docstatus == 1:
+    #         # This is the 'Force' button for precision errors
+    #         tgt.flags.ignore_validate_update_after_submit = True
+    #         tgt.submit()
+            
+    #     frappe.db.commit()
     elif target_doctype == "Asset":
         _apply_asset_sync_rules(src=src, tgt=tgt, key_field=key_field)
+        tgt.flags.ignore_mandatory = True
+        tgt.flags.ignore_links = True
+        tgt.docstatus = 0          # always insert as Draft first
+        tgt.insert(ignore_permissions=True)
+
+        original_docstatus = cint(src.get("docstatus"))
+        if original_docstatus == 1:
+            tgt.flags.ignore_validate_update_after_submit = True
+            tgt.submit()
+        elif original_docstatus == 2:
+            tgt.flags.ignore_validate_update_after_submit = True
+            tgt.submit()
+            tgt.cancel()
+
+        frappe.db.commit()
+        return {                   # ← EARLY RETURN to skip the tgt.save() below
+            "doctype": "Asset",
+            "name": tgt.name,
+            "action": "created" if is_new else "updated",
+        }
+
 
     elif target_doctype == "Purchase Invoice":
         _apply_purchase_invoice_sync_rules(src, tgt, key_field)
@@ -337,6 +363,9 @@ def sync_doc_by_key(
 
     elif target_doctype == "Address":
         _apply_address_sync_rules(src, tgt)
+
+    elif target_doctype == "Asset Category":
+        _apply_asset_category_sync_rules(src, tgt)
 
     try:
         tgt.save(ignore_permissions=True)
@@ -371,7 +400,20 @@ def _apply_address_sync_rules(src, tgt):
     tgt.flags.ignore_validate = True
     tgt.flags.ignore_mandatory = True
 
-    
+def _apply_sales_person_sync_rules(tgt):
+    # Sales Person "targets" child table links to Fiscal Year and Monthly
+    # Distribution, which often don't exist locally for remote records.
+    # We don't care about target/quota data for synced sales people, so
+    # just drop those rows and bypass link validation as a safety net.
+    tgt.flags.ignore_links = True
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_mandatory = True
+    tgt.set("targets", [])
+
+def _apply_asset_category_sync_rules(src, tgt):
+    tgt.flags.ignore_links = True
+    tgt.flags.ignore_validate = True
+    tgt.flags.ignore_mandatory = True  
 
 def _apply_contact_sync_rules(tgt):
     # Bypass strict validations
@@ -514,7 +556,10 @@ def get_external_sync_info(source_doctype: str):
         "External Address": {"target": "Address", "title_field": "address_title", "force_id": True, "defaults": {}},
         "External Contact": {"target": "Contact", "title_field": "first_name", "force_id": True, "defaults": {}},
         "External Sales Stage":{"target":"Sales Stage","title_field":"stage_name","force_id":True,"defaults":{}},
-        "External Lead Source":{"target":"Lead Source","title_field":"source_name","force_id":True,"defaults":{}}
+        "External Lead Source":{"target":"Lead Source","title_field":"source_name","force_id":True,"defaults":{}},
+        "External Work Order":{"target":"Work Order","title_field":"source_name","force_id":True,"defaults":{}},
+        "External BOM":{"target":"BOM","title_field":"source_name","force_id":True,"defaults":{}},
+        "External Supplier Quotation": {"target": "Supplier Quotation","title_field": "supplier_name","force_id": True,"defaults": {}}
 
     }
 
@@ -975,34 +1020,96 @@ def _get_actual_target_key(target_doctype: str, key_field: str) -> str | None:
     return None
 
 
+
+# def _apply_asset_sync_rules(src, tgt, key_field: str) -> None:
+#     # 1. Item Resolution
+#     if not tgt.get("item_code"):
+#         resolved_item = _resolve_target_item_from_external(src.get("item_code"), key_field)
+#         if not resolved_item:
+#             candidate_name = src.get("item_name") or src.get("asset_name")
+#             if candidate_name:
+#                 resolved_item = frappe.db.get_value("Item", {"item_name": candidate_name, "is_fixed_asset": 1}, "name")
+#         tgt.item_code = resolved_item or _create_fixed_asset_item_for_external_asset(src=src, key_field=key_field)
+
+#     # 2. DYNAMIC FIELD CHECK: This stops the 'Unknown column' crash
+#     if not tgt.get("location"):
+#         valid_company_fields = frappe.get_meta("Company").get_valid_columns()
+#         company_loc = None
+        
+#         # Check for v15 vs older ERPNext field names
+#         if "asset_location" in valid_company_fields:
+#             company_loc = frappe.db.get_value("Company", tgt.company, "asset_location")
+#         elif "location" in valid_company_fields:
+#             company_loc = frappe.db.get_value("Company", tgt.company, "location")
+            
+#         tgt.location = src.get("location") or company_loc or "Store"
+
+#     # 3. Precision Bypass (Rounding to 2 decimals)
+#     if src.get("value_after_depreciation"):
+#         tgt.value_after_depreciation = flt(src.get("value_after_depreciation"), 2)
+    
+#     if src.get("gross_purchase_amount"):
+#         tgt.gross_purchase_amount = flt(src.get("gross_purchase_amount"), 2)
+
+#     # 4. Docstatus & Submission Flag
+#     tgt.docstatus = cint(src.get("docstatus"))
+#     if cint(tgt.get("calculate_depreciation")) and not tgt.get("finance_books"):
+#         tgt.calculate_depreciation = 0
+
+
 def _apply_asset_sync_rules(src, tgt, key_field: str) -> None:
+    # 1. Item Resolution
     if not tgt.get("item_code"):
         resolved_item = _resolve_target_item_from_external(src.get("item_code"), key_field)
         if not resolved_item:
             candidate_name = src.get("item_name") or src.get("asset_name")
             if candidate_name:
                 resolved_item = frappe.db.get_value(
-                    "Item",
-                    {"item_name": candidate_name, "is_fixed_asset": 1, "is_stock_item": 0},
-                    "name",
+                    "Item", {"item_name": candidate_name, "is_fixed_asset": 1}, "name"
                 )
-        if not resolved_item:
-            resolved_item = _create_fixed_asset_item_for_external_asset(src=src, key_field=key_field)
-        if resolved_item:
-            tgt.item_code = resolved_item
+        tgt.item_code = resolved_item or _create_fixed_asset_item_for_external_asset(
+            src=src, key_field=key_field
+        )
+
+    # 2. Location
+    if not tgt.get("location"):
+        valid_company_fields = frappe.get_meta("Company").get_valid_columns()
+        company_loc = None
+        if "asset_location" in valid_company_fields:
+            company_loc = frappe.db.get_value("Company", tgt.company, "asset_location")
+        elif "location" in valid_company_fields:
+            company_loc = frappe.db.get_value("Company", tgt.company, "location")
+        tgt.location = src.get("location") or company_loc or "Head Office"
+
+    # 3. FIX: Always set value_after_depreciation — even when it is 0
+    raw_vad = src.get("value_after_depreciation")
+    if raw_vad is not None:
+        tgt.value_after_depreciation = flt(raw_vad, 2)
+
+    if src.get("gross_purchase_amount"):
+        tgt.gross_purchase_amount = flt(src.get("gross_purchase_amount"), 2)
+
+    # 4. FIX: Sync finance_books child table for Asset BEFORE depreciation check
+    target_meta = frappe.get_meta("Asset")
+    _sync_child_tables(src, tgt, target_meta)
+
+    # 5. FIX: Only disable calculate_depreciation if finance_books is STILL empty
+    #    after the child table sync above
+    if cint(src.get("calculate_depreciation")):
+        if tgt.get("finance_books"):
+            tgt.calculate_depreciation = 1
         else:
-            frappe.throw(
-                f"Unable to resolve Item for External Asset {src.name}. "
-                "Sync External Item first or provide a valid item_code."
+            # Finance books missing — safer to disable than crash
+            tgt.calculate_depreciation = 0
+            frappe.log_error(
+                f"Asset {src.name}: calculate_depreciation disabled — no finance_books synced",
+                "Asset Sync Warning"
             )
-
-    if not tgt.get("asset_name"):
-        tgt.asset_name = src.get("asset_name") or src.get("item_name") or tgt.get("item_code")
-
-    # ERPNext validates depreciation rows before deriving defaults, so an asset
-    # with calculate_depreciation=1 and no finance_books fails to save.
-    if frappe.utils.cint(tgt.get("calculate_depreciation")) and not tgt.get("finance_books"):
+    else:
         tgt.calculate_depreciation = 0
+
+    # 6. Docstatus
+    tgt.docstatus = cint(src.get("docstatus"))
 
 
 def _apply_supplier_sync_rules(tgt) -> None:
@@ -1153,6 +1260,28 @@ def _resolve_target_asset_category_from_external(external_asset_category: str, k
 def _apply_item_group_sync_rules(src, tgt, key_field: str, title_field_source: str | None) -> None:
     # Avoid nested-set reparenting issues on existing nodes; keep current tree
     # stable and only set parent when creating a new Item Group.
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # FIX: Prevent demoting a group node to leaf if it has children
+    # This avoids: "Item Group X cannot be a leaf node as it has children"
+    # ═══════════════════════════════════════════════════════════════════════
+    if not tgt.is_new():
+        has_item_group_children = frappe.db.exists(
+            "Item Group", {"parent_item_group": tgt.name}
+        )
+        has_item_children = frappe.db.exists(
+            "Item", {"item_group": tgt.name}
+        )
+
+        if (has_item_group_children or has_item_children) and src.get("is_group") == 0:
+            tgt.is_group = 1
+            frappe.logger().warning(
+                f"Item Group {tgt.name}: preserved is_group=1 because it has "
+                f"children (item_groups={bool(has_item_group_children)}, "
+                f"items={bool(has_item_children)}). Source had is_group=0."
+            )
+    # ═══════════════════════════════════════════════════════════════════════
+
     if not tgt.is_new():
         if hasattr(tgt, "old_parent"):
             tgt.old_parent = tgt.get("parent_item_group")
@@ -1184,11 +1313,9 @@ def _apply_item_group_sync_rules(src, tgt, key_field: str, title_field_source: s
 
     if tgt.name and frappe.db.exists("Item Group", tgt.name):
         if _is_nestedset_descendant("Item Group", parent_name, tgt.name):
-            # Avoid loops like moving node under its own descendant.
             return
 
     tgt.parent_item_group = parent_name
-
 
 def _resolve_target_item_group_from_external(
     external_item_group_name: str, key_field: str, title_field_source: str | None
@@ -1753,60 +1880,98 @@ def _is_root_territory_doc(tgt, src, title_field_source: str | None) -> bool:
 
 def _sync_child_tables(src, tgt, target_meta):
     ROW_LINK_FIELDS = {
-    "po_detail",
-    "so_detail",
-    "purchase_order_item",
-    "sales_order_item",
-    "reference_detail_no",
-    "prevdoc_detail_docname",
-    "cost_center"
-    "project"
+        "po_detail", "so_detail", "purchase_order_item", "sales_order_item",
+        "reference_detail_no", "prevdoc_detail_docname", "cost_center", "project"
     }
-    table_fields = [
-        df for df in target_meta.fields
-        if df.fieldtype == "Table"
-    ]
+    table_fields = [df for df in target_meta.fields if df.fieldtype == "Table"]
 
     for df in table_fields:
-
         child_field = df.fieldname
-
         source_rows = src.get(child_field)
-
         if not source_rows:
             continue
 
-        # clear existing
+        # Hard-delete any existing child rows for this parent in the DB,
+        # not just clear the in-memory list — protects against double-sync
+        # calls landing duplicate rows when tgt is not new.
+        if not tgt.is_new() and tgt.name:
+            frappe.db.delete(df.options, {
+                "parent": tgt.name,
+                "parenttype": tgt.doctype,
+                "parentfield": child_field,
+            })
+
         tgt.set(child_field, [])
 
         child_meta = frappe.get_meta(df.options)
-
-        child_fields = {
-            f.fieldname
-            for f in child_meta.fields
-        }
+        child_fields = {f.fieldname for f in child_meta.fields}
 
         for row in source_rows:
-
-            # ✅ Convert Frappe Doc → dict safely
             if hasattr(row, "as_dict"):
                 row = row.as_dict()
 
             child = tgt.append(child_field, {})
-
             for key, value in row.items():
-
-                if key == "name":
+                if key == "name" or key in SYSTEM_FIELDS or key in ROW_LINK_FIELDS:
                     continue
-
-                if key in SYSTEM_FIELDS:
-                    continue
-
-                if key in ROW_LINK_FIELDS:
-                    continue
-
                 if key in child_fields:
                     child.set(key, value)
+# def _sync_child_tables(src, tgt, target_meta):
+#     ROW_LINK_FIELDS = {
+#     "po_detail",
+#     "so_detail",
+#     "purchase_order_item",
+#     "sales_order_item",
+#     "reference_detail_no",
+#     "prevdoc_detail_docname",
+#     "cost_center"
+#     "project"
+#     }
+#     table_fields = [
+#         df for df in target_meta.fields
+#         if df.fieldtype == "Table"
+#     ]
+
+#     for df in table_fields:
+
+#         child_field = df.fieldname
+
+#         source_rows = src.get(child_field)
+
+#         if not source_rows:
+#             continue
+
+#         # clear existing
+#         tgt.set(child_field, [])
+
+#         child_meta = frappe.get_meta(df.options)
+
+#         child_fields = {
+#             f.fieldname
+#             for f in child_meta.fields
+#         }
+
+#         for row in source_rows:
+
+#             # ✅ Convert Frappe Doc → dict safely
+#             if hasattr(row, "as_dict"):
+#                 row = row.as_dict()
+
+#             child = tgt.append(child_field, {})
+
+#             for key, value in row.items():
+
+#                 if key == "name":
+#                     continue
+
+#                 if key in SYSTEM_FIELDS:
+#                     continue
+
+#                 if key in ROW_LINK_FIELDS:
+#                     continue
+
+#                 if key in child_fields:
+#                     child.set(key, value)
 
 def _apply_purchase_invoice_sync_rules(src, tgt, key_field):
 

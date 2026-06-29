@@ -11,5 +11,6 @@ class ExternalAsset(Document):
 
 @frappe.whitelist()
 def sync_external_records(names):
-    from emkan_insights.emkan_insights.external_sync import sync_external_docs
-    return sync_external_docs(source_doctype="External Asset", names=names)
+    from emkan_insights.emkan_insights.external_asset_sync import sync_external_assets
+    return sync_external_assets(source_doctype="External Asset", names=names)
+        

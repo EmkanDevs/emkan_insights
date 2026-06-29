@@ -25,11 +25,21 @@ frappe.listview_settings['External Material Request'] = {
                         freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
                         callback(r) {
 
-                            if (!r.exc) {
-                                frappe.show_alert({
-                                    message: __('Material Request synced successfully'),
-                                    indicator: 'green'
-                                });
+                            if (!r.exc && r.message) {
+                                const { summary, results } = r.message;
+                                const created = (results || []).filter(x => x.action === 'created').length;
+                                const updated = (results || []).filter(x => x.action === 'updated').length;
+                                const errors  = (results || []).filter(x => x.action === 'error').length;
+
+                                // Only show the inline alert if the msgprint from the server
+                                // didn't already pop up (i.e. no errors). When there ARE errors
+                                // the server calls frappe.msgprint itself.
+                                if (!errors) {
+                                    frappe.show_alert({
+                                        message: __(summary),
+                                        indicator: (created + updated) > 0 ? 'green' : 'blue'
+                                    });
+                                }
 
                                 listview.refresh();
                             }

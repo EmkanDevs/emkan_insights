@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2026-02-11 13:17:12.285046",
  "doctype": "DocType",
  "document_type": "Document",
@@ -560,9 +560,10 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
@@ -610,11 +611,11 @@
    "link_fieldname": "target_asset"
   }
  ],
- "modified": "2026-02-05 14:07:32.764614",
+ "modified": "2026-03-25 13:06:47.802282",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Asset",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -656,9 +657,3 @@
  "title_field": "asset_name",
  "track_changes": 1
 }
-
-
-
-
-
-

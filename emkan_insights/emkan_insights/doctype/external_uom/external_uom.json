@@ -43,17 +43,16 @@
    "fieldtype": "Data",
    "label": "Remote ID"
   },
- {
+  {
    "fieldname": "source_site",
-   "fieldtype": "Link",
-   "label": "Source Site",
-   "options": "External Site Configuration"
+   "fieldtype": "Data",
+   "label": "Source Site"
   }
  ],
  "icon": "fa fa-compass",
  "idx": 1,
  "links": [],
- "modified": "2026-02-05 15:32:52.067497",
+ "modified": "2026-05-08 09:32:39.618187",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Uom",

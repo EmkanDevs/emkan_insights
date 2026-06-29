@@ -2,7 +2,7 @@
  "actions": [],
  "allow_auto_repeat": 1,
  "allow_import": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2013-06-18 12:39:59",
  "doctype": "DocType",
  "document_type": "Document",
@@ -1671,7 +1671,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "site_url",
@@ -1683,11 +1684,11 @@
  "idx": 105,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-04 08:26:36.363810",
+ "modified": "2026-03-23 08:27:07.225354",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Order",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

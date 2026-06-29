@@ -4,31 +4,47 @@ frappe.listview_settings['External Lead'] = {
             const selected = listview.get_checked_items();
 
             if (!selected.length) {
-                frappe.msgprint(__('Please select at least one External Lead'));
+                frappe.msgprint(__('Please select at least one External Contact'));
                 return;
             }
 
             const names = selected.map(row => row.name);
 
             frappe.confirm(
-                __('Sync selected External Lead records to Lead master?'),
+                __('Sync {0} selected record(s) to Contact master?', [names.length]),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.doctype.external_lead.external_lead.sync_external_leads',
                         args: {
-                            source_doctype: 'External Lead',
-                            names
+                            source_doctype: 'External Contact',
+                            names: names
                         },
                         freeze: true,
-                        freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
+                        freeze_message: __('Syncing {0} selected record(s)...', [names.length]),
                         callback(r) {
-                            if (!r.exc) {
-                                frappe.show_alert({
-                                    message: __('Lead synced successfully'),
-                                    indicator: 'green'
-                                });
-                                listview.refresh();
+                            if (r.exc) {
+                                frappe.msgprint(__('Error: ') + r.exc);
+                                return;
                             }
+                            
+                            const results = r.message || [];
+                            const synced = results.filter(x => x.status === 'synced').length;
+                            const exists = results.filter(x => x.status === 'exists').length;
+                            const errors = results.filter(x => x.status === 'error');
+                            
+                            let msg = __('Synced: {0}, Exists: {1}', [synced, exists]);
+                            if (errors.length) {
+                                msg += '<br><br>' + __('Errors:') + '<br>';
+                                msg += errors.map(e => `<b>${e.name}</b>: ${e.error}`).join('<br>');
+                            }
+                            
+                            frappe.msgprint({
+                                title: __('Sync Results'),
+                                message: msg,
+                                indicator: errors.length ? 'orange' : 'green'
+                            });
+                            
+                            listview.refresh();
                         }
                     });
                 }

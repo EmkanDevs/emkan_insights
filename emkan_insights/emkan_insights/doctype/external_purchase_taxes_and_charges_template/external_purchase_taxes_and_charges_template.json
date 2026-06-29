@@ -2,6 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
+ "autoname": "field:remote_id",
  "creation": "2013-01-10 16:34:08",
  "description": "Standard tax template that can be applied to all Purchase Transactions. This template can contain a list of tax heads and also other expense heads like \"Shipping\", \"Insurance\", \"Handling\", etc.",
  "doctype": "DocType",
@@ -78,7 +79,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -89,10 +91,11 @@
  "icon": "fa fa-money",
  "idx": 1,
  "links": [],
- "modified": "2026-03-05 07:28:41.165595",
+ "modified": "2026-03-18 13:13:42.831296",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Purchase Taxes and Charges Template",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

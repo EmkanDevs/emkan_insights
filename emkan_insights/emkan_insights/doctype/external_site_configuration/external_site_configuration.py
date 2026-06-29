@@ -76,15 +76,15 @@ def _fetch_remote_docs_with_children(base_url, headers, remote_dt, rows):
             doc = response.json().get("data") or row
 
             # --- SCRUBBING LOGIC START ---
-            if remote_dt == "Quotation":
-                if doc.get("cost_center") == problematic_cc:
-                    doc["cost_center"] = None
+            # if remote_dt == "Quotation":
+            #     if doc.get("cost_center") == problematic_cc:
+            #         doc["cost_center"] = None
 
-                for key, value in doc.items():
-                    if isinstance(value, list):
-                        for child_row in value:
-                            if isinstance(child_row, dict) and child_row.get("cost_center") == problematic_cc:
-                                child_row["cost_center"] = None
+            #     for key, value in doc.items():
+            #         if isinstance(value, list):
+            #             for child_row in value:
+            #                 if isinstance(child_row, dict) and child_row.get("cost_center") == problematic_cc:
+            #                     child_row["cost_center"] = None
             # --- SCRUBBING LOGIC END ---
 
             docs.append(doc)
@@ -264,14 +264,14 @@ def _ensure_root_account(local_dt, name_field, root_label, company=None):
 # SYNC HELPERS (per-doctype post-processing)
 # ─────────────────────────────────────────────────────────────────────────────
 ADDRESS_LOCKED_DOCTYPES = {
-    "External Sales Invoice",
-    "External Delivery Note",
-    "External Sales Order",
-    "External Quotation",
-    "External Purchase Invoice",
-    "External Purchase Order",
-    "External Purchase Receipt",
-}
+    # "External Sales Invoice",
+    # "External Delivery Note",
+#     "External Sales Order",
+#     "External Quotation",
+#     "External Purchase Invoice",
+#     "External Purchase Order",
+#     "External Purchase Receipt",
+ }
 
 ADDRESS_FIELDS = [
     "customer_address",
@@ -371,9 +371,18 @@ def _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id):
         for row in doc.get("items"):
             if not row.warehouse:
                 row.warehouse = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
+    if local_dt == "External Purchase Receipt":
+        default_wh = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
+
+        for row in doc.get("items"):
+            if not row.warehouse:
+                row.warehouse = default_wh
+
+        if not doc.get("company") and company:
+            doc.company = company
 
 
-def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors):
+def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors,site_url):
     remote_id = item.get('name') or item.get('id')
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
 
@@ -409,9 +418,11 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     else:
         # ✅ FIX: create new doc — previously this path returned False, dropping all new records
         doc = frappe.new_doc(local_dt)
+        doc.__islocal = True
         doc.name = remote_id
         if 'remote_id' in local_fields:
             doc.remote_id = remote_id
+        doc.flags.ignore_naming_series = True
 
     # Map fields
     for field, value in item.items():
@@ -422,7 +433,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                     for row in value:
                         if isinstance(row, dict):
                             row = dict(row)  # shallow copy — don't mutate original
-                            row.pop("name", None)
+                            # row.pop("name", None)
                             row.pop("idx", None)
                             row.pop("parent", None)
                             row.pop("parenttype", None)
@@ -436,6 +447,9 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                     doc.set(field, cleaned_rows)
                 else:
                     doc.set(field, value)
+
+    if "source_site" in local_fields:
+        doc.source_site = site_url
 
     # Standard Flags
     doc.flags.ignore_links = True
@@ -492,7 +506,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
 # SHARED SYNC LOOP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _run_sync_loop(data, local_dt, local_fields, company, configuration_name):
+def _run_sync_loop(data, local_dt, local_fields, company, configuration_name, site_url):
     """
     Return values from _process_item:
       True  → saved/updated this run  → count++
@@ -503,7 +517,7 @@ def _run_sync_loop(data, local_dt, local_fields, company, configuration_name):
     not_saved = []
 
     for idx, item in enumerate(data, start=1):
-        result = _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors)
+        result = _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors, site_url)
         if result:
             count += 1
         else:
@@ -535,6 +549,7 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
         while True:
             params = {
                 "fields": json.dumps(["*"]),
+                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]), 
                 "limit_page_length": limit,
                 "limit_start": start
             }
@@ -556,13 +571,13 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
     data = _sort_accounts_by_reference_order(data)
 
     count, errors, not_saved = _run_sync_loop(
-        data, local_dt, local_fields, company, configuration_name
+        data, local_dt, local_fields, company, configuration_name,site_url
     )
 
     # ✅ Retry pass — catches any edge cases left from first run
     if not_saved:
         retry_count, retry_errors, not_saved = _run_sync_loop(
-            not_saved, local_dt, local_fields, company, configuration_name
+            not_saved, local_dt, local_fields, company, configuration_name,site_url
         )
         count += retry_count
         errors.extend(retry_errors)
@@ -585,6 +600,22 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN GENERIC SYNC ENDPOINT
 # ─────────────────────────────────────────────────────────────────────────────
+@frappe.whitelist()
+def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync_data_from_remote",
+        site_url = site_url,
+        api_key = api_key,
+        api_secret =api_secret,
+        ref_doctype = ref_doctype,
+        child_docname =child_docname,
+        company =company,
+        configuration_name=configuration_name,
+        queue="long",
+        timeout=2000
+    )
+    return "Sync Queued"
+
 
 @frappe.whitelist()
 def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
@@ -615,6 +646,10 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Price List": "External Price List",
         "Project Type": "External Project Type",
         "Supplier": "External Supplier",
+        "BOM":"External BOM",
+        "Production Plan":"External Production Plan",
+        "Work Order":"External Work Order",
+        "Tax Category":"External Tax Category",
         "Supplier Group": "External Supplier Group",
         "Territory": "External Territory",
         "UOM": "External Uom",
@@ -672,12 +707,18 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         while True:
             params = {
                 "fields": json.dumps(["*"]),
+                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),   # ← add this
                 "limit_page_length": limit,
                 "limit_start": start
             }
-            response = requests.get(remote_url, headers=headers, params=params, timeout=30)
+            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
             response.raise_for_status()
             page = response.json().get('data', [])
+            frappe.logger("external_sync").info(
+                    "RAW PAGE for %s: %d records, statuses=%s",
+                    remote_dt, len(page),
+                    [ (r.get("name"), r.get("docstatus"), r.get("status")) for r in page if frappe.utils.cint(r.get("docstatus")) == 2 ]
+                )
             if not page:
                 break
             data.extend(page)
@@ -687,13 +728,16 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
     except Exception as e:
         frappe.throw(_("Sync failed: {0}").format(str(e)))
 
+    # frappe.logger("external_sync").info(f"STEP 1: {remote_dt} initial fetch found {len(data)} records")
+
+
     if remote_dt in [
         "Asset Category", "Purchase Invoice", "Payment Entry", "Purchase Order",
         "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation",
         "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
         "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
         "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order",
-        "Material Request", "Contact", "Address"
+        "Material Request", "Contact", "Address" , "Journal Entry","Item Group","Item","Account","Tax Category","BOM","Work Order","Production Plan"
     ] and data:
         data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
 
@@ -708,13 +752,13 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         data = _sort_by_hierarchy(data, "parent_item_group")
 
     count, errors, not_saved = _run_sync_loop(
-        data, local_dt, local_fields, company, configuration_name
+        data, local_dt, local_fields, company, configuration_name,site_url
     )
 
     # ✅ Retry pass — catches any edge cases left from first run
     if not_saved:
         retry_count, retry_errors, not_saved = _run_sync_loop(
-            not_saved, local_dt, local_fields, company, configuration_name
+            not_saved, local_dt, local_fields, company, configuration_name,site_url
         )
         count += retry_count
         errors.extend(retry_errors)
@@ -731,6 +775,9 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "errors": errors,
         "missing_parent_accounts": not_saved,
     }
+
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -758,3 +805,5 @@ def _clean_child_rows(doc):
             row.pop("parentfield", None)
             cleaned.append(row)
         doc.set(table_field.fieldname, cleaned)
+
+

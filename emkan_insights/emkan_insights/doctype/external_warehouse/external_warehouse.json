@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:warehouse_name",
+ "autoname": "field:remote_id",
  "creation": "2023-05-29 13:02:17.121296",
  "description": "A logical Warehouse against which stock entries are made.",
  "doctype": "DocType",
@@ -266,7 +266,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -280,7 +281,7 @@
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-02-19 13:28:58.700546",
+ "modified": "2026-06-17 14:16:58.570118",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Warehouse",

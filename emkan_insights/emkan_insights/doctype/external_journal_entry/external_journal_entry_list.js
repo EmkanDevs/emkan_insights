@@ -14,7 +14,7 @@ frappe.listview_settings['External Journal Entry'] = {
                 __('Sync selected External Journal Entry records to Journal Entry master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_journal_entry_sync.sync_external_journal_entries',
                         args: {
                             source_doctype: 'External Journal Entry',
                             names

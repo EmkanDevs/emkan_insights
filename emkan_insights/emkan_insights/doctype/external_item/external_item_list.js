@@ -14,7 +14,7 @@ frappe.listview_settings['External Item'] = {
                 __('Sync selected External Item records to Item master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_item_sync.sync_external_items',
                         args: {
                             source_doctype: 'External Item',
                             names

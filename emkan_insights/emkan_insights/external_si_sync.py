@@ -123,6 +123,7 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             si.flags.ignore_permissions = True
             si.flags.ignore_validate = True
             si.flags.ignore_mandatory = True
+            si.flags.ignore_links = True
 
             # ------------------------------------------------
             # INSERT

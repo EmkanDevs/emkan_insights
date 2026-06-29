@@ -81,7 +81,7 @@ frappe.ui.form.on('External Site Configuration CT', {
             frappe.model.set_value(cdt, cdn, 'exported_doctype', mapping[row.ref_doctype]);
         }
 
-        const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync_data_from_remote";
+        const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
         const base_args = {
             site_url: frm.doc.site_url,
             api_key: frm.doc.api_key,
@@ -157,7 +157,51 @@ frappe.ui.form.on('External Site Configuration CT', {
         };
 
         call_sync(generic_method, generic_args);
-    }
+    },
+
+    
+    test: function (frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        // Added Location to the allowed list for testing
+        const allowed = ["Purchase Receipt", "Stock Entry", "Location"];
+        
+        if (!allowed.includes(row.ref_doctype)) {
+            frappe.msgprint(__('The "test" button is currently active for: ' + allowed.join(', ')));
+            return;
+        }
+
+        frappe.call({
+            method: "emkan_insights.emkan_insights.doctype.external_site_configuration.se_pr_sync.force_sync_transaction",
+            args: {
+                site_url: frm.doc.site_url,
+                api_key: frm.doc.api_key,
+                api_secret: frm.doc.api_secret,
+                doctype: row.ref_doctype,
+                child_docname: cdn
+            },
+            freeze: true,
+            freeze_message: __(`Testing Sync for ${row.ref_doctype}...`),
+            callback: function (r) {
+                if (r.message && r.message.status === "success") {
+                    // This alert now shows both FETCHED and SAVED counts
+                    frappe.show_alert({
+                        message: __(`Fetched ${r.message.fetched}, Saved/Updated ${r.message.count} records.`),
+                        indicator: r.message.fetched > 0 ? 'green' : 'orange'
+                    });
+                    
+                    frappe.model.set_value(cdt, cdn, 'last_sync', r.message.last_sync);
+                    frm.refresh_field('external_site_configuration_ct');
+                } else {
+                    frappe.msgprint({
+                        title: __('Sync Failed'),
+                        indicator: 'red',
+                        message: r.message ? r.message.error : __("Unknown Error")
+                    });
+                }
+            }
+        });
+    },
 });
 
 

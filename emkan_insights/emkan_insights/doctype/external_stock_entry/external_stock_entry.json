@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_import": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2013-04-09 11:43:55",
  "doctype": "DocType",
  "document_type": "Document",
@@ -699,7 +699,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -713,11 +714,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-04 08:52:32.392576",
+ "modified": "2026-03-24 10:47:47.207427",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Stock Entry",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

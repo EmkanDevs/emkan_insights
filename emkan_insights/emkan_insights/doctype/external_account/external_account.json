@@ -22,6 +22,8 @@
   "account_currency",
   "column_break1",
   "parent_account",
+  "custom_pa_name",
+  "custom_pa_number",
   "account_type",
   "tax_rate",
   "freeze_account",
@@ -69,9 +71,8 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Link",
-   "label": "Source Site",
-   "options": "External Site Configuration"
+   "fieldtype": "Data",
+   "label": "Source Site"
   },
   {
    "default": "0",
@@ -207,13 +208,23 @@
    "label": "Naming Series",
    "read_only": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "custom_pa_name",
+   "fieldtype": "Data",
+   "label": "PA Name"
+  },
+  {
+   "fieldname": "custom_pa_number",
+   "fieldtype": "Data",
+   "label": "PA Number"
   }
  ],
  "icon": "fa fa-money",
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-02-25 09:44:03.693095",
+ "modified": "2026-06-17 14:09:25.549809",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Account",

@@ -15,9 +15,11 @@
   "country",
   "remote_id",
   "source_site",
+  "is_mapped",
   "column_break0",
   "supplier_group",
   "supplier_type",
+  "cr_number",
   "is_transporter",
   "image",
   "defaults_section",
@@ -484,9 +486,19 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Link",
-   "label": "Source Site",
-   "options": "External Site Configuration"
+   "fieldtype": "Data",
+   "label": "Source Site"
+  },
+  {
+   "fieldname": "cr_number",
+   "fieldtype": "Data",
+   "label": "CR Number"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_mapped",
+   "fieldtype": "Check",
+   "label": "Is Mapped"
   }
  ],
  "icon": "fa fa-user",
@@ -499,7 +511,7 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-03-03 13:02:44.879706",
+ "modified": "2026-04-24 09:05:51.630771",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Supplier",

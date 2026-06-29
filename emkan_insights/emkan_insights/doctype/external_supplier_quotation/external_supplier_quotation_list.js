@@ -1,5 +1,10 @@
 frappe.listview_settings['External Supplier Quotation'] = {
     onload(listview) {
+        // Page length settings
+        listview.page_length = 50;
+        listview.load_more = true;
+
+        // Sync button
         listview.page.add_inner_button(__('Sync to Supplier Quotation'), () => {
             const selected = listview.get_checked_items();
 
@@ -14,7 +19,7 @@ frappe.listview_settings['External Supplier Quotation'] = {
                 __('Sync selected External Supplier Quotation records to Supplier Quotation master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_supplier_quotation_sync.sync_supplier_quotation_docs',
                         args: {
                             source_doctype: 'External Supplier Quotation',
                             names

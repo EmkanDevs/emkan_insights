@@ -1,0 +1,60 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-22 11:47:45.039919",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "entity_type",
+  "entity_name",
+  "key_value",
+  "source_site"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "entity_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Entity name"
+  },
+  {
+   "columns": 3,
+   "fieldname": "source_site",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Source Site"
+  },
+  {
+   "columns": 3,
+   "fieldname": "entity_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Entity Type",
+   "options": "DocType"
+  },
+  {
+   "columns": 2,
+   "fieldname": "key_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Key Value"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-22 13:08:46.959472",
+ "modified_by": "Administrator",
+ "module": "Emkan Insights",
+ "name": "Global Entity Mapping Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:entity_type",
+ "creation": "2026-04-22 11:43:13.357208",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "entity_type",
+  "key_field",
+  "section_break_udow",
+  "mapping"
+ ],
+ "fields": [
+  {
+   "fieldname": "entity_type",
+   "fieldtype": "Link",
+   "label": "Entity Type",
+   "options": "DocType",
+   "unique": 1
+  },
+  {
+   "fieldname": "key_field",
+   "fieldtype": "Data",
+   "label": "Key Field"
+  },
+  {
+   "fieldname": "section_break_udow",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "mapping",
+   "fieldtype": "Table",
+   "label": "Mapping",
+   "options": "Global Entity Mapping Item"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-22 13:43:34.737136",
+ "modified_by": "Administrator",
+ "module": "Emkan Insights",
+ "name": "Global Entity Mapping",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

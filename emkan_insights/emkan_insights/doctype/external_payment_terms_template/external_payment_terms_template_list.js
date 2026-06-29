@@ -14,7 +14,7 @@ frappe.listview_settings['External Payment Terms Template'] = {
                 __('Sync selected External Payment Terms Template records to Item master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.external_payment_term_template_sync.sync_payment_template_docs',
                         args: {
                             source_doctype: 'External Payment Terms Template',
                             names

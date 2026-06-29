@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:address_title",
+ "autoname": "field:remote_id",
  "creation": "2013-01-10 16:34:32",
  "doctype": "DocType",
  "document_type": "Setup",
@@ -39,8 +39,7 @@
   {
    "fieldname": "address_title",
    "fieldtype": "Data",
-   "label": "Address Title",
-   "unique": 1
+   "label": "Address Title"
   },
   {
    "fieldname": "address_type",
@@ -154,7 +153,8 @@
   {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID"
+   "label": "Remote ID",
+   "unique": 1
   },
   {
    "fieldname": "source_site",
@@ -166,7 +166,7 @@
  "icon": "fa fa-map-marker",
  "idx": 5,
  "links": [],
- "modified": "2026-02-19 13:21:47.606159",
+ "modified": "2026-03-18 07:33:54.672150",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Address",

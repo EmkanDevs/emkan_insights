@@ -1,6 +1,5 @@
 import frappe
 import json
-from frappe import _
 
 
 @frappe.whitelist()
@@ -23,7 +22,9 @@ def create_cost_center_from_external(external_name):
     external = frappe.get_doc("External Cost Center", external_name)
 
     company = external.company
-    cc_name = external.cost_center_name
+
+    # Use external document name as the Cost Center name
+    cc_name = external.name.replace(f" - {frappe.get_cached_value('Company', company, 'abbr')}", "")
 
     # -----------------------
     # Check if already exists
@@ -47,38 +48,42 @@ def create_cost_center_from_external(external_name):
     # -----------------------
     if external.parent_cost_center:
 
-        parent_external_name = external.parent_cost_center
+        parent_external = frappe.get_doc(
+            "External Cost Center",
+            external.parent_cost_center
+        )
 
-        if frappe.db.exists("External Cost Center", parent_external_name):
+        parent_cc_name = parent_external.name.replace(
+            f" - {frappe.get_cached_value('Company', company, 'abbr')}",
+            ""
+        )
 
-            parent_external = frappe.get_doc(
-                "External Cost Center",
-                parent_external_name
+        parent_cc = frappe.db.get_value(
+            "Cost Center",
+            {
+                "cost_center_name": parent_cc_name,
+                "company": company
+            },
+            "name"
+        )
+
+        if not parent_cc:
+            parent_cc = create_cost_center_from_external(
+                external.parent_cost_center
             )
-
-            parent_cc = frappe.db.get_value(
-                "Cost Center",
-                {
-                    "cost_center_name": parent_external.cost_center_name,
-                    "company": company
-                },
-                "name"
-            )
-
-            if not parent_cc:
-                parent_cc = create_cost_center_from_external(parent_external_name)
 
     # -----------------------
     # Create Cost Center
     # -----------------------
     doc = frappe.get_doc({
         "doctype": "Cost Center",
-        "cost_center_name": external.cost_center_name,
-        "company": external.company,
+        "cost_center_name": cc_name,
+        "company": company,
         "parent_cost_center": parent_cc,
         "is_group": external.is_group,
         "disabled": external.disabled
     })
+
     doc.flags.ignore_validate = True
     doc.flags.ignore_mandatory = True
     doc.insert(ignore_permissions=True)
