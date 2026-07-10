@@ -1,17 +1,40 @@
 # Copyright (c) 2026, Mukesh Variyani and contributors
 # For license information, please see license.txt
 
-# import frappe
+import frappe
 from frappe.model.document import Document
 
 
 class ExternalLead(Document):
-	pass
+    pass
 
-import frappe
+
 import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
+
+
+SYSTEM_FIELDS = {
+    "name", "owner", "creation", "modified", "modified_by",
+    "docstatus", "idx", "doctype", "__last_sync_on",
+    "parent", "parentfield", "parenttype"
+}
+
+NON_DATA_FIELDS = {
+    "naming_series",
+    "address_html", "contact_html", "notes_html",
+    "open_activities_html", "all_activities_html",
+    "col_break123", "column_break2", "column_break_1",
+    "column_break_16", "column_break_20", "column_break_22",
+    "column_break_28", "column_break_31", "column_break_38",
+    "column_break_50", "column_break_64",
+    "contact_info_tab", "address_section", "organization_section",
+    "qualification_tab", "other_info_tab", "activities_tab",
+    "all_activities_section", "notes_tab", "dashboard_tab",
+}
+
+# Added custom_remote_id to handled separately
+HANDLED_SEPARATELY = {"company", "docstatus", "notes", "lead_name", "title", "custom_remote_id"}
 
 
 # ==========================================================
@@ -82,8 +105,6 @@ def sync_lead_batch(names):
 # ==========================================================
 
 def get_default_company():
-    """Resolve a fallback company that doesn't depend on the
-    background job's session user."""
     company = frappe.defaults.get_user_default("Company")
     if not company:
         company = frappe.defaults.get_global_default("company")
@@ -94,21 +115,46 @@ def get_default_company():
     return company
 
 
+def _get_company_abbr(company):
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    if not abbr:
+        frappe.throw(f"Company '{company}' has no abbreviation set")
+    return abbr
+
+
+def _build_target_name(company_abbr, base_id):
+    base_id = (base_id or "").strip()
+    if not base_id:
+        return None
+
+    if base_id.startswith(f"{company_abbr}-"):
+        return base_id
+
+    return f"{company_abbr}-{base_id}"
+
+
 # ==========================================================
 # SINGLE LEAD SYNC
 # ==========================================================
 
 def sync_single_lead(source_name):
 
-    # NOTE: verify this is the correct source doctype for your setup.
-    # The list view / get_all calls use "External Lead", so that's
-    # what's used here. Change back to "External Item" if that is
-    # actually the intended source doctype.
     src = frappe.get_doc("External Lead", source_name)
-    target_name = getattr(src, "remote_id", None)
 
+    company = getattr(src, "company", None) or get_default_company()
+    company_abbr = _get_company_abbr(company)
+
+    # Use the External Lead's name as the remote_id
+    remote_id = src.name
+    
+    # Build target name with company prefix
+    target_name = _build_target_name(company_abbr, remote_id)
+
+    # Check existing by custom_remote_id OR by target_name
     existing = None
-    if target_name and frappe.db.exists("Lead", target_name):
+    if frappe.db.exists("Lead", {"custom_remote_id": remote_id}):
+        existing = frappe.db.get_value("Lead", {"custom_remote_id": remote_id}, "name")
+    elif target_name and frappe.db.exists("Lead", target_name):
         existing = target_name
 
     # ------------------------------------------------------
@@ -123,63 +169,44 @@ def sync_single_lead(source_name):
             lead.name = target_name
             lead.flags.name_set = True
         else:
-            # Generate the name up front so child table rows
-            # (appended below) get the correct parent value,
-            # and so db_insert() has a name to write.
             set_new_name(lead)
 
     # ------------------------------------------------------
     # MAP FIELDS
     # ------------------------------------------------------
 
-    lead.update({
+    lead_meta = frappe.get_meta("Lead")
+    valid_columns = set(lead_meta.get_valid_columns())
 
-        "custom_remote_id": src.name,
-        "custom_source_site": getattr(src, "source_site", None),
+    src_data = src.as_dict()
 
-        "lead_name": getattr(src, "full_name", None) or getattr(src, "first_name", None) or src.name,
-        "company_name": getattr(src, "organization_name", None),
-        "salutation": getattr(src, "salutation", None),
-        "first_name": getattr(src, "first_name", None),
-        "middle_name": getattr(src, "middle_name", None),
-        "last_name": getattr(src, "last_name", None),
-        "job_title": getattr(src, "job_title", None),
-        "gender": getattr(src, "gender", None),
-        "source": getattr(src, "source", None),
-        "lead_owner": getattr(src, "lead_owner", None),
-        "from_customer": getattr(src, "from_customer", None),
-        "lead_type": getattr(src, "lead_type", None),
-        "request_type": getattr(src, "request_type", None),
-        "email_id": getattr(src, "email", None),
-        "website": getattr(src, "website", None),
-        "mobile_no": getattr(src, "mobile_no", None),
-        "whatsapp_no": getattr(src, "whatsapp", None),
-        "phone": getattr(src, "phone", None),
-        "phone_ext": getattr(src, "phone_ext", None),
-        "no_of_employees": getattr(src, "no_of_employees", None),
-        "annual_revenue": flt(getattr(src, "annual_revenue", 0)),
-        "industry": getattr(src, "industry", None),
-        "market_segment": getattr(src, "market_segment", None),
-        "territory": getattr(src, "territory", None),
-        "fax": getattr(src, "fax", None),
-        "city": getattr(src, "city", None),
-        "state": getattr(src, "state_province", None),
-        "country": getattr(src, "country", None),
-        "qualification_status": getattr(src, "qualification_status", None),
-        "qualified_by": getattr(src, "qualified_by", None),
-        "qualified_on": getattr(src, "qualified_on", None),
-        "campaign_name": getattr(src, "campaign_name", None),
-        "company": getattr(src, "company", None) or get_default_company(),
-        "language": getattr(src, "print_language", None),
-        "image": getattr(src, "image", None),
-        "title": getattr(src, "title", None),
-        "disabled": cint(getattr(src, "disabled", 0)),
-        "unsubscribed": cint(getattr(src, "unsubscribed", 0)),
-        "blog_subscriber": cint(getattr(src, "blog_subscriber", 0)),
+    for fieldname, value in src_data.items():
+        if fieldname in SYSTEM_FIELDS:
+            continue
+        if fieldname in NON_DATA_FIELDS:
+            continue
+        if fieldname in HANDLED_SEPARATELY:
+            continue
+        if fieldname not in valid_columns:
+            continue
+        lead.set(fieldname, value)
 
-        "docstatus": cint(getattr(src, "docstatus", 0)),
+    lead.annual_revenue = flt(getattr(src, "annual_revenue", 0))
+    lead.disabled = cint(getattr(src, "disabled", 0))
+    lead.unsubscribed = cint(getattr(src, "unsubscribed", 0))
+    lead.blog_subscriber = cint(getattr(src, "blog_subscriber", 0))
 
-    })
+    lead.company = company
+    lead.docstatus = cint(getattr(src, "docstatus", 0))
+
+    # CRITICAL: Set custom_remote_id to track sync identity
+    lead.custom_remote_id = remote_id
+
+    lead.lead_name = (
+        getattr(src, "lead_name", None)
+        or getattr(src, "first_name", None)
+        or src.name
+    )
 
     status = getattr(src, "status", None)
     if status:
@@ -189,28 +216,33 @@ def sync_single_lead(source_name):
     # SYNC CHILD TABLES
     # ------------------------------------------------------
 
-    def sync_child_table(target_field, source_field, field_map):
+    def sync_child_table(target_field, source_field, child_doctype):
         lead.set(target_field, [])
         if not hasattr(src, source_field):
             return
-        rows = getattr(src, source_field, [])
+
+        child_meta = frappe.get_meta(child_doctype)
+        child_valid_columns = set(child_meta.get_valid_columns())
+
+        rows = getattr(src, source_field, []) or []
         for row in rows:
+            row_data = row.as_dict()
             new_row = {}
-            for target_key, source_key in field_map.items():
-                val = getattr(row, source_key, None)
-                if val is not None:
-                    new_row[target_key] = val
+            for fieldname, value in row_data.items():
+                if fieldname in SYSTEM_FIELDS:
+                    continue
+                if fieldname not in child_valid_columns:
+                    continue
+                if value is None:
+                    continue
+                new_row[fieldname] = value
             if new_row:
                 lead.append(target_field, new_row)
 
-    sync_child_table("notes", "notes", {
-        "added_by": "added_by",
-        "added_on": "added_on",
-        "note": "note"
-    })
+    sync_child_table("notes", "notes", "CRM Note")
 
     # ------------------------------------------------------
-    # SAVE WITHOUT HOOKS (bypasses before_insert contact creation)
+    # SAVE WITHOUT HOOKS
     # ------------------------------------------------------
 
     lead.flags.ignore_permissions = True
@@ -219,14 +251,10 @@ def sync_single_lead(source_name):
     lead.flags.ignore_links = True
 
     if existing:
-        # Update existing - use db_update to bypass hooks
         lead.db_update()
-        # Update all child tables in one call (no fieldname argument)
         lead.update_children()
     else:
-        # Insert new - use db_insert to bypass ALL hooks
         lead.db_insert()
-        # Insert child table rows manually
         for df in lead.meta.get_table_fields():
             for d in lead.get(df.fieldname):
                 d.db_insert()

@@ -14,13 +14,10 @@ frappe.listview_settings['External Opportunity'] = {
                 __('Sync selected External Opportunity records to Opportunity master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
-                        args: {
-                            source_doctype: 'External Opportunity',
-                            names
-                        },
+                        method: 'emkan_insights.emkan_insights.doctype.external_opportunity.external_opportunity.sync_external_opportunities',
+                        args: { names },
                         freeze: true,
-                        freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
+                        freeze_message: __('Syncing {0} selected Opportunity record(s)...', [names.length]),
                         callback(r) {
                             if (!r.exc) {
                                 frappe.show_alert({

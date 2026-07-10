@@ -8,9 +8,6 @@ from frappe.model.document import Document
 class ExternalProductionPlan(Document):
 	pass
 
-# Copyright (c) 2026, Mukesh Variyani and contributors
-# For license information, please see license.txt
-
 # import frappe
 from frappe.model.document import Document
 
@@ -35,6 +32,67 @@ IGNORE_ITEM_FIELDS = {
 DEFAULT_WAREHOUSE = "Stores - IMC"
 
 
+def _get_company_abbr(company):
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    if not abbr:
+        frappe.throw(f"Company '{company}' has no abbreviation set")
+    return abbr
+
+
+def _build_target_name(company_abbr, base_id):
+    base_id = (base_id or "").strip()
+    if not base_id:
+        frappe.throw("Missing base id for Production Plan naming")
+
+    if base_id.startswith(f"{company_abbr}-"):
+        return base_id
+
+    return f"{company_abbr}-{base_id}"
+
+
+def _prefix_reference(company_abbr, reference_name):
+    reference_name = (reference_name or "").strip()
+    if not reference_name:
+        return None
+
+    if reference_name.startswith(f"{company_abbr}-"):
+        return reference_name
+
+    return f"{company_abbr}-{reference_name}"
+
+
+# def _normalize_fingerprint_value(value):
+#     if value is None:
+#         return ""
+
+#     if hasattr(value, "isoformat"):
+#         return value.isoformat()
+
+#     if isinstance(value, str):
+#         return value.strip()
+
+#     return value
+
+
+# def _get_po_item_fingerprint(row, item_row):
+#     remote_row_id = item_row.get("custom_remote_id") or row.get("custom_remote_id")
+#     if remote_row_id:
+#         return ("remote_id", str(remote_row_id).strip())
+
+#     return (
+#         "fields",
+#         json.dumps(
+#             {
+#                 field: _normalize_fingerprint_value(value)
+#                 for field, value in sorted(item_row.items())
+#                 if field not in {"idx"}
+#             },
+#             sort_keys=True,
+#             default=str,
+#         ),
+#     )
+
+
 @frappe.whitelist()
 def sync_external_production_plan_docs(source_doctype, names):
 
@@ -46,11 +104,13 @@ def sync_external_production_plan_docs(source_doctype, names):
     for name in names:
         try:
             ext_pp = frappe.get_doc(source_doctype, name)
+            company_abbr = _get_company_abbr(ext_pp.company)
+            target_name = _build_target_name(company_abbr, ext_pp.remote_id)
 
             # CHECK EXISTING
             existing_pp = frappe.db.get_value(
                 "Production Plan", {"remote_id": ext_pp.remote_id}, "name"
-            )
+            ) or (target_name if frappe.db.exists("Production Plan", target_name) else None)
 
             if existing_pp:
                 results.append({"name": existing_pp, "status": "exists"})
@@ -100,6 +160,29 @@ def sync_external_production_plan_docs(source_doctype, names):
                     pp.append("material_requests", mr_row)
 
             # ASSEMBLY ITEMS (po_items in Production Plan)
+            # if hasattr(ext_pp, "po_items"):
+            #     pp.set("po_items", [])
+            #     seen_po_items = set()
+            #     for row in ext_pp.po_items:
+            #         item_row = {}
+            #         for field, value in row.as_dict().items():
+            #             if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
+            #                 item_row[field] = value
+            #         # Validate BOM reference
+            #         if item_row.get("bom_no"):
+            #             item_row["bom_no"] = _prefix_reference(company_abbr, item_row["bom_no"])
+
+            #         if item_row.get("bom_no") and not frappe.db.exists("BOM", item_row["bom_no"]):
+            #             item_row["bom_no"] = None
+
+            #         fingerprint = _get_po_item_fingerprint(row, item_row)
+            #         if fingerprint in seen_po_items:
+            #             continue
+            #         seen_po_items.add(fingerprint)
+
+            #         pp.append("po_items", item_row)
+            
+            # ASSEMBLY ITEMS (po_items in Production Plan)
             if hasattr(ext_pp, "po_items"):
                 pp.set("po_items", [])
                 for row in ext_pp.po_items:
@@ -107,9 +190,17 @@ def sync_external_production_plan_docs(source_doctype, names):
                     for field, value in row.as_dict().items():
                         if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                             item_row[field] = value
+
                     # Validate BOM reference
-                    if item_row.get("bom_no") and not frappe.db.exists("BOM", item_row["bom_no"]):
+                    if item_row.get("bom_no"):
+                        item_row["bom_no"] = _prefix_reference(company_abbr, item_row["bom_no"])
+
+                    if (
+                        item_row.get("bom_no")
+                        and not frappe.db.exists("BOM", item_row["bom_no"])
+                    ):
                         item_row["bom_no"] = None
+
                     pp.append("po_items", item_row)
 
             # SUB ASSEMBLY ITEMS (sub_assembly_items)
@@ -147,8 +238,7 @@ def sync_external_production_plan_docs(source_doctype, names):
             # INSERT
             pp.insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True)
 
-            # FORCE SAME NAME AS REMOTE ID
-            target_name = ext_pp.remote_id
+            # FORCE COMPANY-PREFIXED REMOTE ID
 
             if pp.name != target_name:
                 frappe.db.sql("""

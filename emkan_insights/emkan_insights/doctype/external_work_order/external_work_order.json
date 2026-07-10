@@ -1,20 +1,30 @@
 {
  "actions": [],
  "allow_import": 1,
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2025-04-09 12:09:40.634472",
  "doctype": "DocType",
  "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
   "item",
+  "trip_cycle_p_section",
+  "custom_c_production_plan",
+  "custom_production_cycle",
+  "custom_mixer",
+  "custom_batch_plant",
+  "column_break_rwbr",
+  "custom_slump",
+  "custom_work_order_type",
+  "custom_temperature",
+  "section_break_sdqo",
   "naming_series",
   "status",
   "production_item",
   "item_name",
   "image",
   "bom_no",
-    "remote_id",
+  "remote_id",
   "source_site",
   "sales_order",
   "column_break1",
@@ -46,7 +56,6 @@
   "has_batch_no",
   "column_break_18",
   "batch_size",
-  "required_items_section",
   "materials_and_operations_tab",
   "operations_section",
   "transfer_material_against",
@@ -87,7 +96,7 @@
    "label": "Production Item",
    "options": "fa fa-gift"
   },
-    {
+  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
    "label": "Remote ID",
@@ -284,11 +293,6 @@
    "fieldtype": "Link",
    "label": "Scrap Warehouse",
    "options": "Warehouse"
-  },
-  {
-   "fieldname": "required_items_section",
-   "fieldtype": "Section Break",
-   "label": "Required Items"
   },
   {
    "fieldname": "required_items",
@@ -609,6 +613,59 @@
    "label": "Disassembled Qty",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "trip_cycle_p_section",
+   "fieldtype": "Section Break",
+   "label": "Trip Cycle P"
+  },
+  {
+   "fieldname": "column_break_rwbr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_sdqo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "custom_work_order_type",
+   "fieldtype": "Select",
+   "label": "Work Order Type",
+   "options": "Concrete Mixing\nSpecial Mix\nBlock\nNew Jerssy"
+  },
+  {
+   "fieldname": "custom_c_production_plan",
+   "fieldtype": "Link",
+   "label": "C Production Plan",
+   "options": "Production Plan"
+  },
+  {
+   "fieldname": "custom_production_cycle",
+   "fieldtype": "Data",
+   "label": "Production Cycle"
+  },
+  {
+   "fieldname": "custom_mixer",
+   "fieldtype": "Link",
+   "label": "Mixer",
+   "options": "Vehicle"
+  },
+  {
+   "fieldname": "custom_batch_plant",
+   "fieldtype": "Link",
+   "label": "Batch Plant",
+   "options": "Batch Plant"
+  },
+  {
+   "fieldname": "custom_slump",
+   "fieldtype": "Float",
+   "label": "Slump",
+   "precision": "2"
+  },
+  {
+   "fieldname": "custom_temperature",
+   "fieldtype": "Data",
+   "label": "Temperature"
   }
  ],
  "icon": "fa fa-cogs",
@@ -616,11 +673,11 @@
  "image_field": "image",
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-21 00:55:45.916224",
+ "modified": "2026-07-08 11:02:09.461503",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Work Order",
- "naming_rule": "By \"Naming Series\" field",
+ "naming_rule": "By fieldname",
  "nsm_parent_field": "parent_work_order",
  "owner": "Administrator",
  "permissions": [
@@ -646,6 +703,7 @@
    "role": "Stock User"
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "ASC",
  "states": [],

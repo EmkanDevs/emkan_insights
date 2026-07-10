@@ -14,21 +14,24 @@ frappe.listview_settings['External Prospect'] = {
                 __('Sync selected External Prospect records to Prospect master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
-                        args: {
-                            source_doctype: 'External Prospect',
-                            names
-                        },
+                        method: 'emkan_insights.emkan_insights.doctype.external_prospect.external_prospect.sync_external_prospects',
+                        args: { names: names },
                         freeze: true,
-                        freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
+                        freeze_message: __('Syncing {0} selected Prospect record(s)...', [names.length]),
                         callback(r) {
-                            if (!r.exc) {
-                                frappe.show_alert({
-                                    message: __('Prospect synced successfully'),
-                                    indicator: 'green'
+                            if (r.exc) {
+                                frappe.msgprint({
+                                    title: __('Sync Failed'),
+                                    message: __('An error occurred during sync. Please check Error Log.'),
+                                    indicator: 'red'
                                 });
-                                listview.refresh();
+                                return;
                             }
+                            frappe.show_alert({
+                                message: __('Prospect synced successfully'),
+                                indicator: 'green'
+                            });
+                            listview.refresh();
                         }
                     });
                 }

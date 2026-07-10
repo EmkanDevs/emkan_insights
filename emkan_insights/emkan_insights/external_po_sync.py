@@ -1,242 +1,3 @@
-# import frappe
-# import json
-
-
-# # ==========================================================
-# # ENTRY POINT
-# # ==========================================================
-
-# @frappe.whitelist()
-# def sync_purchase_order_docs(source_doctype: str, names):
-
-#     if isinstance(names, str):
-#         names = json.loads(names)
-
-#     frappe.enqueue(
-#         "emkan_insights.emkan_insights.external_po_sync.sync_bulk_purchase_orders",
-#         queue="long",
-#         names=names,
-#         timeout=2000
-#     )
-
-#     return f"{len(names)} Purchase Orders queued for sync"
-
-
-# # ==========================================================
-# # BULK SYNC
-# # ==========================================================
-
-# def sync_bulk_purchase_orders(names):
-
-#     sources = frappe.get_all(
-#         "External Purchase Order",
-#         filters={"name": ["in", names]},
-#         fields=["name", "remote_id"],
-#         limit_page_length=0
-#     )
-
-#     full_docs = {
-#         d.name: frappe.get_doc("External Purchase Order", d.name)
-#         for d in sources
-#     }
-
-#     # ------------------------------------------------------
-#     # PRELOAD
-#     # ------------------------------------------------------
-#     suppliers = set(frappe.get_all("Supplier", pluck="name", limit_page_length=0))
-#     projects = set(frappe.get_all("Project", pluck="name", limit_page_length=0))
-#     cost_centers = set(frappe.get_all("Cost Center", pluck="name", limit_page_length=0))
-
-#     remote_ids = [d.remote_id for d in sources if d.remote_id]
-
-#     existing_pos = frappe.get_all(
-#         "Purchase Order",
-#         filters={"remote_id": ["in", remote_ids]},
-#         fields=["name", "remote_id", "docstatus"],
-#         limit_page_length=0
-#     )
-
-#     existing_map = {d.remote_id: d for d in existing_pos}
-
-#     success = 0
-#     failed = 0
-
-#     # ------------------------------------------------------
-#     # LOOP
-#     # ------------------------------------------------------
-#     for idx, name in enumerate(names, start=1):
-
-#         try:
-#             src = full_docs.get(name)
-
-#             if not src:
-#                 continue
-
-#             if not src.company:
-#                 raise Exception(f"Company missing in External PO: {name}")
-
-#             existing = existing_map.get(src.remote_id)
-
-#             # ------------------------------------------------------
-#             # UPSERT
-#             # ------------------------------------------------------
-#             doc = upsert_purchase_order(
-#                 src,
-#                 existing_name=existing["name"] if existing else None,
-#                 suppliers=suppliers,
-#                 projects=projects,
-#                 cost_centers=cost_centers
-#             )
-
-#             # ------------------------------------------------------
-#             # DOCSTATUS
-#             # ------------------------------------------------------
-#             sync_docstatus(doc, src.docstatus)
-
-#             success += 1
-
-#         except Exception as e:
-#             failed += 1
-
-#             frappe.log_error(
-#                 title="Purchase Order Sync Failed",
-#                 message=f"""
-# External PO: {name}
-# Remote ID: {getattr(src, 'remote_id', '')}
-# Error: {str(e)}
-# """
-#             )
-
-#         if idx % 20 == 0:
-#             frappe.db.commit()
-
-#     frappe.db.commit()
-
-#     return {"success": success, "failed": failed}
-
-
-# # ==========================================================
-# # UPSERT
-# # ==========================================================
-
-# def upsert_purchase_order(src, existing_name=None, suppliers=None, projects=None, cost_centers=None):
-
-#     if existing_name:
-#         doc = frappe.get_doc("Purchase Order", existing_name)
-#     else:
-#         doc = frappe.new_doc("Purchase Order")
-
-#         # ✅ FORCE NAME = remote_id
-#         if src.remote_id:
-#             if frappe.db.exists("Purchase Order", src.remote_id):
-#                 return frappe.get_doc("Purchase Order", src.remote_id)
-
-#             doc.name = src.remote_id
-#             doc.flags.name_set = True
-
-#     # ------------------------------------------------------
-#     # VALIDATIONS
-#     # ------------------------------------------------------
-#     if src.supplier and src.supplier not in suppliers:
-#         raise Exception(f"Supplier {src.supplier} not found")
-
-#     if src.project and src.project not in projects:
-#         raise Exception(f"Project {src.project} not found")
-
-#     # ------------------------------------------------------
-#     # MAP FIELDS
-#     # ------------------------------------------------------
-#     doc.company = src.company
-#     doc.supplier = src.supplier
-#     doc.transaction_date = src.transaction_date
-#     doc.schedule_date = src.schedule_date
-#     doc.project = src.project
-#     doc.currency = src.currency
-#     doc.buying_price_list = src.buying_price_list
-#     doc.conversion_rate = src.conversion_rate
-
-#     if hasattr(doc, "remote_id"):
-#         doc.remote_id = src.remote_id
-
-#     if hasattr(doc, "source_site") and src.get("source_site"):
-#         doc.source_site = src.source_site
-
-#     # ------------------------------------------------------
-#     # ITEMS
-#     # ------------------------------------------------------
-#     doc.set("items", [])
-
-#     for row in src.items:
-
-#         if row.cost_center and row.cost_center not in cost_centers:
-#             raise Exception(f"Cost Center {row.cost_center} not found")
-
-#         doc.append("items", {
-#             "item_code": row.item_code,
-#             "item_name": row.item_name,
-#             "uom": row.uom,
-
-#             # ✅ REQUIRED FIELDS (FIXED)
-#             "conversion_factor": row.conversion_factor or 1,
-#             "qty": row.qty,
-#             "rate": row.rate,
-#             "base_rate": row.base_rate or row.rate,
-#             "base_amount": row.base_amount or (row.qty * row.rate),
-
-#             "warehouse": row.warehouse,
-#             "project": row.project,
-#             "cost_center": row.cost_center,
-#             "schedule_date": row.schedule_date
-#         })
-
-#     # ------------------------------------------------------
-#     # FLAGS
-#     # ------------------------------------------------------
-#     doc.flags.ignore_permissions = True
-#     doc.flags.ignore_validate = True
-#     doc.flags.ignore_links = True
-#     doc.flags.ignore_pricing_rule = True
-
-#     # ------------------------------------------------------
-#     # SAVE
-#     # ------------------------------------------------------
-#     if existing_name:
-#         doc.save()
-#     else:
-#         doc.insert()
-
-#     return doc
-
-
-# # ==========================================================
-# # DOCSTATUS SYNC
-# # ==========================================================
-
-# def sync_docstatus(doc, target_status):
-
-#     current = doc.docstatus
-
-#     if target_status == 0:
-#         if current in (1, 2):
-#             frappe.throw(f"Cannot revert PO {doc.name} to Draft")
-
-#     elif target_status == 1:
-#         if current == 0:
-#             doc.submit()
-#         elif current == 2:
-#             frappe.throw(f"Cannot resubmit cancelled PO {doc.name}")
-
-#     elif target_status == 2:
-#         if current == 0:
-#             doc.submit()
-#             doc.cancel()
-#         elif current == 1:
-#             doc.cancel()
-
-
-
-
-#########################################################################################################################
 import frappe
 import json
 from frappe.utils import flt, nowdate
@@ -252,7 +13,7 @@ def sync_docstatus(doc, target_status):
 
     Why not doc.submit() / doc.cancel()?
     ERPNext's on_submit hook calls update_blanket_order() which does
-    frappe.get_doc("Blanket Order", ...) — if that Blanket Order doesn't
+    frappe.get_doc("Blanket Order", ...) - if that Blanket Order doesn't
     exist in the target company it raises DoesNotExistError and the whole
     sync fails. Bypassing hooks entirely avoids this and any other
     side-effect hooks (update_reserved_qty, update_status, etc.) that
@@ -271,10 +32,8 @@ def _force_docstatus_db(name, doctype, target_docstatus):
     Directly updates docstatus on the parent doc and ALL child rows
     without triggering any Frappe/ERPNext hooks.
     """
-    # Update parent
     frappe.db.set_value(doctype, name, "docstatus", target_docstatus, update_modified=False)
 
-    # Update every child table row that belongs to this document
     child_meta = frappe.get_meta(doctype)
     for df in child_meta.get_table_fields():
         child_doctype = df.options
@@ -292,7 +51,8 @@ def _force_docstatus_db(name, doctype, target_docstatus):
 def resolve_account(account_head):
     """
     Resolve an account head to a valid account name in this company.
-    Tries exact match first, then matches by the numeric code prefix (before the first space).
+    Tries exact match first, then matches by the numeric code prefix
+    (before the first space).
     """
     if not account_head:
         return None
@@ -300,22 +60,14 @@ def resolve_account(account_head):
     if frappe.db.exists("Account", account_head):
         return account_head
 
-    # Extract the numeric code before the first space, e.g. "1156101" from
-    # "1156101 - Value Added Tax 15% Paid - IMC"
     parts = account_head.split(" ")
     code = parts[0].strip()
 
     if code:
-        # Search for any account whose name starts with that code
-        found = frappe.db.get_value(
-            "Account",
-            {"account_number": code},
-            "name"
-        )
+        found = frappe.db.get_value("Account", {"account_number": code}, "name")
         if found:
             return found
 
-        # Fallback: LIKE search on name
         found = frappe.db.sql(
             "SELECT name FROM `tabAccount` WHERE name LIKE %s LIMIT 1",
             (f"{code} -%",),
@@ -327,240 +79,490 @@ def resolve_account(account_head):
     return None
 
 
+def _resolve_material_request(remote_mr_name, company_abbr=None):
+    """
+    Three-tier resolution, same pattern as RFQ sync:
+    1. Prefixed local name: {company_abbr}-{remote_name}
+    2. remote_id / custom_remote_id lookup
+    3. Raw name existence check
+    """
+    if not remote_mr_name:
+        return None
+
+    if company_abbr and not remote_mr_name.startswith(f"{company_abbr}-"):
+        prefixed = f"{company_abbr}-{remote_mr_name}"
+        if frappe.db.exists("Material Request", prefixed):
+            return prefixed
+
+    for field in ("remote_id", "custom_remote_id"):
+        if frappe.get_meta("Material Request").has_field(field):
+            found = frappe.db.get_value("Material Request", {field: remote_mr_name}, "name")
+            if found:
+                return found
+
+    if frappe.db.exists("Material Request", remote_mr_name):
+        return remote_mr_name
+
+    return None
+
+
+def _resolve_link_with_abbr(doctype, remote_name, company_abbr=None):
+    if not remote_name:
+        return None
+
+    if company_abbr and remote_name.startswith(f"{company_abbr}-"):
+        return remote_name
+
+    if company_abbr:
+        prefixed = f"{company_abbr}-{remote_name}"
+        if frappe.db.exists(doctype, prefixed):
+            return prefixed
+
+    meta = frappe.get_meta(doctype)
+    for field in ("remote_id", "custom_remote_id"):
+        if meta.has_field(field):
+            local_name = frappe.db.get_value(doctype, {field: remote_name}, "name")
+            if local_name:
+                return local_name
+
+    if frappe.db.exists(doctype, remote_name):
+        return remote_name
+
+    return None
+
+
+def _build_target_name(company_abbr, remote_id):
+    if company_abbr and remote_id.startswith(f"{company_abbr}-"):
+        return remote_id
+    return f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+
+
+def _find_existing_po(remote_id, target_name):
+    """
+    Check by remote_id first (authoritative link back to source),
+    then fall back to the prefixed target name.
+    """
+    existing = frappe.db.get_value("Purchase Order", {"remote_id": remote_id}, "name")
+    if existing:
+        return existing
+    if frappe.db.exists("Purchase Order", target_name):
+        return target_name
+    return None
+
+
+# ==========================================================
+# SAFE CHILD INSERTION (dedup by source row identity, not content)
+# ==========================================================
+
+def _insert_po_items_safely(po_name, src, company_abbr=None, conversion_rate=1.0):
+    """
+    Insert Purchase Order Items one at a time.
+    Dedup uses the SOURCE ROW'S identity (row.name / custom_remote_id),
+    never (item_code, qty, rate) - that fingerprint incorrectly collapses
+    legitimate repeated line items (e.g. same item ordered 3x separately).
+
+    Also writes the matched internal item's name back onto the source
+    row's custom_remote_id-tracking field so re-syncs stay idempotent -
+    this write-back happens in upsert_purchase_order() after insertion,
+    once we know the real child names.
+    """
+    if not src.items:
+        return 0, []
+
+    success_count = 0
+    errors = []
+    seen_source_rows = set()
+    inserted_map = []  # (source_row_name, new_child_name) for write-back
+
+    for idx, row in enumerate(src.items, start=1):
+        try:
+            row_identifier = getattr(row, "custom_remote_id", None) or row.name
+            if row_identifier in seen_source_rows:
+                frappe.log_error(
+                    title=f"PO {po_name} duplicate item skipped",
+                    message=f"Source row {row_identifier} (idx {idx}) already processed "
+                            f"in this sync run - duplicate data in External PO source."
+                )
+                continue
+            seen_source_rows.add(row_identifier)
+
+            qty = flt(row.qty)
+            rate = flt(row.rate)
+            amount = flt(row.amount) if flt(row.amount) else qty * rate
+
+            mr_name = _resolve_material_request(getattr(row, "material_request", None), company_abbr)
+            mr_item_name = None
+            if mr_name:
+                mr_item_name = frappe.db.get_value(
+                    "Material Request Item",
+                    {"parent": mr_name, "item_code": row.item_code},
+                    "name"
+                )
+
+            new_child_name = frappe.generate_hash(length=10)
+
+            item_row = {
+                "doctype": "Purchase Order Item",
+                "name": new_child_name,
+                "parent": po_name,
+                "parentfield": "items",
+                "parenttype": "Purchase Order",
+                "idx": idx,
+                "item_code": row.item_code,
+                "item_name": row.item_name or row.item_code,
+                "description": getattr(row, "description", None) or row.item_name or row.item_code,
+                "custom_remote_id": getattr(row, "custom_remote_id", None) or row.name,
+                "qty": qty,
+                "stock_qty": qty,
+                "rate": rate,
+                "amount": amount,
+                "net_rate": flt(row.net_rate) if flt(getattr(row, "net_rate", 0)) else rate,
+                "net_amount": flt(row.net_amount) if flt(getattr(row, "net_amount", 0)) else amount,
+                "base_rate": rate * conversion_rate,
+                "base_amount": amount * conversion_rate,
+                "base_net_rate": (flt(row.net_rate) or rate) * conversion_rate,
+                "base_net_amount": (flt(row.net_amount) or amount) * conversion_rate,
+                "uom": row.uom or "Nos",
+                "stock_uom": getattr(row, "stock_uom", None) or row.uom or "Nos",
+                "conversion_factor": 1.0,
+                "warehouse": getattr(row, "warehouse", None),
+                "schedule_date": row.schedule_date or frappe.db.get_value("Purchase Order", po_name, "schedule_date"),
+                "project": getattr(row, "project", None) or getattr(src, "project", None),
+                "cost_center": getattr(row, "cost_center", None),
+                "price_list_rate": flt(getattr(row, "price_list_rate", 0)),
+                "base_price_list_rate": flt(getattr(row, "base_price_list_rate", 0)),
+                "discount_percentage": flt(getattr(row, "discount_percentage", 0)),
+                "discount_amount": flt(getattr(row, "discount_amount", 0)),
+                "item_tax_rate": getattr(row, "item_tax_rate", "{}") or "{}",
+                "against_blanket_order": 0,
+                "blanket_order": None,
+                "blanket_order_rate": 0,
+                "apply_tds": getattr(row, "apply_tds", 0),
+                "sales_order": _resolve_link_with_abbr("Sales Order", getattr(row, "sales_order", None), company_abbr),
+                "sales_order_item": getattr(row, "sales_order_item", None),
+                "supplier_quotation": _resolve_link_with_abbr("Supplier Quotation", getattr(row, "supplier_quotation", None), company_abbr),
+                "supplier_quotation_item": getattr(row, "supplier_quotation_item", None),
+                "material_request": mr_name,
+                "material_request_item": mr_item_name,
+                "expense_account": resolve_account(getattr(row, "expense_account", None)),
+            }
+
+            child_doc = frappe.get_doc(item_row)
+            child_doc.db_insert()
+            success_count += 1
+            inserted_map.append((row.name, new_child_name))
+
+        except Exception as e:
+            error_msg = f"Item {idx} (row: {row.name}, item: {row.item_code}): {str(e)}"
+            errors.append(error_msg)
+            frappe.log_error(title=f"PO item insert failed: {po_name}", message=error_msg)
+
+    if success_count > 0:
+        frappe.db.commit()
+
+    return success_count, errors, inserted_map
+
+
+def _insert_po_taxes_safely(po_name, src, conversion_rate=1.0):
+    if not src.taxes:
+        return 0, []
+
+    success_count = 0
+    errors = []
+    seen_tax_rows = set()
+
+    for idx, tax in enumerate(src.taxes, start=1):
+        try:
+            tax_key = (
+                getattr(tax, "charge_type", None) or "On Net Total",
+                getattr(tax, "account_head", None),
+                flt(getattr(tax, "rate", 0)),
+                flt(getattr(tax, "tax_amount", 0)),
+                getattr(tax, "add_deduct_tax", None) or "Add",
+                getattr(tax, "category", None) or "Total",
+            )
+            if tax_key in seen_tax_rows:
+                continue
+            seen_tax_rows.add(tax_key)
+
+            acc = resolve_account(tax.account_head)
+            if not acc:
+                errors.append(f"Tax {idx}: account not found: {tax.account_head}")
+                continue
+
+            tax_amount = flt(tax.tax_amount)
+            base_tax_amount = tax_amount * conversion_rate
+
+            tax_row = {
+                "doctype": "Purchase Taxes and Charges",
+                "name": frappe.generate_hash(length=10),
+                "parent": po_name,
+                "parentfield": "taxes",
+                "parenttype": "Purchase Order",
+                "idx": idx,
+                "charge_type": tax.charge_type or "On Net Total",
+                "account_head": acc,
+                "description": tax.description or acc,
+                "rate": flt(tax.rate),
+                "tax_amount": tax_amount,
+                "tax_amount_after_discount_amount": flt(getattr(tax, "tax_amount_after_discount_amount", 0)) or tax_amount,
+                "base_tax_amount": base_tax_amount,
+                "base_tax_amount_after_discount_amount": base_tax_amount,
+                "total": flt(getattr(tax, "total", 0)),
+                "base_total": flt(getattr(tax, "base_total", 0)),
+                "add_deduct_tax": tax.add_deduct_tax or "Add",
+                "category": tax.category or "Total",
+                "included_in_print_rate": getattr(tax, "included_in_print_rate", 0),
+                "included_in_paid_amount": getattr(tax, "included_in_paid_amount", 0),
+                "item_wise_tax_detail": getattr(tax, "item_wise_tax_detail", "{}") or "{}",
+                "cost_center": getattr(tax, "cost_center", None),
+            }
+
+            child_doc = frappe.get_doc(tax_row)
+            child_doc.db_insert()
+            success_count += 1
+
+        except Exception as e:
+            error_msg = f"Tax {idx}: {str(e)}"
+            errors.append(error_msg)
+            frappe.log_error(title=f"PO tax insert failed: {po_name}", message=error_msg)
+
+    if success_count > 0:
+        frappe.db.commit()
+
+    return success_count, errors
+
+
+# ==========================================================
+# MAIN UPSERT
+# ==========================================================
+
 def upsert_purchase_order(src, existing_name):
+    company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
+    conversion_rate = flt(src.conversion_rate) or 1.0
+    target_name = _build_target_name(company_abbr, src.remote_id or src.name)
+
+    # ----------------------------------------------------------
+    # EXISTING: Bypass ORM completely - raw SQL only
+    # ----------------------------------------------------------
     if existing_name:
-        doc = frappe.get_doc("Purchase Order", existing_name)
-        # Reopen if submitted/cancelled so we can edit.
-        # Use direct DB write — not doc.cancel()/amend() — to avoid hooks.
-        if doc.docstatus in (1, 2):
-            frappe.db.set_value("Purchase Order", doc.name, "docstatus", 0, update_modified=False)
-            frappe.db.sql(
-                """UPDATE `tabPurchase Order Item`
-                   SET docstatus = 0
-                   WHERE parent = %s""",
-                (doc.name,)
-            )
-            frappe.db.sql(
-                """UPDATE `tabPurchase Taxes and Charges`
-                   SET docstatus = 0
-                   WHERE parent = %s AND parenttype = 'Purchase Order'""",
-                (doc.name,)
-            )
-            frappe.db.commit()
-            doc.docstatus = 0
+        frappe.db.sql("DELETE FROM `tabPurchase Order Item` WHERE parent = %s", (existing_name,))
+        frappe.db.sql("DELETE FROM `tabPurchase Taxes and Charges` WHERE parent = %s AND parenttype = 'Purchase Order'", (existing_name,))
+        frappe.db.sql("DELETE FROM `tabPayment Schedule` WHERE parent = %s AND parenttype = 'Purchase Order'", (existing_name,))
+        frappe.db.commit()
+
+        frappe.db.sql("""
+            UPDATE `tabPurchase Order`
+            SET
+                company = %s,
+                supplier = %s,
+                supplier_name = %s,
+                transaction_date = %s,
+                schedule_date = %s,
+                currency = %s,
+                conversion_rate = %s,
+                plc_conversion_rate = %s,
+                remote_id = %s,
+                buying_price_list = %s,
+                apply_discount_on = %s,
+                disable_rounded_total = %s,
+                taxes_and_charges = NULL,
+                total = %s,
+                net_total = %s,
+                base_total = %s,
+                base_net_total = %s,
+                total_qty = %s,
+                grand_total = %s,
+                base_grand_total = %s,
+                base_taxes_and_charges_added = %s,
+                taxes_and_charges_added = %s,
+                base_taxes_and_charges_deducted = %s,
+                taxes_and_charges_deducted = %s,
+                total_taxes_and_charges = %s,
+                base_total_taxes_and_charges = %s,
+                tax_withholding_net_total = %s,
+                base_tax_withholding_net_total = %s,
+                rounding_adjustment = %s,
+                base_rounding_adjustment = %s,
+                rounded_total = %s,
+                base_rounded_total = %s,
+                in_words = %s,
+                base_in_words = %s,
+                docstatus = 0,
+                modified = NOW()
+            WHERE name = %s
+        """, (
+            src.company, src.supplier, src.supplier_name,
+            src.transaction_date or nowdate(),
+            src.schedule_date or src.transaction_date or nowdate(),
+            src.currency or "SAR", conversion_rate,
+            flt(src.plc_conversion_rate) or 1.0,
+            src.remote_id,
+            src.buying_price_list if src.buying_price_list and frappe.db.exists("Price List", src.buying_price_list) else None,
+            src.apply_discount_on or "Net Total",
+            src.disable_rounded_total or 0,
+            flt(src.total), flt(src.net_total) or flt(src.total),
+            flt(src.base_total), flt(src.base_net_total) or flt(src.base_total),
+            flt(src.total_qty), flt(src.grand_total), flt(src.base_grand_total),
+            flt(src.base_taxes_and_charges_added), flt(src.taxes_and_charges_added),
+            flt(src.base_taxes_and_charges_deducted), flt(src.taxes_and_charges_deducted),
+            flt(src.total_taxes_and_charges), flt(src.base_total_taxes_and_charges),
+            flt(getattr(src, "tax_withholding_net_total", 0)),
+            flt(getattr(src, "base_tax_withholding_net_total", 0)),
+            flt(src.rounding_adjustment), flt(src.base_rounding_adjustment),
+            flt(src.rounded_total), flt(src.base_rounded_total),
+            getattr(src, "in_words", ""), getattr(src, "base_in_words", ""),
+            existing_name
+        ))
+        frappe.db.commit()
+
+        po_name = existing_name
+
+    else:
+        # ----------------------------------------------------------
+        # NEW: Use ORM normally
+        # ----------------------------------------------------------
+        doc = frappe.new_doc("Purchase Order")
+        doc.name = target_name
+        doc.flags.name_set = True
+
+        buying_price_list = None
+        if src.buying_price_list and frappe.db.exists("Price List", src.buying_price_list):
+            buying_price_list = src.buying_price_list
+
+        doc.update({
+            "company": src.company,
+            "supplier": src.supplier,
+            "supplier_name": src.supplier_name,
+            "transaction_date": src.transaction_date or nowdate(),
+            "schedule_date": src.schedule_date or src.transaction_date or nowdate(),
+            "currency": src.currency or "SAR",
+            "conversion_rate": conversion_rate,
+            "plc_conversion_rate": flt(src.plc_conversion_rate) or 1.0,
+            "remote_id": src.remote_id,
+            "buying_price_list": buying_price_list,
+            "apply_discount_on": src.apply_discount_on or "Net Total",
+            "disable_rounded_total": src.disable_rounded_total or 0,
+            "taxes_and_charges": None,
+        })
+
+        src_site_value = getattr(src, "site_url", None) or getattr(src, "source_site", None)
+        if src_site_value:
+            for site_field in ("source_site", "site_url"):
+                if hasattr(doc, site_field):
+                    doc.set(site_field, src_site_value)
+                    break
+
+        doc.total = flt(src.total)
+        doc.net_total = flt(src.net_total) or flt(src.total)
+        doc.base_total = flt(src.base_total)
+        doc.base_net_total = flt(src.base_net_total) or flt(src.base_total)
+        doc.total_qty = flt(src.total_qty)
+        doc.grand_total = flt(src.grand_total)
+        doc.base_grand_total = flt(src.base_grand_total)
+        doc.base_taxes_and_charges_added = flt(src.base_taxes_and_charges_added)
+        doc.taxes_and_charges_added = flt(src.taxes_and_charges_added)
+        doc.base_taxes_and_charges_deducted = flt(src.base_taxes_and_charges_deducted)
+        doc.taxes_and_charges_deducted = flt(src.taxes_and_charges_deducted)
+        doc.total_taxes_and_charges = flt(src.total_taxes_and_charges)
+        doc.base_total_taxes_and_charges = flt(src.base_total_taxes_and_charges)
+        doc.tax_withholding_net_total = flt(getattr(src, "tax_withholding_net_total", 0))
+        doc.base_tax_withholding_net_total = flt(getattr(src, "base_tax_withholding_net_total", 0))
+        doc.rounding_adjustment = flt(src.rounding_adjustment)
+        doc.base_rounding_adjustment = flt(src.base_rounding_adjustment)
+        doc.rounded_total = flt(src.rounded_total)
+        doc.base_rounded_total = flt(src.base_rounded_total)
+        doc.in_words = getattr(src, "in_words", "")
+        doc.base_in_words = getattr(src, "base_in_words", "")
+
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_validate = True
+        doc.flags.ignore_links = True
+        doc.flags.ignore_pricing_rule = True
+        doc.flags.ignore_mandatory = True
+
         doc.set("items", [])
         doc.set("taxes", [])
         doc.set("payment_schedule", [])
-    else:
-        doc = frappe.new_doc("Purchase Order")
-        doc.name = src.remote_id
-        doc.flags.name_set = True
+        doc.save()
+        frappe.db.commit()
+
+        po_name = doc.name
 
     # ----------------------------------------------------------
-    # 1. Map Header
+    # Insert children
     # ----------------------------------------------------------
-    buying_price_list = None
-    if src.buying_price_list and frappe.db.exists("Price List", src.buying_price_list):
-        buying_price_list = src.buying_price_list
+    item_success, item_errors, inserted_map = _insert_po_items_safely(po_name, src, company_abbr, conversion_rate)
+    if item_errors:
+        frappe.log_error(
+            title=f"PO {po_name} - {len(item_errors)} item errors",
+            message="\n".join(item_errors)
+        )
 
-    doc.update({
-        "company":              src.company,
-        "supplier":             src.supplier,
-        "supplier_name":        src.supplier_name,
-        "transaction_date":     src.transaction_date or nowdate(),
-        "schedule_date":        src.schedule_date or src.transaction_date or nowdate(),
-        "currency":             src.currency or "SAR",
-        "conversion_rate":      flt(src.conversion_rate) or 1.0,
-        "plc_conversion_rate":  flt(src.plc_conversion_rate) or 1.0,
-        "remote_id":            src.remote_id,
-        "buying_price_list":    buying_price_list,
-        "apply_discount_on":    src.apply_discount_on or "Net Total",
-        "disable_rounded_total": src.disable_rounded_total or 0,
-        "taxes_and_charges":    None,   # avoid auto-fetch overwriting taxes table
-    })
+    tax_success, tax_errors = _insert_po_taxes_safely(po_name, src, conversion_rate)
+    if tax_errors:
+        frappe.log_error(
+            title=f"PO {po_name} - {len(tax_errors)} tax errors",
+            message="\n".join(tax_errors)
+        )
 
     # ----------------------------------------------------------
-    # 2. Map Items — set ALL amount fields explicitly
+    # Verify counts
     # ----------------------------------------------------------
-    seen_items = set()
-    conversion_rate = flt(src.conversion_rate) or 1.0
+    actual_items = frappe.db.count("Purchase Order Item", {"parent": po_name})
+    actual_taxes = frappe.db.count("Purchase Taxes and Charges", {"parent": po_name, "parenttype": "Purchase Order"})
+    expected_items = len(src.items or [])
+    expected_taxes = len(src.taxes or [])
 
-    for row in (src.items or []):
-        fingerprint = (row.item_code, flt(row.qty), flt(row.rate))
-        if fingerprint in seen_items:
-            continue
-        seen_items.add(fingerprint)
+    if actual_items != expected_items:
+        frappe.log_error(
+            title=f"PO Sync items mismatch: {po_name}",
+            message=f"Expected {expected_items} items, found {actual_items}. "
+                    f"Successfully inserted: {item_success}, Errors: {len(item_errors)}. "
+                    f"This may indicate duplicate source rows in External PO - "
+                    f"check the External PO's fetch/refetch logic, not this sync."
+        )
 
-        qty    = flt(row.qty)
-        rate   = flt(row.rate)
-        amount = flt(row.amount) if flt(row.amount) else qty * rate
-
-        doc.append("items", {
-            "item_code":            row.item_code,
-            "item_name":            row.item_name or row.item_code,
-            "description":          getattr(row, "description", None) or row.item_name or row.item_code,
-            "qty":                  qty,
-            "stock_qty":            qty,
-            "rate":                 rate,
-            "amount":               amount,
-            "net_rate":             flt(row.net_rate) if flt(getattr(row, "net_rate", 0)) else rate,
-            "net_amount":           flt(row.net_amount) if flt(getattr(row, "net_amount", 0)) else amount,
-            "base_rate":            rate * conversion_rate,
-            "base_amount":          amount * conversion_rate,
-            "base_net_rate":        (flt(row.net_rate) or rate) * conversion_rate,
-            "base_net_amount":      (flt(row.net_amount) or amount) * conversion_rate,
-            "uom":                  row.uom or "Nos",
-            "stock_uom":            getattr(row, "stock_uom", None) or row.uom or "Nos",
-            "conversion_factor":    1.0,
-            "warehouse":            getattr(row, "warehouse", None),
-            "schedule_date":        row.schedule_date or doc.schedule_date,
-            "project":              getattr(row, "project", None) or getattr(src, "project", None),
-            "cost_center":          getattr(row, "cost_center", None),
-            "price_list_rate":      flt(getattr(row, "price_list_rate", 0)),
-            "base_price_list_rate": flt(getattr(row, "base_price_list_rate", 0)),
-            "discount_percentage":  flt(getattr(row, "discount_percentage", 0)),
-            "discount_amount":      flt(getattr(row, "discount_amount", 0)),
-            "item_tax_rate":        getattr(row, "item_tax_rate", "{}") or "{}",
-            "against_blanket_order": 0,
-            "blanket_order":        None,
-            "blanket_order_rate":   0,
-            "apply_tds":            getattr(row, "apply_tds", 0),
-        })
+    if actual_taxes != expected_taxes:
+        frappe.log_error(
+            title=f"PO Sync taxes mismatch: {po_name}",
+            message=f"Expected {expected_taxes} taxes, found {actual_taxes}. Errors: {len(tax_errors)}"
+        )
 
     # ----------------------------------------------------------
-    # 3. Map Taxes — resolve account head robustly
+    # Write back custom_remote_id onto the SOURCE (External PO) items,
+    # so future refetches/syncs of this same row are traceable both ways.
     # ----------------------------------------------------------
-    for tax in (src.taxes or []):
-        acc = resolve_account(tax.account_head)
-
-        if not acc:
-            frappe.log_error(
-                f"Tax account not found: {tax.account_head} — skipping row",
-                "PO Sync: Tax Account Missing"
-            )
-            continue
-
-        tax_amount      = flt(tax.tax_amount)
-        base_tax_amount = tax_amount * conversion_rate
-
-        doc.append("taxes", {
-            "charge_type":                          tax.charge_type or "On Net Total",
-            "account_head":                         acc,
-            "description":                          tax.description or acc,
-            "rate":                                 flt(tax.rate),
-            "tax_amount":                           tax_amount,
-            "tax_amount_after_discount_amount":     flt(getattr(tax, "tax_amount_after_discount_amount", 0)) or tax_amount,
-            "base_tax_amount":                      base_tax_amount,
-            "base_tax_amount_after_discount_amount": base_tax_amount,
-            "total":                                flt(getattr(tax, "total", 0)),
-            "base_total":                           flt(getattr(tax, "base_total", 0)),
-            "add_deduct_tax":                       tax.add_deduct_tax or "Add",
-            "category":                             tax.category or "Total",
-            "included_in_print_rate":               getattr(tax, "included_in_print_rate", 0),
-            "included_in_paid_amount":              getattr(tax, "included_in_paid_amount", 0),
-            "item_wise_tax_detail":                 getattr(tax, "item_wise_tax_detail", "{}") or "{}",
-            "cost_center":                          getattr(tax, "cost_center", None),
-        })
+    if frappe.get_meta("Purchase Order Item").has_field("custom_remote_id"):
+        has_source_child = frappe.db.exists("DocType", "External Purchase Order Item")
+        source_item_meta = frappe.get_meta("External Purchase Order Item") if has_source_child else None
+        if has_source_child and source_item_meta.has_field("custom_remote_id"):
+            for source_row_name, new_child_name in inserted_map:
+                # only write if the External PO item row doesn't already carry it
+                current = frappe.db.get_value("External Purchase Order Item", source_row_name, "custom_remote_id")
+                if not current:
+                    frappe.db.set_value(
+                        "External Purchase Order Item", source_row_name,
+                        "custom_remote_id", new_child_name,
+                        update_modified=False
+                    )
+            frappe.db.commit()
 
     # ----------------------------------------------------------
-    # 4. Set flags — skip auto-recalculation
+    # Write back remote_id onto the External PO parent
     # ----------------------------------------------------------
-    doc.flags.ignore_permissions    = True
-    doc.flags.ignore_validate       = True
-    doc.flags.ignore_links          = True
-    doc.flags.ignore_pricing_rule   = True
-    doc.flags.ignore_mandatory      = True
+    if frappe.get_meta("External Purchase Order").has_field("remote_id"):
+        frappe.db.set_value("External Purchase Order", src.name, "remote_id", po_name, update_modified=False)
+        frappe.db.commit()
 
     # ----------------------------------------------------------
-    # 5. Force all totals to exactly match the source
+    # Reload and sync docstatus
     # ----------------------------------------------------------
-    doc.total                           = flt(src.total)
-    doc.net_total                       = flt(src.net_total) or flt(src.total)
-    doc.base_total                      = flt(src.base_total)
-    doc.base_net_total                  = flt(src.base_net_total) or flt(src.base_total)
-    doc.total_qty                       = flt(src.total_qty)
-    doc.grand_total                     = flt(src.grand_total)
-    doc.base_grand_total                = flt(src.base_grand_total)
-    doc.base_taxes_and_charges_added    = flt(src.base_taxes_and_charges_added)
-    doc.taxes_and_charges_added         = flt(src.taxes_and_charges_added)
-    doc.base_taxes_and_charges_deducted = flt(src.base_taxes_and_charges_deducted)
-    doc.taxes_and_charges_deducted      = flt(src.taxes_and_charges_deducted)
-    doc.total_taxes_and_charges         = flt(src.total_taxes_and_charges)
-    doc.base_total_taxes_and_charges    = flt(src.base_total_taxes_and_charges)
-    doc.tax_withholding_net_total       = flt(getattr(src, "tax_withholding_net_total", 0))
-    doc.base_tax_withholding_net_total  = flt(getattr(src, "base_tax_withholding_net_total", 0))
-    doc.rounding_adjustment             = flt(src.rounding_adjustment)
-    doc.base_rounding_adjustment        = flt(src.base_rounding_adjustment)
-    doc.rounded_total                   = flt(src.rounded_total)
-    doc.base_rounded_total              = flt(src.base_rounded_total)
-    doc.in_words                        = getattr(src, "in_words", "")
-    doc.base_in_words                   = getattr(src, "base_in_words", "")
-
-    # ----------------------------------------------------------
-    # 6. Save (as Draft)
-    # ----------------------------------------------------------
-    doc.save()
-    frappe.db.commit()
-
-    # ----------------------------------------------------------
-    # 7. Directly write taxes to DB in case ignore_validate
-    #    caused them to be skipped by the ORM
-    # ----------------------------------------------------------
-    _ensure_taxes_in_db(doc)
+    frappe.clear_document_cache("Purchase Order", po_name)
+    doc = frappe.get_doc("Purchase Order", po_name)
+    sync_docstatus(doc, src.docstatus)
 
     return doc
-
-
-def _ensure_taxes_in_db(doc):
-    """
-    After save(), verify that tax rows actually landed in the DB.
-    If not, insert them directly. This guards against Frappe versions
-    that silently drop child rows when ignore_validate=True.
-    """
-    existing_count = frappe.db.count(
-        "Purchase Taxes and Charges",
-        {"parent": doc.name, "parenttype": "Purchase Order"}
-    )
-
-    if existing_count >= len(doc.taxes):
-        return  # All rows are present, nothing to do
-
-    # Wipe and re-insert
-    frappe.db.delete("Purchase Taxes and Charges", {
-        "parent": doc.name,
-        "parenttype": "Purchase Order"
-    })
-
-    for idx, tax in enumerate(doc.taxes, start=1):
-        frappe.db.insert({
-            "doctype":                              "Purchase Taxes and Charges",
-            "name":                                 frappe.generate_hash(length=10),
-            "parent":                               doc.name,
-            "parentfield":                          "taxes",
-            "parenttype":                           "Purchase Order",
-            "owner":                                frappe.session.user,
-            "modified_by":                          frappe.session.user,
-            "docstatus":                            0,
-            "idx":                                  idx,
-            "charge_type":                          tax.charge_type,
-            "account_head":                         tax.account_head,
-            "description":                          tax.description,
-            "rate":                                 tax.rate,
-            "tax_amount":                           tax.tax_amount,
-            "tax_amount_after_discount_amount":     tax.tax_amount_after_discount_amount,
-            "base_tax_amount":                      tax.base_tax_amount,
-            "base_tax_amount_after_discount_amount": tax.base_tax_amount_after_discount_amount,
-            "total":                                tax.total,
-            "base_total":                           tax.base_total,
-            "add_deduct_tax":                       tax.add_deduct_tax,
-            "category":                             tax.category,
-            "included_in_print_rate":               tax.included_in_print_rate,
-            "included_in_paid_amount":              tax.included_in_paid_amount,
-            "item_wise_tax_detail":                 tax.item_wise_tax_detail,
-            "cost_center":                          tax.cost_center,
-        })
-
-    frappe.db.commit()
 
 
 # ==========================================================
@@ -581,22 +583,38 @@ def sync_purchase_order_docs(source_doctype: str, names):
 
 
 def sync_bulk_purchase_orders(names):
-    success, failed = 0, 0
+    results = []
     for name in names:
         try:
-            src      = frappe.get_doc("External Purchase Order", name)
-            existing = src.remote_id if frappe.db.exists("Purchase Order", src.remote_id) else None
+            frappe.db.commit()
+            src = frappe.get_doc("External Purchase Order", name)
+
+            company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
+            target_name = _build_target_name(company_abbr, src.remote_id or src.name)
+            existing = _find_existing_po(src.remote_id or src.name, target_name)
 
             doc = upsert_purchase_order(src, existing)
-            sync_docstatus(doc, src.docstatus)
 
-            success += 1
-            if success % 10 == 0:
+            results.append({
+                "name": name,
+                "status": "success",
+                "po_name": doc.name,
+                "items": len(doc.items),
+                "taxes": len(doc.taxes),
+                "docstatus": doc.docstatus
+            })
+
+            if len(results) % 10 == 0:
                 frappe.db.commit()
 
-        except Exception:
-            failed += 1
-            frappe.log_error(f"Sync Fail: {name}", frappe.get_traceback())
+        except Exception as e:
+            import traceback
+            results.append({
+                "name": name,
+                "status": "failed",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
 
     frappe.db.commit()
-    return {"success": success, "failed": failed}
+    return results

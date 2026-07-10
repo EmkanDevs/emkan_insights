@@ -75,6 +75,17 @@ frappe.ui.form.on('External Site Configuration CT', {
             return;
         }
 
+        // Per-row guard: prevent overlapping sync clicks for the same row
+        frm._fetch_locks = frm._fetch_locks || {};
+        if (frm._fetch_locks[cdn]) {
+            frappe.show_alert({
+                message: __('A sync for this row is already running - please wait for it to finish.'),
+                indicator: 'orange'
+            });
+            return;
+        }
+        frm._fetch_locks[cdn] = true;
+
         // Double check mapping before calling backend
         if (!row.exported_doctype) {
             const mapping = get_mapping();
@@ -93,7 +104,15 @@ frappe.ui.form.on('External Site Configuration CT', {
         const generic_args = Object.assign({}, base_args, { ref_doctype: row.ref_doctype });
 
         const show_result = function (r) {
+            frm._fetch_locks[cdn] = false;
             if (r.message) {
+                if (typeof r.message === 'object' && r.message.status === 'queued') {
+                    frappe.show_alert({
+                        message: __(r.message.message || 'Sync queued. Please wait for completion before starting again.'),
+                        indicator: 'blue'
+                    });
+                    return;
+                }
                 let count = r.message;
                 let errors = [];
                 let missing_parents = [];
@@ -152,7 +171,9 @@ frappe.ui.form.on('External Site Configuration CT', {
                 freeze: true,
                 freeze_message: __(`Fetching ${row.ref_doctype}s...`),
                 callback: show_result,
-                error: function () {}
+                error: function () {
+                    frm._fetch_locks[cdn] = false;
+                }
             });
         };
 

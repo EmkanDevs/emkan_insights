@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_import": 1,
+ "autoname": "field:remote_id",
  "creation": "2013-01-22 15:11:38",
  "doctype": "DocType",
  "document_type": "Setup",
@@ -10,7 +11,7 @@
   "item",
   "company",
   "uom",
-    "remote_id",
+  "remote_id",
   "source_site",
   "quantity",
   "cb0",
@@ -109,7 +110,7 @@
    "label": "Item Name",
    "read_only": 1
   },
-    {
+  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
    "label": "Remote ID",
@@ -655,10 +656,11 @@
  "image_field": "image",
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-19 16:17:15.925156",
+ "modified": "2026-07-07 09:18:38.625175",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External BOM",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

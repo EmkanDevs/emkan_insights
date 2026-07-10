@@ -54,19 +54,61 @@ def get_site_config_doctypes_rows():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CONCURRENCY LOCK
+# ─────────────────────────────────────────────────────────────────────────────
+def _acquire_sync_lock(child_docname, timeout=1800):
+    key = f"external_sync_lock:{child_docname}"
+    try:
+        acquired = frappe.cache().redis.set(key, "1", nx=True, ex=timeout)
+        return bool(acquired)
+    except Exception:
+        frappe.logger("external_sync").warning(
+            "Could not acquire redis lock for %s - proceeding without lock.",
+            child_docname
+        )
+        return True
+
+
+def _release_sync_lock(child_docname):
+    key = f"external_sync_lock:{child_docname}"
+    try:
+        frappe.cache().redis.delete(key)
+    except Exception:
+        pass
+
+
+def _locked_response(child_docname):
+    return {
+        "count": 0,
+        "fetched_total": 0,
+        "not_saved_count": 0,
+        "last_sync": None,
+        "errors": [{
+            "remote_id": None,
+            "error": f"A sync is already running for this row ({child_docname}). "
+                     f"Please wait for it to finish before triggering it again."
+        }],
+        "missing_parent_accounts": [],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HELPER: fetch full docs for doctypes that need child tables
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fetch_remote_docs_with_children(base_url, headers, remote_dt, rows):
     docs = []
-    problematic_cc = "Main - IMC"
     encoded_dt = quote(str(remote_dt), safe='')
+    seen_remote_names = set()
 
     for row in rows:
         name = row.get("name")
         if not name:
             docs.append(row)
             continue
+        if name in seen_remote_names:
+            continue
+        seen_remote_names.add(name)
         try:
             encoded_name = quote(str(name), safe='')
             doc_url = f"{base_url}/api/resource/{encoded_dt}/{encoded_name}"
@@ -382,7 +424,101 @@ def _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id):
             doc.company = company
 
 
-def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors,site_url):
+def _prepare_child_rows_for_sync(doc, table_fieldname, rows):
+    table_df = doc.meta.get_field(table_fieldname)
+    if not table_df or table_df.fieldtype != "Table" or not table_df.options:
+        return rows
+
+    child_meta = frappe.get_meta(table_df.options)
+    child_fieldnames = {df.fieldname for df in child_meta.fields}
+
+    cleaned_rows = []
+    seen_row_ids = set()
+    seen_row_fingerprints = set()
+
+    for row in rows:
+        if not isinstance(row, dict):
+            cleaned_rows.append(row)
+            continue
+
+        row = dict(row)
+        remote_child_row_id = row.get("name")
+        if remote_child_row_id and remote_child_row_id in seen_row_ids:
+            continue
+
+        row.pop("name", None)
+        row.pop("idx", None)
+        row.pop("parent", None)
+        row.pop("parenttype", None)
+        row.pop("parentfield", None)
+        row.pop("docstatus", None)
+        row.pop("owner", None)
+        row.pop("creation", None)
+        row.pop("modified", None)
+        row.pop("modified_by", None)
+
+        if "custom_remote_id" in child_fieldnames and remote_child_row_id:
+            row["custom_remote_id"] = remote_child_row_id
+
+        fingerprint_row = dict(row)
+        fingerprint_row.pop("custom_remote_id", None)
+        row_fingerprint = json.dumps(fingerprint_row, sort_keys=True, default=str)
+        if row_fingerprint in seen_row_fingerprints:
+            continue
+
+        if remote_child_row_id:
+            seen_row_ids.add(remote_child_row_id)
+        seen_row_fingerprints.add(row_fingerprint)
+        cleaned_rows.append(row)
+
+    return cleaned_rows
+
+
+def _dedupe_saved_child_rows_by_remote_id(local_dt, docname):
+    meta = frappe.get_meta(local_dt)
+    system_fields = {
+        "name", "idx", "parent", "parenttype", "parentfield", "owner",
+        "creation", "modified", "modified_by", "docstatus", "doctype"
+    }
+
+    for table_df in meta.get_table_fields():
+        child_dt = table_df.options
+        child_meta = frappe.get_meta(child_dt)
+        child_fields = [df.fieldname for df in child_meta.fields]
+        if "custom_remote_id" not in child_fields:
+            continue
+
+        query_fields = ["name", "idx", "custom_remote_id"] + [
+            f for f in child_fields if f not in system_fields and f not in {"custom_remote_id"}
+        ]
+        rows = frappe.get_all(
+            child_dt,
+            filters={
+                "parent": docname,
+                "parenttype": local_dt,
+                "parentfield": table_df.fieldname
+            },
+            fields=query_fields,
+            order_by="idx asc, creation asc, name asc"
+        )
+
+        seen_remote_ids = set()
+        duplicate_names = []
+        for row in rows:
+            remote_child_id = (row.get("custom_remote_id") or "").strip()
+            if not remote_child_id:
+                continue
+            if remote_child_id in seen_remote_ids:
+                duplicate_names.append(row["name"])
+                continue
+            seen_remote_ids.add(remote_child_id)
+
+        if duplicate_names:
+            for duplicate_name in duplicate_names:
+                frappe.db.delete(child_dt, {"name": duplicate_name})
+
+
+def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors, site_url):
     remote_id = item.get('name') or item.get('id')
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
 
@@ -394,84 +530,79 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         or frappe.db.get_value(local_dt, {"name": remote_id}, "name")
     )
 
-    if existing_name:
-        doc = frappe.get_doc(local_dt, existing_name)
-
-        # If doc is submitted, temporarily reset docstatus in DB to 0
-        # so ERPNext's submit-lock validators don't block child table changes.
-        current_docstatus = frappe.utils.cint(doc.get("docstatus"))
-        if current_docstatus in (1, 2):
-            frappe.db.set_value(local_dt, existing_name, "docstatus", 0, update_modified=False)
-            doc.docstatus = 0
-
-        # Delete all existing child rows from DB directly.
-        # In-memory clear alone is not enough — Frappe reconciles against DB
-        # during save and throws "X not found" for stale row names.
-        for df in doc.meta.get_table_fields():
+    # Purge parent + child rows tied to this remote id before rebuilding.
+    # We purge child rows keyed on BOTH the looked-up parent name AND the
+    # deterministic doc name (remote_id). This clears any ORPHAN child rows
+    # left behind by a previous interrupted sync (parent row gone but its
+    # child rows survived), which is what caused duplicate item/tax rows to
+    # accumulate one copy per fetch.
+    purge_parent_names = {n for n in (existing_name, remote_id) if n}
+    for df in frappe.get_meta(local_dt).get_table_fields():
+        for parent_name in purge_parent_names:
             frappe.db.delete(df.options, {
-                "parent": existing_name,
+                "parent": parent_name,
                 "parenttype": local_dt
             })
-            doc.set(df.fieldname, [])
+    if existing_name:
+        # Delete the parent document itself
+        frappe.db.delete(local_dt, existing_name)
+    frappe.db.commit()
 
-        frappe.db.commit()
-    else:
-        # ✅ FIX: create new doc — previously this path returned False, dropping all new records
-        doc = frappe.new_doc(local_dt)
-        doc.__islocal = True
-        doc.name = remote_id
-        if 'remote_id' in local_fields:
-            doc.remote_id = remote_id
-        doc.flags.ignore_naming_series = True
+    # Always create as a brand new document
+    doc = frappe.new_doc(local_dt)
+    doc.__islocal = True
+    doc.name = remote_id
+    doc.flags.ignore_naming_series = True
 
-    # Map fields
+    # ── Map fields ──
     for field, value in item.items():
         if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus']:
             if value is not None:
                 if isinstance(value, list):
-                    cleaned_rows = []
-                    for row in value:
-                        if isinstance(row, dict):
-                            row = dict(row)  # shallow copy — don't mutate original
-                            # row.pop("name", None)
-                            row.pop("idx", None)
-                            row.pop("parent", None)
-                            row.pop("parenttype", None)
-                            row.pop("parentfield", None)
-                            row.pop("docstatus", None)
-                            row.pop("owner", None)
-                            row.pop("creation", None)
-                            row.pop("modified", None)
-                            row.pop("modified_by", None)
-                        cleaned_rows.append(row)
-                    doc.set(field, cleaned_rows)
+                    cleaned_rows = _prepare_child_rows_for_sync(doc, field, value)
+                    for row_data in cleaned_rows:
+                        doc.append(field, row_data)
                 else:
                     doc.set(field, value)
 
-    if "source_site" in local_fields:
-        doc.source_site = site_url
+    # ── remote_id & site_url ──
+    if 'remote_id' in local_fields:
+        doc.remote_id = remote_id
+    for site_url_fieldname in ("source_site", "site_url"):
+        if site_url_fieldname in local_fields:
+            doc.set(site_url_fieldname, site_url)
 
-    # Standard Flags
+    # ── Flags ──
     doc.flags.ignore_links = True
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory = True
     doc.flags.ignore_validate = True
 
-    # ✅ FIX: pass remote_id correctly (was passing remote_id=None before)
     _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id=remote_id)
-
     _bypass_address_lock(local_dt, doc)
+
+    # ─────────────────────────────────────────────────────────────────
+    # SAVE — using a DB savepoint so any failed attempt (link errors,
+    # duplicate conflicts, etc.) can be fully rolled back before we
+    # either retry the lookup path or give up. This prevents partial
+    # child-table inserts that previously caused duplicate item/tax
+    # rows when a save failed midway and was retried on the same doc.
+    # ─────────────────────────────────────────────────────────────────
+    savepoint = f"sync_{local_dt.replace(' ', '_')}_{frappe.generate_hash(length=8)}"
+
     try:
+        frappe.db.savepoint(savepoint)
+
+        # Bypass link validation up front (covers child-table links too,
+        # which doc.flags.ignore_links alone does not reliably cover).
+        frappe.flags.ignore_link_validation = True
         try:
             doc.save()
-        except frappe.exceptions.LinkValidationError:
-            doc.flags.ignore_links = True
-            frappe.flags.ignore_link_validation = True
-            try:
-                doc.save()
-            finally:
-                frappe.flags.ignore_link_validation = False
         except Exception as e:
+            # Roll back to before this doc's insert attempt so no
+            # partial parent/child rows are left behind.
+            frappe.db.rollback(save_point=savepoint)
+
             if _is_duplicate_conflict(e) and doc.is_new():
                 existing = None
                 for lookup_field in ["address_title", "name"]:
@@ -480,7 +611,6 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                         existing = frappe.db.get_value(local_dt, {lookup_field: lookup_val}, "name")
                         if existing:
                             break
-
                 if existing:
                     frappe.db.set_value(local_dt, existing, "remote_id", remote_id, update_modified=False)
                     frappe.db.commit()
@@ -489,8 +619,9 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                     raise
             else:
                 raise
+        finally:
+            frappe.flags.ignore_link_validation = False
 
-        # Sync docstatus using db_set to bypass local submission rules
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
 
@@ -498,10 +629,9 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         return True
 
     except Exception as e:
+        frappe.db.rollback(save_point=savepoint)
         errors.append({"remote_id": remote_id, "error": str(e)})
         return False
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED SYNC LOOP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -604,17 +734,243 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
 def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
     frappe.enqueue(
         "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync_data_from_remote",
-        site_url = site_url,
-        api_key = api_key,
-        api_secret =api_secret,
-        ref_doctype = ref_doctype,
-        child_docname =child_docname,
-        company =company,
+        site_url=site_url,
+        api_key=api_key,
+        api_secret=api_secret,
+        ref_doctype=ref_doctype,
+        child_docname=child_docname,
+        company=company,
         configuration_name=configuration_name,
         queue="long",
         timeout=2000
     )
     return "Sync Queued"
+
+
+def _get_company_abbr_for_sync(company):
+    if not company:
+        frappe.throw(_("Company is required to sync Quotations."))
+
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    if not abbr:
+        frappe.throw(_("Company {0} has no abbreviation set.").format(company))
+
+    return abbr
+
+
+def _build_company_prefixed_remote_id(company_abbr, remote_id):
+    remote_id = (remote_id or "").strip()
+    if not remote_id:
+        return remote_id
+
+    if remote_id.startswith(f"{company_abbr}-"):
+        return remote_id
+
+    return f"{company_abbr}-{remote_id}"
+
+
+def _prepare_quotation_for_external_sync(item, company_abbr):
+    item = dict(item or {})
+    original_remote_id = item.get("name") or item.get("id")
+    prefixed_remote_id = _build_company_prefixed_remote_id(company_abbr, original_remote_id)
+
+    if prefixed_remote_id:
+        item["name"] = prefixed_remote_id
+        item["id"] = prefixed_remote_id
+
+    return item
+
+
+@frappe.whitelist()
+def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
+    frappe.logger("external_sync").info("Starting Quotation sync with company %s", company)
+
+    company_abbr = _get_company_abbr_for_sync(company)
+    base_url = (site_url or "").rstrip('/')
+    headers = {
+        'Authorization': f'token {api_key}:{api_secret}',
+        'Content-Type': 'application/json'
+    }
+
+    remote_dt = "Quotation"
+    local_dt = "External Quotation"
+
+    if not frappe.db.exists("DocType", local_dt):
+        frappe.throw(
+            _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
+            .format(local_dt)
+        )
+
+    remote_url = f"{base_url}/api/resource/{remote_dt}"
+    data = []
+    limit = 1000
+    start = 0
+
+    try:
+        while True:
+            params = {
+                "fields": json.dumps(["*"]),
+                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+                "limit_page_length": limit,
+                "limit_start": start
+            }
+            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
+            response.raise_for_status()
+            page = response.json().get('data', [])
+
+            if not page:
+                break
+
+            data.extend(page)
+
+            if len(page) < limit:
+                break
+
+            start += limit
+    except Exception as e:
+        frappe.throw(_("Quotation sync failed: {0}").format(str(e)))
+
+    if data:
+        data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
+        data = [_prepare_quotation_for_external_sync(item, company_abbr) for item in data]
+
+    local_meta = frappe.get_meta(local_dt)
+    local_fields = [df.fieldname for df in local_meta.fields]
+
+    count, errors, not_saved = _run_sync_loop(
+        data, local_dt, local_fields, company, configuration_name, site_url
+    )
+
+    if not_saved:
+        retry_count, retry_errors, not_saved = _run_sync_loop(
+            not_saved, local_dt, local_fields, company, configuration_name, site_url
+        )
+        count += retry_count
+        errors.extend(retry_errors)
+
+    last_sync = frappe.utils.now()
+    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+    frappe.db.commit()
+
+    return {
+        "count": count,
+        "fetched_total": len(data),
+        "not_saved_count": len(not_saved),
+        "last_sync": last_sync,
+        "errors": errors,
+        "missing_parent_accounts": not_saved,
+    }
+    
+
+def _prepare_lead_for_external_sync(item, company_abbr):
+    """
+    Same pattern as _prepare_quotation_for_external_sync.
+    Prefixes the remote ID with the company abbreviation to avoid overwriting.
+    """
+    item = dict(item or {})
+    original_remote_id = item.get("name") or item.get("id")
+    prefixed_remote_id = _build_company_prefixed_remote_id(company_abbr, original_remote_id)
+
+    if prefixed_remote_id:
+        item["name"] = prefixed_remote_id
+        item["id"] = prefixed_remote_id
+
+    return item
+
+@frappe.whitelist()
+def sync_leads_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
+    """
+    Synchronizes Leads from a remote site to 'External Lead' locally.
+    Uses company abbreviation to prefix IDs, preventing cross-company overwrites.
+    """
+    frappe.logger("external_sync").info("Starting Lead sync with company %s", company)
+
+    # 1. Get company abbreviation
+    company_abbr = _get_company_abbr_for_sync(company)
+    
+    base_url = (site_url or "").rstrip('/')
+    headers = {
+        'Authorization': f'token {api_key}:{api_secret}',
+        'Content-Type': 'application/json'
+    }
+
+    remote_dt = "Lead"
+    local_dt = "External Lead"
+
+    # 2. Check if local DocType exists
+    if not frappe.db.exists("DocType", local_dt):
+        frappe.throw(
+            _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
+            .format(local_dt)
+        )
+
+    remote_url = f"{base_url}/api/resource/{remote_dt}"
+    data = []
+    limit = 1000
+    start = 0
+
+    # 3. Fetch data from remote
+    try:
+        while True:
+            params = {
+                "fields": json.dumps(["*"]),
+                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+                "limit_page_length": limit,
+                "limit_start": start
+            }
+            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
+            response.raise_for_status()
+            page = response.json().get('data', [])
+
+            if not page:
+                break
+
+            data.extend(page)
+
+            if len(page) < limit:
+                break
+
+            start += limit
+    except Exception as e:
+        frappe.throw(_("Lead sync failed: {0}").format(str(e)))
+
+    # 4. Process and Prefix Data
+    if data:
+        # Lead usually doesn't have heavy child tables like Quotation, 
+        # but we follow the pattern for consistency if needed.
+        # If Lead has child tables (e.g., Notes), _fetch_remote_docs_with_children handles it.
+        data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
+        data = [_prepare_lead_for_external_sync(item, company_abbr) for item in data]
+
+    local_meta = frappe.get_meta(local_dt)
+    local_fields = [df.fieldname for df in local_meta.fields]
+
+    # 5. Run Sync Loop
+    count, errors, not_saved = _run_sync_loop(
+        data, local_dt, local_fields, company, configuration_name, site_url
+    )
+
+    # 6. Retry if needed
+    if not_saved:
+        retry_count, retry_errors, not_saved = _run_sync_loop(
+            not_saved, local_dt, local_fields, company, configuration_name, site_url
+        )
+        count += retry_count
+        errors.extend(retry_errors)
+
+    # 7. Update Last Sync
+    last_sync = frappe.utils.now()
+    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+    frappe.db.commit()
+
+    return {
+        "count": count,
+        "fetched_total": len(data),
+        "not_saved_count": len(not_saved),
+        "last_sync": last_sync,
+        "errors": errors,
+        "missing_parent_accounts": not_saved,
+    }
 
 
 @frappe.whitelist()
@@ -682,7 +1038,10 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Lead Source": "External Lead Source",
         "Email Template": "External Email Template",
         "Lead" : "External Lead",
-        "Opportunity" : "External Opportunity"
+        "Opportunity" : "External Opportunity",
+        "Vehicle": "External Vehicle",
+        "Batch Plant": "External Batch Plant",
+        "Payment Request" : "External Payment Request",
     }
 
     reverse_doctype_map = {local: remote for remote, local in doctype_map.items()}
@@ -736,7 +1095,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation",
         "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
         "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
-        "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order",
+        "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order","Vehicle","Batch Plant",
         "Material Request", "Contact", "Address" , "Journal Entry","Item Group","Item","Account","Tax Category","BOM","Work Order","Production Plan"
     ] and data:
         data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
@@ -805,5 +1164,3 @@ def _clean_child_rows(doc):
             row.pop("parentfield", None)
             cleaned.append(row)
         doc.set(table_field.fieldname, cleaned)
-
-
