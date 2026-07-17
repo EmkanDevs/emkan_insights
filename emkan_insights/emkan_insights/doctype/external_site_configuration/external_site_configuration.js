@@ -92,7 +92,19 @@ frappe.ui.form.on('External Site Configuration CT', {
             frappe.model.set_value(cdt, cdn, 'exported_doctype', mapping[row.ref_doctype]);
         }
 
+        const sync_methods = {
+            "Lead": "emkan_insights.emkan_insights.sync_leads_from_remote.sync_leads_from_remote",
+            "Quotation": "emkan_insights.emkan_insights.sync_quotation_from_remote.sync_quotations_from_remote",
+            "Material Request": "emkan_insights.emkan_insights.sync_material_requests_from_remote.sync_material_requests_from_remote",
+            "Cost Center": "emkan_insights.emkan_insights.sync_cost_centers_from_remote.sync_cost_centers_from_remote",
+            "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
+            "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
+           // "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+            "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
+             "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
+        };
         const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
+        const sync_method = sync_methods[row.ref_doctype] || generic_method;
         const base_args = {
             site_url: frm.doc.site_url,
             api_key: frm.doc.api_key,
@@ -106,6 +118,7 @@ frappe.ui.form.on('External Site Configuration CT', {
         const show_result = function (r) {
             frm._fetch_locks[cdn] = false;
             if (r.message) {
+                console.info('External sync result', row.ref_doctype, r.message);
                 if (typeof r.message === 'object' && r.message.status === 'queued') {
                     frappe.show_alert({
                         message: __(r.message.message || 'Sync queued. Please wait for completion before starting again.'),
@@ -177,7 +190,7 @@ frappe.ui.form.on('External Site Configuration CT', {
             });
         };
 
-        call_sync(generic_method, generic_args);
+        call_sync(sync_method, generic_args);
     },
 
     

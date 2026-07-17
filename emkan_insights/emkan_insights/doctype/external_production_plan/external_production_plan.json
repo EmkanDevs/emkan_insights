@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "naming_series:",
+ "autoname": "field:remote_id",
  "creation": "2017-10-29 11:53:09.523362",
  "doctype": "DocType",
  "document_type": "Document",
@@ -14,6 +14,8 @@
   "filters",
   "item_code",
   "customer",
+  "remote_id",
+  "source_site",
   "warehouse",
   "project",
   "sales_order_status",
@@ -433,17 +435,29 @@
    "fieldname": "consider_minimum_order_qty",
    "fieldtype": "Check",
    "label": "Consider Minimum Order Qty"
+  },
+  {
+   "fieldname": "remote_id",
+   "fieldtype": "Data",
+   "label": "Remote ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   }
  ],
  "icon": "fa fa-calendar",
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-04 11:55:03.108971",
+ "modified": "2026-07-10 14:28:57.720979",
  "modified_by": "Administrator",
- "module": "Manufacturing",
- "name": "Production Plan",
- "naming_rule": "By \"Naming Series\" field",
+ "module": "Emkan Insights",
+ "name": "External Production Plan",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -460,6 +474,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "ASC",
  "states": []

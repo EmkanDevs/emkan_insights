@@ -246,13 +246,7 @@ def clean_duplicate_si_items(parent_name):
 
 
 def _dedupe_source_items(ext_items):
-    """
-    Prevent duplicate rows from ever being appended in the first place,
-    instead of relying only on post-insert cleanup. If the source pull
-    (pagination overlap, retry, etc.) handed back the same underlying row
-    more than once — identified by its own unique row name — keep only the
-    first occurrence.
-    """
+    
     seen = set()
     deduped = []
     for row in ext_items:
@@ -269,12 +263,7 @@ def _dedupe_source_items(ext_items):
 # ==========================================================
 
 def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
-    """
-    Three-tier resolution:
-    1. Prefixed local name: {company_abbr}-{remote_name}
-    2. Remote ID lookup: {remote_id_field: remote_name}
-    3. Raw name existence check
-    """
+    
     if not remote_or_local_name:
         return None
 
@@ -307,12 +296,7 @@ def get_child_detail(doctype, parent, item_code):
 
 
 def _resolve_customer(customer_ref, company_abbr):
-    """
-    Resolve the customer explicitly using the same 3-tier pattern used for
-    Sales Order / Delivery Note / Purchase Order links below, with a log
-    (not a hard failure) if it can't be resolved — leave blank and let
-    ignore_mandatory cover it, rather than dropping the whole invoice.
-    """
+    
     if not customer_ref:
         return None
 
@@ -388,6 +372,8 @@ def sync_external_sales_invoice_docs(source_doctype, names):
 
             # ------------------------------------------------
             # BUILD TARGET NAME: {company_abbr}-{remote_id}
+            # Same pattern as Sales Order sync (always prefix,
+            # e.g. IMC-ACC-SINV-26-00025 → IMC-IMC-ACC-SINV-26-00025).
             # ------------------------------------------------
             company_abbr = frappe.db.get_value('Company', ext_si.company, 'abbr') or ''
 
@@ -399,14 +385,7 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                     "ExternalSalesInvoice Sync - missing company abbr"
                 )
 
-            # FIX: don't double-prefix. If remote_id already starts with the
-            # company abbr (the external system had already stamped it on),
-            # use it as-is instead of prepending the abbr a second time.
-            # This is what was producing names like "IMC-IMC-CINV-25-00123".
-            if company_abbr and remote_id.startswith(f"{company_abbr}-"):
-                target_name = remote_id
-            else:
-                target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+            target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
 
             # ------------------------------------------------
             # Dynamic remote_id field detection
@@ -431,7 +410,7 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 "Sales Invoice",
                 {remote_id_field: remote_id},
                 "name"
-            )
+            ) or (target_name if frappe.db.exists("Sales Invoice", target_name) else None)
 
             if existing_si:
                 results.append({

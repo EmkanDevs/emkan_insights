@@ -1,22 +1,15 @@
 # Copyright (c) 2026, Mukesh Variyani and contributors
 # For license information, please see license.txt
 
-# import frappe
-from frappe.model.document import Document
-
-
-class ExternalProductionPlan(Document):
-	pass
-
-# import frappe
-from frappe.model.document import Document
-
-
-class ExternalProductionPlan(Document):
-	pass
-
 import frappe
 import json
+from frappe.model.document import Document
+
+
+class ExternalProductionPlan(Document):
+	pass
+
+
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -61,36 +54,27 @@ def _prefix_reference(company_abbr, reference_name):
     return f"{company_abbr}-{reference_name}"
 
 
-# def _normalize_fingerprint_value(value):
-#     if value is None:
-#         return ""
-
-#     if hasattr(value, "isoformat"):
-#         return value.isoformat()
-
-#     if isinstance(value, str):
-#         return value.strip()
-
-#     return value
-
-
-# def _get_po_item_fingerprint(row, item_row):
-#     remote_row_id = item_row.get("custom_remote_id") or row.get("custom_remote_id")
-#     if remote_row_id:
-#         return ("remote_id", str(remote_row_id).strip())
-
-#     return (
-#         "fields",
-#         json.dumps(
-#             {
-#                 field: _normalize_fingerprint_value(value)
-#                 for field, value in sorted(item_row.items())
-#                 if field not in {"idx"}
-#             },
-#             sort_keys=True,
-#             default=str,
-#         ),
-#     )
+def _deduplicate_child_table(parent_name, child_table, key_field="custom_remote_id"):
+    """Remove duplicate child rows based on key_field."""
+    rows = frappe.get_all(child_table, 
+        filters={"parent": parent_name}, 
+        fields=["name", key_field],
+        order_by="creation asc"
+    )
+    seen = set()
+    to_delete = []
+    for row in rows:
+        key = row.get(key_field) or row.name
+        if key in seen:
+            to_delete.append(row.name)
+        else:
+            seen.add(key)
+    
+    for name in to_delete:
+        frappe.db.sql(f"DELETE FROM `tab{child_table}` WHERE name = %s", (name,))
+    
+    if to_delete:
+        frappe.db.commit()
 
 
 @frappe.whitelist()
@@ -127,11 +111,11 @@ def sync_external_production_plan_docs(source_doctype, names):
                 if (
                     field not in SYSTEM_FIELDS
                     and field not in [
-                        "po_items",           # Assembly Items
-                        "sales_orders",        # Sales Orders
-                        "material_requests",   # Material Requests
-                        "mr_items",            # Raw Materials
-                        "sub_assembly_items",  # Sub Assembly Items
+                        "po_items",
+                        "sales_orders",
+                        "material_requests",
+                        "mr_items",
+                        "sub_assembly_items",
                         "skip_available_sub_assembly_item",
                         "remote_id"
                     ]
@@ -139,7 +123,7 @@ def sync_external_production_plan_docs(source_doctype, names):
                 ):
                     pp.set(field, value)
 
-            # SALES ORDERS (sales_orders)
+            # SALES ORDERS
             if hasattr(ext_pp, "sales_orders"):
                 pp.set("sales_orders", [])
                 for row in ext_pp.sales_orders:
@@ -149,7 +133,7 @@ def sync_external_production_plan_docs(source_doctype, names):
                             so_row[field] = value
                     pp.append("sales_orders", so_row)
 
-            # MATERIAL REQUESTS (material_requests)
+            # MATERIAL REQUESTS
             if hasattr(ext_pp, "material_requests"):
                 pp.set("material_requests", [])
                 for row in ext_pp.material_requests:
@@ -159,30 +143,7 @@ def sync_external_production_plan_docs(source_doctype, names):
                             mr_row[field] = value
                     pp.append("material_requests", mr_row)
 
-            # ASSEMBLY ITEMS (po_items in Production Plan)
-            # if hasattr(ext_pp, "po_items"):
-            #     pp.set("po_items", [])
-            #     seen_po_items = set()
-            #     for row in ext_pp.po_items:
-            #         item_row = {}
-            #         for field, value in row.as_dict().items():
-            #             if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
-            #                 item_row[field] = value
-            #         # Validate BOM reference
-            #         if item_row.get("bom_no"):
-            #             item_row["bom_no"] = _prefix_reference(company_abbr, item_row["bom_no"])
-
-            #         if item_row.get("bom_no") and not frappe.db.exists("BOM", item_row["bom_no"]):
-            #             item_row["bom_no"] = None
-
-            #         fingerprint = _get_po_item_fingerprint(row, item_row)
-            #         if fingerprint in seen_po_items:
-            #             continue
-            #         seen_po_items.add(fingerprint)
-
-            #         pp.append("po_items", item_row)
-            
-            # ASSEMBLY ITEMS (po_items in Production Plan)
+            # PO ITEMS
             if hasattr(ext_pp, "po_items"):
                 pp.set("po_items", [])
                 for row in ext_pp.po_items:
@@ -191,7 +152,6 @@ def sync_external_production_plan_docs(source_doctype, names):
                         if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                             item_row[field] = value
 
-                    # Validate BOM reference
                     if item_row.get("bom_no"):
                         item_row["bom_no"] = _prefix_reference(company_abbr, item_row["bom_no"])
 
@@ -203,7 +163,7 @@ def sync_external_production_plan_docs(source_doctype, names):
 
                     pp.append("po_items", item_row)
 
-            # SUB ASSEMBLY ITEMS (sub_assembly_items)
+            # SUB ASSEMBLY ITEMS
             if hasattr(ext_pp, "sub_assembly_items"):
                 pp.set("sub_assembly_items", [])
                 for row in ext_pp.sub_assembly_items:
@@ -211,15 +171,13 @@ def sync_external_production_plan_docs(source_doctype, names):
                     for field, value in row.as_dict().items():
                         if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                             sub_row[field] = value
-                    # Validate BOM reference
-                    if sub_row.get("bom_no") and not frappe.db.exists("BOM", sub_row["bom_no"]):
+                    if sub_row.get("bom_no") and not frappe.db.exists("BOM", sub_row.get("bom_no")):
                         sub_row["bom_no"] = None
-                    # Validate item reference
-                    if sub_row.get("production_plan_item") and not frappe.db.exists("Production Plan Item", sub_row["production_plan_item"]):
+                    if sub_row.get("production_plan_item") and not frappe.db.exists("Production Plan Item", sub_row.get("production_plan_item")):
                         sub_row["production_plan_item"] = None
                     pp.append("sub_assembly_items", sub_row)
 
-            # RAW MATERIALS (mr_items in Production Plan)
+            # RAW MATERIALS
             if hasattr(ext_pp, "mr_items"):
                 pp.set("mr_items", [])
                 for row in ext_pp.mr_items:
@@ -239,7 +197,6 @@ def sync_external_production_plan_docs(source_doctype, names):
             pp.insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True)
 
             # FORCE COMPANY-PREFIXED REMOTE ID
-
             if pp.name != target_name:
                 frappe.db.sql("""
                     UPDATE `tabProduction Plan` SET name = %s WHERE name = %s
@@ -247,26 +204,28 @@ def sync_external_production_plan_docs(source_doctype, names):
 
                 # Update child table parent references
                 for child_table in [
-                    "Production Plan Item",           # po_items
-                    "Production Plan Sales Order",     # sales_orders
-                    "Production Plan Material Request", # material_requests
-                    "Production Plan Item Reference",   # item references
-                    "Production Plan Sub Assembly Item", # sub_assembly_items
-                    "Material Request Plan Item"        # mr_items
+                    "Production Plan Item",
+                    "Production Plan Sales Order",
+                    "Production Plan Material Request",
+                    "Production Plan Item Reference",
+                    "Production Plan Sub Assembly Item",
+                    "Material Request Plan Item"
                 ]:
                     frappe.db.sql("""
                         UPDATE `tab{0}` SET parent = %s WHERE parent = %s
                     """.format(child_table), (target_name, pp.name))
 
                 frappe.db.commit()
-                pp.name = target_name
 
-            # DOCSTATUS SYNC — RELOAD FIRST
-            if pp.name != target_name:
-                pp = frappe.get_doc("Production Plan", target_name)
-            else:
-                pp.reload()
+            # SAFETY NET: Deduplicate child tables
+            _deduplicate_child_table(target_name, "Production Plan Item", "custom_remote_id")
+            _deduplicate_child_table(target_name, "Production Plan Sales Order", "sales_order")
+            _deduplicate_child_table(target_name, "Production Plan Material Request", "material_request")
+            _deduplicate_child_table(target_name, "Production Plan Sub Assembly Item", "production_plan_item")
+            _deduplicate_child_table(target_name, "Material Request Plan Item", "item_code")
 
+            # DOCSTATUS SYNC
+            pp = frappe.get_doc("Production Plan", target_name)
             pp.flags.ignore_permissions = True
             pp.flags.ignore_validate = True
             pp.flags.ignore_mandatory = True
@@ -279,6 +238,9 @@ def sync_external_production_plan_docs(source_doctype, names):
                 pp.submit()
                 pp = frappe.get_doc("Production Plan", target_name)
                 pp.flags.ignore_permissions = True
+                pp.flags.ignore_validate = True
+                pp.flags.ignore_mandatory = True
+                pp.flags.ignore_links = True
                 pp.cancel()
 
             results.append({"name": target_name, "status": "synced"})

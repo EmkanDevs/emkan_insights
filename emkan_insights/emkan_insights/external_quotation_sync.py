@@ -15,7 +15,7 @@ CHILD_TABLES = ["items", "taxes", "payment_schedule"]
 # it here (in addition to CHILD_TABLES) stops that regeneration from ever
 # being triggered in the first place, which is the actual root cause of
 # the "duplicate due dates" validation error.
-EXPLICITLY_HANDLED_HEADER_FIELDS = {"payment_terms_template"}
+EXPLICITLY_HANDLED_HEADER_FIELDS = {"payment_terms_template", "party_name", "quotation_to"}
 
 # These fields reference records (Address / Contact) that only make sense
 # in the context of the *target* system's party. Copying them blindly from
@@ -57,7 +57,7 @@ def sync_external_quotation_docs(source_doctype, names):
                     "ExternalQuotation Sync - missing company abbr"
                 )
 
-            target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+            target_name = _build_target_name(company_abbr, remote_id)
 
             existing = frappe.get_value("Quotation", {"remote_id": remote_id}, "name")
             if not existing and frappe.db.exists("Quotation", target_name):
@@ -121,6 +121,42 @@ def _is_contact_valid_for_party(value, party_type, party_name):
     }))
 
 
+def _build_target_name(company_abbr, remote_id):
+    remote_id = (remote_id or "").strip()
+    if not remote_id:
+        return None
+
+    if not company_abbr or remote_id.startswith(f"{company_abbr}-"):
+        return remote_id
+
+    return f"{company_abbr}-{remote_id}"
+
+
+def _resolve_company_prefixed_link(doctype, value, company_abbr):
+    value = (value or "").strip()
+    if not value:
+        return value
+
+    candidates = [value]
+    if company_abbr and not value.startswith(f"{company_abbr}-"):
+        candidates.append(f"{company_abbr}-{value}")
+
+    fieldnames = {df.fieldname for df in frappe.get_meta(doctype).fields}
+    for candidate in candidates:
+        if frappe.db.exists(doctype, candidate):
+            return candidate
+
+        for remote_field in ("custom_remote_id", "remote_id"):
+            if remote_field not in fieldnames:
+                continue
+
+            linked_name = frappe.db.get_value(doctype, {remote_field: candidate}, "name")
+            if linked_name:
+                return linked_name
+
+    return value
+
+
 # ==========================================================
 # UPSERT (SAFE)
 # ==========================================================
@@ -143,10 +179,17 @@ def upsert_quotation(src, target_name, existing_name=None):
     # --------------------------------------------------
     # REQUIRED FIELDS
     # --------------------------------------------------
+    company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
+
     quotation.remote_id = src.name
     quotation.company = src.company
-    quotation.party_name = src.party_name
     quotation.quotation_to = src.quotation_to or "Customer"
+    resolved_party_name = _resolve_company_prefixed_link(
+        quotation.quotation_to,
+        src.party_name,
+        company_abbr
+    )
+    quotation.party_name = resolved_party_name
 
     # --------------------------------------------------
     # MAP MAIN FIELDS
@@ -255,6 +298,10 @@ def upsert_quotation(src, target_name, existing_name=None):
     quotation.flags.ignore_mandatory = True
     quotation.flags.ignore_pricing_rule = True
 
+    # set_missing_values() reads party_name immediately for Lead/Customer
+    # detail lookup, so keep the resolved local link pinned here too.
+    quotation.quotation_to = src.quotation_to or "Customer"
+    quotation.party_name = resolved_party_name
     quotation.run_method("set_missing_values")
 
     # Belt-and-suspenders: even with payment_terms_template cleared, wipe

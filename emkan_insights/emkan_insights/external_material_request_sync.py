@@ -838,31 +838,81 @@ def _build_item_rows(external, project, company):
     return rows, skipped
 
 
-def sync_external_material_request(external_name, company):
-    external = frappe.get_doc("External Material Request", external_name)
+def _get_company_abbr(company):
+    if not company:
+        return "EXT"
+    return frappe.db.get_value("Company", company, "abbr") or "EXT"
 
-    target_name = None
 
+# def _build_local_mr_name(company, external_name):
+#     """Build the canonical local MR name: {company_abbr}-{remote_name}."""
+#     abbr = _get_company_abbr(company)
+#     external_name = (external_name or "").strip()
+#     if external_name.startswith(f"{abbr}-"):
+#         return external_name
+#     return f"{abbr}-{external_name}"
+
+def _build_local_mr_name(company, external_name):
+    """Build the canonical local MR name: {company_abbr}-{remote_name}."""
+    abbr = _get_company_abbr(company)
+    external_name = (external_name or "").strip()
+
+    # Always prefix for Incharge Company
+    if company == "Incharge Company":
+        return f"{abbr}-{external_name}"
+
+    # Avoid double prefix for other companies
+    if external_name.startswith(f"{abbr}-"):
+        return external_name
+
+    return f"{abbr}-{external_name}"
+
+
+def _resolve_local_mr_target(external, company):
+    
+    expected_name = _build_local_mr_name(company, external.name)
+
+    # 1. Match by local remote_id + company (authoritative link)
+    target_name = frappe.db.get_value(
+        "Material Request",
+        {"remote_id": external.name, "company": company},
+        "name",
+    )
+    if target_name:
+        return target_name
+
+    # 2. Canonical company-prefixed name for this external doc
+    if frappe.db.exists("Material Request", expected_name):
+        if frappe.db.get_value("Material Request", expected_name, "company") == company:
+            return expected_name
+
+    # 3. external.remote_id may be unprefixed (from fetch) or already prefixed
+    #    (from a previous sync). Try both, always with company scope.
     if external.remote_id:
-        target_name = frappe.db.get_value(
-            "Material Request", {"name": external.remote_id}, "name"
-        )
-        if target_name and not frappe.db.exists("Material Request", target_name):
+        remote_id_candidates = [external.remote_id]
+        prefixed_remote_id = _build_local_mr_name(company, external.remote_id)
+        if prefixed_remote_id not in remote_id_candidates:
+            remote_id_candidates.append(prefixed_remote_id)
+
+        for candidate in remote_id_candidates:
+            if not frappe.db.exists("Material Request", candidate):
+                continue
+            if frappe.db.get_value("Material Request", candidate, "company") == company:
+                return candidate
+
+        if not any(frappe.db.exists("Material Request", c) for c in remote_id_candidates):
             frappe.db.set_value(
                 "External Material Request", external.name, "remote_id", None
             )
-            target_name = None
 
-    if not target_name:
-        target_name = frappe.db.get_value(
-            "Material Request", {"remote_id": external.name}, "name"
-        )
+    return None
 
-    if not target_name:
-        abbr = frappe.db.get_value("Company", company, "abbr") or "EXT"
-        expected_name = f"{abbr}-{external.name}"
-        if frappe.db.exists("Material Request", expected_name):
-            target_name = expected_name
+
+def sync_external_material_request(external_name, company):
+    external = frappe.get_doc("External Material Request", external_name)
+
+    target_name = _resolve_local_mr_target(external, company)
+    expected_name = _build_local_mr_name(company, external.name)
 
     project = None
     if external.get("project"):
@@ -993,12 +1043,18 @@ def sync_external_material_request(external_name, company):
             )
 
         frappe.db.commit()
+
+        frappe.db.set_value(
+            "External Material Request", external.name,
+            "remote_id", target_name
+        )
+        frappe.db.commit()
+
         return {"name": target_name, "action": "updated", "skipped": skipped}
 
     else:
         mr = frappe.new_doc("Material Request")
-        abbr = frappe.db.get_value("Company", company, "abbr") or "EXT"
-        mr.name = target_name = f"{abbr}-{external.name}"
+        mr.name = target_name = expected_name
         mr.flags.name_set = True
 
         mr.material_request_type = external.material_request_type

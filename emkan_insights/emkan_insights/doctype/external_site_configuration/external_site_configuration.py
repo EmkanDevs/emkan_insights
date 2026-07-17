@@ -518,16 +518,60 @@ def _dedupe_saved_child_rows_by_remote_id(local_dt, docname):
                 frappe.db.delete(child_dt, {"name": duplicate_name})
 
 
+COMPANY_PREFIXED_EXTERNAL_DOCTYPES = {
+    "External Lead",
+    "External Quotation",
+    "External Material Request",
+    "External Purchase Receipt",
+    "External Purchase Invoice",
+    "External Stock Entry",
+    "External Payment Request",
+    "External Request for Quotation",
+}
+
+
+def _get_company_prefixed_remote_id_for_local_dt(local_dt, remote_id, company):
+    if local_dt not in COMPANY_PREFIXED_EXTERNAL_DOCTYPES:
+        return remote_id
+
+    company_abbr = _get_company_abbr_for_sync(company)
+    return _build_company_prefixed_remote_id(company_abbr, remote_id)
+
+
+def _get_legacy_unprefixed_external_doc(local_dt, local_fields, original_remote_id, company):
+    if local_dt not in COMPANY_PREFIXED_EXTERNAL_DOCTYPES or not original_remote_id:
+        return None
+
+    for lookup_field in ("remote_id", "name"):
+        filters = {lookup_field: original_remote_id}
+        if company and "company" in local_fields:
+            filters["company"] = company
+
+        existing_name = frappe.db.get_value(local_dt, filters, "name")
+        if existing_name:
+            return existing_name
+
+    return None
+
+
 def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors, site_url):
-    remote_id = item.get('name') or item.get('id')
+    original_remote_id = item.get('name') or item.get('id')
+    remote_id = _get_company_prefixed_remote_id_for_local_dt(local_dt, original_remote_id, company)
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
+    deferred_fields = {"amended_from"}
 
     if not remote_id:
         return False
 
+    if remote_id != original_remote_id:
+        item = dict(item)
+        item["name"] = remote_id
+        item["id"] = remote_id
+
     existing_name = (
         frappe.db.get_value(local_dt, {"remote_id": remote_id}, "name")
         or frappe.db.get_value(local_dt, {"name": remote_id}, "name")
+        or _get_legacy_unprefixed_external_doc(local_dt, local_fields, original_remote_id, company)
     )
 
     # Purge parent + child rows tied to this remote id before rebuilding.
@@ -556,7 +600,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
 
     # ── Map fields ──
     for field, value in item.items():
-        if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus']:
+        if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus'] and field not in deferred_fields:
             if value is not None:
                 if isinstance(value, list):
                     cleaned_rows = _prepare_child_rows_for_sync(doc, field, value)
@@ -621,6 +665,11 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                 raise
         finally:
             frappe.flags.ignore_link_validation = False
+
+        for field in deferred_fields:
+            value = item.get(field)
+            if field in local_fields and value is not None:
+                frappe.db.set_value(doc.doctype, doc.name, field, value, update_modified=False)
 
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
@@ -732,8 +781,24 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
 # ─────────────────────────────────────────────────────────────────────────────
 @frappe.whitelist()
 def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
-    frappe.enqueue(
+    dedicated_sync_methods = {
+        "Lead": "emkan_insights.emkan_insights.sync_leads_from_remote.sync_leads_from_remote",
+        "Quotation": "emkan_insights.emkan_insights.sync_quotation_from_remote.sync_quotations_from_remote",
+        "Material Request": "emkan_insights.emkan_insights.sync_material_requests_from_remote.sync_material_requests_from_remote",
+        "Cost Center": "emkan_insights.emkan_insights.sync_cost_centers_from_remote.sync_cost_centers_from_remote",
+        "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
+        "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
+        #"Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+        "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
+        "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote", 
+    }
+    sync_method = dedicated_sync_methods.get(
+        ref_doctype,
         "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync_data_from_remote",
+    )
+
+    frappe.enqueue(
+        sync_method,
         site_url=site_url,
         api_key=api_key,
         api_secret=api_secret,
@@ -749,7 +814,7 @@ def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, compan
 
 def _get_company_abbr_for_sync(company):
     if not company:
-        frappe.throw(_("Company is required to sync Quotations."))
+        frappe.throw(_("Company is required for this sync."))
 
     abbr = frappe.db.get_value("Company", company, "abbr")
     if not abbr:
@@ -767,210 +832,6 @@ def _build_company_prefixed_remote_id(company_abbr, remote_id):
         return remote_id
 
     return f"{company_abbr}-{remote_id}"
-
-
-def _prepare_quotation_for_external_sync(item, company_abbr):
-    item = dict(item or {})
-    original_remote_id = item.get("name") or item.get("id")
-    prefixed_remote_id = _build_company_prefixed_remote_id(company_abbr, original_remote_id)
-
-    if prefixed_remote_id:
-        item["name"] = prefixed_remote_id
-        item["id"] = prefixed_remote_id
-
-    return item
-
-
-@frappe.whitelist()
-def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
-    frappe.logger("external_sync").info("Starting Quotation sync with company %s", company)
-
-    company_abbr = _get_company_abbr_for_sync(company)
-    base_url = (site_url or "").rstrip('/')
-    headers = {
-        'Authorization': f'token {api_key}:{api_secret}',
-        'Content-Type': 'application/json'
-    }
-
-    remote_dt = "Quotation"
-    local_dt = "External Quotation"
-
-    if not frappe.db.exists("DocType", local_dt):
-        frappe.throw(
-            _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
-            .format(local_dt)
-        )
-
-    remote_url = f"{base_url}/api/resource/{remote_dt}"
-    data = []
-    limit = 1000
-    start = 0
-
-    try:
-        while True:
-            params = {
-                "fields": json.dumps(["*"]),
-                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
-                "limit_page_length": limit,
-                "limit_start": start
-            }
-            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
-            response.raise_for_status()
-            page = response.json().get('data', [])
-
-            if not page:
-                break
-
-            data.extend(page)
-
-            if len(page) < limit:
-                break
-
-            start += limit
-    except Exception as e:
-        frappe.throw(_("Quotation sync failed: {0}").format(str(e)))
-
-    if data:
-        data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
-        data = [_prepare_quotation_for_external_sync(item, company_abbr) for item in data]
-
-    local_meta = frappe.get_meta(local_dt)
-    local_fields = [df.fieldname for df in local_meta.fields]
-
-    count, errors, not_saved = _run_sync_loop(
-        data, local_dt, local_fields, company, configuration_name, site_url
-    )
-
-    if not_saved:
-        retry_count, retry_errors, not_saved = _run_sync_loop(
-            not_saved, local_dt, local_fields, company, configuration_name, site_url
-        )
-        count += retry_count
-        errors.extend(retry_errors)
-
-    last_sync = frappe.utils.now()
-    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
-
-    return {
-        "count": count,
-        "fetched_total": len(data),
-        "not_saved_count": len(not_saved),
-        "last_sync": last_sync,
-        "errors": errors,
-        "missing_parent_accounts": not_saved,
-    }
-    
-
-def _prepare_lead_for_external_sync(item, company_abbr):
-    """
-    Same pattern as _prepare_quotation_for_external_sync.
-    Prefixes the remote ID with the company abbreviation to avoid overwriting.
-    """
-    item = dict(item or {})
-    original_remote_id = item.get("name") or item.get("id")
-    prefixed_remote_id = _build_company_prefixed_remote_id(company_abbr, original_remote_id)
-
-    if prefixed_remote_id:
-        item["name"] = prefixed_remote_id
-        item["id"] = prefixed_remote_id
-
-    return item
-
-@frappe.whitelist()
-def sync_leads_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
-    """
-    Synchronizes Leads from a remote site to 'External Lead' locally.
-    Uses company abbreviation to prefix IDs, preventing cross-company overwrites.
-    """
-    frappe.logger("external_sync").info("Starting Lead sync with company %s", company)
-
-    # 1. Get company abbreviation
-    company_abbr = _get_company_abbr_for_sync(company)
-    
-    base_url = (site_url or "").rstrip('/')
-    headers = {
-        'Authorization': f'token {api_key}:{api_secret}',
-        'Content-Type': 'application/json'
-    }
-
-    remote_dt = "Lead"
-    local_dt = "External Lead"
-
-    # 2. Check if local DocType exists
-    if not frappe.db.exists("DocType", local_dt):
-        frappe.throw(
-            _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
-            .format(local_dt)
-        )
-
-    remote_url = f"{base_url}/api/resource/{remote_dt}"
-    data = []
-    limit = 1000
-    start = 0
-
-    # 3. Fetch data from remote
-    try:
-        while True:
-            params = {
-                "fields": json.dumps(["*"]),
-                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
-                "limit_page_length": limit,
-                "limit_start": start
-            }
-            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
-            response.raise_for_status()
-            page = response.json().get('data', [])
-
-            if not page:
-                break
-
-            data.extend(page)
-
-            if len(page) < limit:
-                break
-
-            start += limit
-    except Exception as e:
-        frappe.throw(_("Lead sync failed: {0}").format(str(e)))
-
-    # 4. Process and Prefix Data
-    if data:
-        # Lead usually doesn't have heavy child tables like Quotation, 
-        # but we follow the pattern for consistency if needed.
-        # If Lead has child tables (e.g., Notes), _fetch_remote_docs_with_children handles it.
-        data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
-        data = [_prepare_lead_for_external_sync(item, company_abbr) for item in data]
-
-    local_meta = frappe.get_meta(local_dt)
-    local_fields = [df.fieldname for df in local_meta.fields]
-
-    # 5. Run Sync Loop
-    count, errors, not_saved = _run_sync_loop(
-        data, local_dt, local_fields, company, configuration_name, site_url
-    )
-
-    # 6. Retry if needed
-    if not_saved:
-        retry_count, retry_errors, not_saved = _run_sync_loop(
-            not_saved, local_dt, local_fields, company, configuration_name, site_url
-        )
-        count += retry_count
-        errors.extend(retry_errors)
-
-    # 7. Update Last Sync
-    last_sync = frappe.utils.now()
-    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
-
-    return {
-        "count": count,
-        "fetched_total": len(data),
-        "not_saved_count": len(not_saved),
-        "last_sync": last_sync,
-        "errors": errors,
-        "missing_parent_accounts": not_saved,
-    }
 
 
 @frappe.whitelist()
@@ -997,6 +858,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Customer Group": "External Customer Group",
         "Item": "External Item",
         "Item Group": "External Item Group",
+        "Item Tax Template" : "External Item Tax Template",
         "Location": "External Location",
         "Manufacturer": "External Manufacturer",
         "Price List": "External Price List",
@@ -1018,6 +880,9 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Project": "External Project",
         "Request for Quotation": "External Request for Quotation",
         "Supplier Quotation": "External Supplier Quotation",
+        "Employee":"External Employee",
+        "Department":"External Department",
+        "Designation":"External Designation",
         "Purchase Receipt": "External Purchase Receipt",
         "Quotation": "External Quotation",
         "Delivery Note": "External Delivery Note",
@@ -1092,11 +957,11 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
 
     if remote_dt in [
         "Asset Category", "Purchase Invoice", "Payment Entry", "Purchase Order",
-        "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation",
+        "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation","Employee","Department","Designation"
         "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
         "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
         "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order","Vehicle","Batch Plant",
-        "Material Request", "Contact", "Address" , "Journal Entry","Item Group","Item","Account","Tax Category","BOM","Work Order","Production Plan"
+        "Material Request", "Contact", "Address" , "Journal Entry","Item Group","Item","Account","Tax Category","BOM","Work Order","Production Plan","Item Tax Template"
     ] and data:
         data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
 

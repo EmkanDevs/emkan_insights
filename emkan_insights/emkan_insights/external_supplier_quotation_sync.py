@@ -369,27 +369,120 @@ def _resolve_link_with_abbr(doctype, remote_name, company_abbr=None):
             base_name = base_name[len(prefix):]
             break
 
+    candidates = []
+    if remote_name:
+        candidates.append(remote_name)
     if company_abbr and base_name:
-        prefixed = f"{company_abbr}-{base_name}"
-        if frappe.db.exists(doctype, prefixed):
-            return prefixed
+        candidates.append(f"{company_abbr}-{base_name}")
+    # Always try company_abbr + full remote name (covers double-prefix
+    # internal RFQs: External IMC-RFQ-… → Internal IMC-IMC-RFQ-…).
+    if company_abbr and remote_name and not remote_name.startswith(f"{company_abbr}-{company_abbr}-"):
+        candidates.append(f"{company_abbr}-{remote_name}")
 
-    if company_abbr and not remote_name.startswith(f"{company_abbr}-"):
-        full_prefixed = f"{company_abbr}-{remote_name}"
-        if frappe.db.exists(doctype, full_prefixed):
-            return full_prefixed
+    seen = set()
+    unique_candidates = []
+    for name in candidates:
+        if name and name not in seen:
+            seen.add(name)
+            unique_candidates.append(name)
+
+    for name in unique_candidates:
+        if frappe.db.exists(doctype, name):
+            return name
 
     meta = frappe.get_meta(doctype)
-    for field in ("remote_id", "custom_remote_id"):
-        if meta.has_field(field):
-            local_name = frappe.db.get_value(doctype, {field: remote_name}, "name")
-            if local_name:
-                return local_name
+    for name in unique_candidates:
+        for field in ("remote_id", "custom_remote_id"):
+            if meta.has_field(field):
+                local_name = frappe.db.get_value(doctype, {field: name}, "name")
+                if local_name:
+                    return local_name
 
-    if frappe.db.exists(doctype, remote_name):
-        return remote_name
+    # Bridge via External Request for Quotation: External SQ items store the
+    # External RFQ name; synced RFQ sets custom_remote_id = that External name.
+    if doctype == "Request for Quotation":
+        for name in unique_candidates:
+            if frappe.db.exists("External Request for Quotation", name):
+                linked = frappe.db.get_value(
+                    "External Request for Quotation", name, "remote_id"
+                )
+                if linked and frappe.db.exists("Request for Quotation", linked):
+                    return linked
+                if meta.has_field("custom_remote_id"):
+                    local_name = frappe.db.get_value(
+                        "Request for Quotation", {"custom_remote_id": name}, "name"
+                    )
+                    if local_name:
+                        return local_name
 
     return None
+
+
+def _resolve_child_detail(child_doctype, parent, item_code, remote_item_name=None):
+    """Resolve a child row on a linked parent (RFQ Item / MR Item, etc.)."""
+    if not parent:
+        return None
+
+    if remote_item_name and frappe.get_meta(child_doctype).has_field("custom_remote_id"):
+        exact = frappe.db.get_value(
+            child_doctype,
+            {"parent": parent, "custom_remote_id": remote_item_name},
+            "name",
+        )
+        if exact:
+            return exact
+
+    if item_code:
+        return frappe.db.get_value(
+            child_doctype,
+            {"parent": parent, "item_code": item_code},
+            "name",
+        )
+
+    return remote_item_name
+
+
+def _build_item_reference_fields(row, company_abbr, resolved_item):
+    """Map Material Request / RFQ / SO / PO links from External SQ item."""
+    refs = {}
+
+    if row.get("material_request"):
+        mr = _resolve_link_with_abbr(
+            "Material Request", row.material_request, company_abbr
+        )
+        refs["material_request"] = mr
+        refs["material_request_item"] = _resolve_child_detail(
+            "Material Request Item",
+            mr,
+            resolved_item,
+            remote_item_name=row.get("material_request_item"),
+        ) if mr else row.get("material_request_item")
+
+    if row.get("request_for_quotation"):
+        rfq = _resolve_link_with_abbr(
+            "Request for Quotation", row.request_for_quotation, company_abbr
+        )
+        refs["request_for_quotation"] = rfq
+        refs["request_for_quotation_item"] = _resolve_child_detail(
+            "Request for Quotation Item",
+            rfq,
+            resolved_item,
+            remote_item_name=row.get("request_for_quotation_item"),
+        ) if rfq else row.get("request_for_quotation_item")
+
+    if row.get("sales_order"):
+        so = _resolve_link_with_abbr("Sales Order", row.sales_order, company_abbr)
+        refs["sales_order"] = so
+        refs["sales_order_item"] = row.get("sales_order_item")
+
+    if row.get("purchase_order"):
+        po = _resolve_link_with_abbr(
+            "Purchase Order", row.purchase_order, company_abbr
+        )
+        refs["purchase_order"] = po
+        refs["purchase_order_item"] = row.get("purchase_order_item")
+
+    return refs
 
 
 # ==========================================================
@@ -532,13 +625,15 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
         # Get remote_row_id for matching
         remote_row_id = getattr(row, 'custom_remote_id', None) or row.name
 
+        ref_fields = _build_item_reference_fields(row, company_abbr, resolved_item)
+
         # Check if this item already exists in the SQ
         if remote_row_id and remote_row_id in existing_items_map:
             existing_item = existing_items_map[remote_row_id]
             used_existing_items.add(existing_item.name)
 
             # UPDATE existing row directly in DB — DO NOT add to doc.items
-            frappe.db.set_value("Supplier Quotation Item", existing_item.name, {
+            update_vals = {
                 "item_code": resolved_item,
                 "item_name": row.item_name,
                 "description": row.get("description") or row.item_name,
@@ -552,7 +647,9 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
                 "warehouse": resolved_warehouse,
                 "idx": idx,
                 "custom_remote_id": remote_row_id,
-            })
+            }
+            update_vals.update(ref_fields)
+            frappe.db.set_value("Supplier Quotation Item", existing_item.name, update_vals)
             continue  # <-- CRITICAL: Skip appending to doc.items
 
         # INSERT new row — only these go into doc.items
@@ -570,24 +667,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
             "warehouse": resolved_warehouse,
             "custom_remote_id": remote_row_id,
         }
-
-        if row.get("material_request"):
-            item_row["material_request"] = _resolve_link_with_abbr(
-                "Material Request", row.material_request, company_abbr
-            )
-            item_row["material_request_item"] = row.get("material_request_item")
-
-        if row.get("sales_order"):
-            item_row["sales_order"] = _resolve_link_with_abbr(
-                "Sales Order", row.sales_order, company_abbr
-            )
-            item_row["sales_order_item"] = row.get("sales_order_item")
-
-        if row.get("purchase_order"):
-            item_row["purchase_order"] = _resolve_link_with_abbr(
-                "Purchase Order", row.purchase_order, company_abbr
-            )
-            item_row["purchase_order_item"] = row.get("purchase_order_item")
+        item_row.update(ref_fields)
 
         doc.append("items", item_row)
 

@@ -14,10 +14,10 @@ frappe.listview_settings['External Mode of Payment'] = {
                 __('Sync selected External Mode of Payment records to Mode of Payment master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.external_sync.sync_external_docs',
+                        method: 'emkan_insights.emkan_insights.doctype.external_mode_of_payment.external_mode_of_payment.sync_external_docs',
                         args: {
                             source_doctype: 'External Mode of Payment',
-                            names
+                            names: JSON.stringify(names)
                         },
                         freeze: true,
                         freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, 'External Mode of Payment']),
@@ -33,13 +33,3 @@ frappe.listview_settings['External Mode of Payment'] = {
         });
     }
 };
-```
-
-Save this as:
-```
-emkan_insights/emkan_insights/doctype/external_mode_of_payment/external_mode_of_payment_list.js
-```
-
-And the corresponding Python method path it calls would be:
-```
-emkan_insights/emkan_insights/doctype/external_mode_of_payment/external_mode_of_payment.py

@@ -72,7 +72,11 @@ def sync_external_payment_request(source_doctype, external_name):
 
     remote_id = external.name
     company_abbr = frappe.db.get_value("Company", external.company, "abbr") or ""
-    target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+    target_name = (
+        f"{company_abbr}-{remote_id}"
+        if company_abbr and not remote_id.startswith(f"{company_abbr}-")
+        else remote_id
+    )
 
     # Check existing by custom_remote_id
     existing_pr = frappe.db.get_value("Payment Request", {"custom_remote_id": remote_id}, "name")
@@ -144,6 +148,13 @@ def sync_external_payment_request(source_doctype, external_name):
         ignore_links=True,
         ignore_mandatory=True
     )
+
+    # Docstatus Sync
+    if external.docstatus == 1:
+        pr.submit()
+    elif external.docstatus == 2:
+        pr.submit()
+        pr.cancel()
 
     # Update external with local name
     external.db_set("remote_id", pr.name)

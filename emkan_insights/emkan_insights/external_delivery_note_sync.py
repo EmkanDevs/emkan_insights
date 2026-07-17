@@ -473,6 +473,8 @@ def sync_external_delivery_note_docs(source_doctype, names):
 
             # ------------------------------------------------
             # BUILD TARGET NAME: {company_abbr}-{remote_id}
+            # Same pattern as Sales Order sync (always prefix,
+            # e.g. IMC-DN-26-00025 → IMC-IMC-DN-26-00025).
             # ------------------------------------------------
             company_abbr = frappe.db.get_value("Company", ext_dn.company, "abbr") or ""
 
@@ -484,12 +486,7 @@ def sync_external_delivery_note_docs(source_doctype, names):
                     "ExternalDeliveryNote Sync - missing company abbr"
                 )
 
-            # Don't double-prefix if the source already stamped the abbr on
-            # (would otherwise produce names like "IMC-IMC-DN-25-00123").
-            if company_abbr and remote_id.startswith(f"{company_abbr}-"):
-                target_name = remote_id
-            else:
-                target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+            target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
 
             # ------------------------------------------------
             # Dynamic remote_id field detection
@@ -514,7 +511,7 @@ def sync_external_delivery_note_docs(source_doctype, names):
                 "Delivery Note",
                 {remote_id_field: remote_id},
                 "name"
-            )
+            ) or (target_name if frappe.db.exists("Delivery Note", target_name) else None)
 
             if existing_dn:
                 results.append({

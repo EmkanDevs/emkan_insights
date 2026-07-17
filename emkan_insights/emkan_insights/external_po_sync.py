@@ -110,23 +110,96 @@ def _resolve_link_with_abbr(doctype, remote_name, company_abbr=None):
     if not remote_name:
         return None
 
-    if company_abbr and remote_name.startswith(f"{company_abbr}-"):
-        return remote_name
+    candidates = [remote_name]
+    if company_abbr and not remote_name.startswith(f"{company_abbr}-"):
+        candidates.append(f"{company_abbr}-{remote_name}")
+    elif company_abbr and remote_name.startswith(f"{company_abbr}-"):
+        # Also try unprefixed remote_id (SQ stores custom_remote_id = PUR-SQTN-…)
+        stripped = remote_name[len(f"{company_abbr}-"):]
+        if stripped:
+            candidates.append(stripped)
 
-    if company_abbr:
-        prefixed = f"{company_abbr}-{remote_name}"
-        if frappe.db.exists(doctype, prefixed):
-            return prefixed
+    seen = set()
+    for name in candidates:
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if frappe.db.exists(doctype, name):
+            return name
 
     meta = frappe.get_meta(doctype)
-    for field in ("remote_id", "custom_remote_id"):
-        if meta.has_field(field):
-            local_name = frappe.db.get_value(doctype, {field: remote_name}, "name")
-            if local_name:
-                return local_name
+    for name in candidates:
+        if not name:
+            continue
+        for field in ("remote_id", "custom_remote_id"):
+            if meta.has_field(field):
+                local_name = frappe.db.get_value(doctype, {field: name}, "name")
+                if local_name:
+                    return local_name
 
-    if frappe.db.exists(doctype, remote_name):
-        return remote_name
+    # Bridge via External Supplier Quotation → synced SQ name
+    if doctype == "Supplier Quotation":
+        for name in candidates:
+            if not name:
+                continue
+            if frappe.db.exists("External Supplier Quotation", name):
+                linked = frappe.db.get_value(
+                    "External Supplier Quotation", name, "remote_id"
+                )
+                if linked and frappe.db.exists("Supplier Quotation", linked):
+                    return linked
+            if meta.has_field("custom_remote_id"):
+                local_name = frappe.db.get_value(
+                    "Supplier Quotation", {"custom_remote_id": name}, "name"
+                )
+                if local_name:
+                    return local_name
+            if meta.has_field("remote_id"):
+                local_name = frappe.db.get_value(
+                    "Supplier Quotation", {"remote_id": name}, "name"
+                )
+                if local_name:
+                    return local_name
+
+    return None
+
+
+def _resolve_supplier_quotation_item(sq_name, remote_item_id, item_code=None):
+    """
+    Map remote Supplier Quotation Item id → local child row name.
+    External SQ sync stores the remote child id in custom_remote_id.
+    """
+    if not remote_item_id:
+        return None
+
+    # Already a local row name
+    if sq_name and frappe.db.exists(
+        "Supplier Quotation Item", {"name": remote_item_id, "parent": sq_name}
+    ):
+        return remote_item_id
+    if frappe.db.exists("Supplier Quotation Item", remote_item_id):
+        parent = frappe.db.get_value("Supplier Quotation Item", remote_item_id, "parent")
+        if not sq_name or parent == sq_name:
+            return remote_item_id
+
+    filters = {"custom_remote_id": remote_item_id}
+    if sq_name:
+        filters["parent"] = sq_name
+
+    if frappe.get_meta("Supplier Quotation Item").has_field("custom_remote_id"):
+        found = frappe.db.get_value("Supplier Quotation Item", filters, "name")
+        if found:
+            return found
+
+    # Fallback: match by item_code under the resolved SQ parent
+    if sq_name and item_code:
+        found = frappe.db.get_value(
+            "Supplier Quotation Item",
+            {"parent": sq_name, "item_code": item_code},
+            "name",
+        )
+        if found:
+            return found
 
     return None
 
@@ -199,6 +272,20 @@ def _insert_po_items_safely(po_name, src, company_abbr=None, conversion_rate=1.0
                     "name"
                 )
 
+            # Resolve Supplier Quotation parent + local child row name
+            # (PO from remote carries the REMOTE SQ item id; local SQ items
+            # store that id in custom_remote_id — must map to local name).
+            sq_name = _resolve_link_with_abbr(
+                "Supplier Quotation",
+                getattr(row, "supplier_quotation", None),
+                company_abbr,
+            )
+            sq_item_name = _resolve_supplier_quotation_item(
+                sq_name,
+                getattr(row, "supplier_quotation_item", None),
+                item_code=row.item_code,
+            )
+
             new_child_name = frappe.generate_hash(length=10)
 
             item_row = {
@@ -240,8 +327,8 @@ def _insert_po_items_safely(po_name, src, company_abbr=None, conversion_rate=1.0
                 "apply_tds": getattr(row, "apply_tds", 0),
                 "sales_order": _resolve_link_with_abbr("Sales Order", getattr(row, "sales_order", None), company_abbr),
                 "sales_order_item": getattr(row, "sales_order_item", None),
-                "supplier_quotation": _resolve_link_with_abbr("Supplier Quotation", getattr(row, "supplier_quotation", None), company_abbr),
-                "supplier_quotation_item": getattr(row, "supplier_quotation_item", None),
+                "supplier_quotation": sq_name,
+                "supplier_quotation_item": sq_item_name,
                 "material_request": mr_name,
                 "material_request_item": mr_item_name,
                 "expense_account": resolve_account(getattr(row, "expense_account", None)),

@@ -536,6 +536,7 @@ def get_external_sync_info(source_doctype: str):
         },
 
         "External Item": {"target": "Item", "title_field": "item_name", "force_id": True, "defaults": {}},
+        "External Item Tax Template": {"target": "Item Tax Template", "title_field": "item_tax_template", "force_id": True, "defaults": {}},
         "External Item Group": {"target": "Item Group", "title_field": "item_group_name", "force_id": True, "defaults": {}},
         "External Warehouse": {"target": "Warehouse", "title_field": "warehouse_name", "force_id": True, "defaults": {}},
         "External Cost Center": {"target": "Cost Center", "title_field": "cost_center_name", "force_id": True, "defaults": {}},
