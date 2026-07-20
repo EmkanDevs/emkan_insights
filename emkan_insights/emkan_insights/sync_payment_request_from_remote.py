@@ -142,7 +142,6 @@ def sync_payment_requests_from_remote(site_url, api_key, api_secret, ref_doctype
             _release_sync_lock(child_docname)
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
 
         chunks = [names[i:i + CHUNK_SIZE] for i in range(0, len(names), CHUNK_SIZE)]
@@ -204,7 +203,6 @@ def process_payment_request_chunk(site_url, api_key, api_secret, company, compan
         if is_last_chunk:
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             _release_sync_lock(child_docname)
             frappe.publish_realtime(
                 "payment_request_sync_complete",

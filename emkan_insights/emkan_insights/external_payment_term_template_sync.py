@@ -68,6 +68,5 @@ def sync_external_payment_template(external_name):
 
     # 5. Finalize Sync
     external.db_set("remote_id", ppt.name)
-    frappe.db.commit()
 
     return ppt.name

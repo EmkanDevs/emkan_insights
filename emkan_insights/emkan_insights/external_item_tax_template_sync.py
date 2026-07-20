@@ -88,8 +88,6 @@ def sync_item_tax_templates(names):
                 "error": frappe.get_traceback()
             })
 
-    frappe.db.commit()
-
     return {
         "status": "Completed",
         "synced_count": len(synced),

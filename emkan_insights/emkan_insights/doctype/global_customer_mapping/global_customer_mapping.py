@@ -53,6 +53,4 @@ def auto_map_all_customers():
         doc.insert(ignore_permissions=True)
         created += 1
 
-    frappe.db.commit()
-
     return f"{created} mapping records created"

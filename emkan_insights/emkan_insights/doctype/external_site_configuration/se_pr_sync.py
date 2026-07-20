@@ -59,11 +59,9 @@ def force_sync_transaction(site_url, api_key, api_secret, doctype, child_docname
             frappe.log_error(f"Force Sync Error on {doc_name}", frappe.get_traceback())
             continue
 
-    frappe.db.commit()
     
     last_sync = now()
     frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
 
     return {
         "status": "success",

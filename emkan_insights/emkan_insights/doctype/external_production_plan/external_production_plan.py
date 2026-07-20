@@ -7,7 +7,7 @@ from frappe.model.document import Document
 
 
 class ExternalProductionPlan(Document):
-	pass
+    pass
 
 
 
@@ -72,9 +72,6 @@ def _deduplicate_child_table(parent_name, child_table, key_field="custom_remote_
     
     for name in to_delete:
         frappe.db.sql(f"DELETE FROM `tab{child_table}` WHERE name = %s", (name,))
-    
-    if to_delete:
-        frappe.db.commit()
 
 
 @frappe.whitelist()
@@ -214,8 +211,6 @@ def sync_external_production_plan_docs(source_doctype, names):
                     frappe.db.sql("""
                         UPDATE `tab{0}` SET parent = %s WHERE parent = %s
                     """.format(child_table), (target_name, pp.name))
-
-                frappe.db.commit()
 
             # SAFETY NET: Deduplicate child tables
             _deduplicate_child_table(target_name, "Production Plan Item", "custom_remote_id")

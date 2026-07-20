@@ -582,7 +582,6 @@ def _sync_docstatus(target_name, external):
         )
 
     if submit_exception or cint(frappe.db.get_value("Work Order", target_name, "docstatus")) != target_docstatus:
-        frappe.db.commit()
         frappe.db.set_value("Work Order", target_name, "docstatus", target_docstatus, update_modified=False)
         for child_doctype in ("Work Order Item", "Work Order Operation", "Work Order Scrap Item"):
             if frappe.db.exists("DocType", child_doctype):
@@ -591,7 +590,6 @@ def _sync_docstatus(target_name, external):
                     {"parent": target_name, "parenttype": "Work Order"},
                     "docstatus", target_docstatus, update_modified=False
                 )
-        frappe.db.commit()
 
     if wo_status and wo_status != "Draft":
         frappe.db.set_value("Work Order", target_name, "status", wo_status, update_modified=False)

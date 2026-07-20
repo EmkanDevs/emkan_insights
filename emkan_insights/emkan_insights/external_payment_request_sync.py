@@ -158,6 +158,5 @@ def sync_external_payment_request(source_doctype, external_name):
 
     # Update external with local name
     external.db_set("remote_id", pr.name)
-    frappe.db.commit()
 
     return pr.name

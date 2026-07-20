@@ -80,7 +80,6 @@ def _empty_result(child_docname):
     last_sync = frappe.utils.now()
     if child_docname:
         frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
     return {
         "count": 0,
         "fetched_total": 0,
@@ -259,7 +258,6 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
         last_sync = frappe.utils.now()
         if child_docname:
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-        frappe.db.commit()
 
         _log_cost_center_result(len(remote_names), count, not_saved, errors)
 

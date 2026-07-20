@@ -324,7 +324,6 @@ def _set_docstatus_directly(doctype, docname, docstatus):
         """UPDATE `tab{0}` SET docstatus = %s, modified = NOW(), modified_by = %s WHERE name = %s""".format(doctype),
         (docstatus, frappe.session.user, docname)
     )
-    frappe.db.commit()
 
 
 @frappe.whitelist()
@@ -386,7 +385,6 @@ def sync_external_purchase_receipt_docs(source_doctype, names):
                             doc = frappe.get_doc("Purchase Receipt", existing_name)
                             _apply_sync_flags(doc)
                             doc.submit()
-                            frappe.db.commit()
                         elif source_docstatus == 0 and existing_docstatus == 1:
                             frappe.log_error(
                                 title=f"Cannot unsubmit Purchase Receipt: {existing_name}",
@@ -540,7 +538,6 @@ def sync_external_purchase_receipt_docs(source_doctype, names):
             )
 
             clean_duplicate_pr_items(pr.name)
-            frappe.db.commit()
 
             # -----------------------------
             # NAMING SAFETY NET
@@ -565,7 +562,6 @@ def sync_external_purchase_receipt_docs(source_doctype, names):
                                 WHERE parent = %s
                             """.format(child_table), (target_name, old_name))
 
-                    frappe.db.commit()
                     final_name = target_name
                     
                 else:
@@ -586,7 +582,6 @@ def sync_external_purchase_receipt_docs(source_doctype, names):
                     pr = frappe.get_doc("Purchase Receipt", final_name)
                     _apply_sync_flags(pr)
                     pr.submit()
-                    frappe.db.commit()
                 except Exception as submit_error:
                     frappe.log_error(
                         title=f"Purchase Receipt Submit Error: {final_name}",

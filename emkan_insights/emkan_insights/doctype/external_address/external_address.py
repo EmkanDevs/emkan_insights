@@ -68,8 +68,6 @@ def _dedupe_address_children(parent_name, parenttype):
 		],
 	)
 
-	frappe.db.commit()
-
 
 def _safe_dedupe(parent_name, parenttype):
 	"""
@@ -152,8 +150,6 @@ def sync_external_records(names):
 				doc.save(ignore_permissions=True)
 			else:
 				doc.insert(ignore_permissions=True, ignore_mandatory=True)
-
-			frappe.db.commit()
 
 			# Clean duplicates on target Address after save (same as PI)
 			_safe_dedupe(doc.name, "Address")

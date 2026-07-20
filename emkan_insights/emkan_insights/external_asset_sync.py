@@ -177,7 +177,6 @@ def sync_external_assets(source_doctype, names):
                 fb.flags.ignore_mandatory = True
                 fb.db_insert()
 
-            frappe.db.commit()
             results.append({
                 "name": asset.name,
                 "status": "synced",

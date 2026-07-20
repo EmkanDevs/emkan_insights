@@ -22,6 +22,23 @@ LOCAL_DT = "External Purchase Receipt"
 PROGRESS_KEY_PREFIX = "pr_sync_progress"
 
 
+# ---------------------------------------------------------------------------
+# NOTE ON TRANSACTIONS
+# ---------------------------------------------------------------------------
+# Persistence is left to
+# Frappe's own lifecycle:
+#   - sync_purchase_receipts_from_remote is a whitelisted request; Frappe
+#     commits automatically once it returns without an uncaught exception.
+#   - process_purchase_receipt_chunk runs as a background job
+#     (frappe.enqueue); the job runner commits automatically on a clean
+#     return and rolls back the whole job if an exception propagates out.
+# Same caveat as the Purchase Invoice / RFQ sync files: per-item isolation
+# depends on _run_sync_loop (in external_site_configuration.py) using
+# savepoints rather than a bare frappe.db.rollback() internally, now that
+# no per-item commit exists to make a full rollback safe.
+# ---------------------------------------------------------------------------
+
+
 def _prepare_purchase_receipt_for_external_sync(item, company_abbr):
     item = dict(item or {})
     original_remote_id = item.get("name") or item.get("id")
@@ -154,7 +171,6 @@ def sync_purchase_receipts_from_remote(site_url, api_key, api_secret, ref_doctyp
             _release_sync_lock(child_docname)
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
 
         chunks = [names[i:i + CHUNK_SIZE] for i in range(0, len(names), CHUNK_SIZE)]
@@ -219,7 +235,6 @@ def process_purchase_receipt_chunk(site_url, api_key, api_secret, company, compa
         if is_last_chunk:
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             _release_sync_lock(child_docname)
             frappe.publish_realtime(
                 "purchase_receipt_sync_complete",

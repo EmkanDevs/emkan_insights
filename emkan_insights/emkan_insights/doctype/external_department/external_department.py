@@ -6,7 +6,7 @@ from frappe.model.document import Document
 
 
 class ExternalDepartment(Document):
-	pass
+    pass
 
 
 import frappe
@@ -92,31 +92,29 @@ def upsert_department(src, existing_name):
     has_source_site = dept_meta.has_field("source_site")
 
     # ----------------------------------------------------------
-    # EXISTING: raw SQL update to bypass ORM
+    # EXISTING: Update via ORM (doc.save) instead of raw SQL
     # ----------------------------------------------------------
     if existing_name:
-        # Build SET clause dynamically based on available columns
-        pairs = [
-            ("department_name", department_name),
-            ("parent_department", parent_department),
-            ("company", company),
-            ("is_group", is_group),
-            ("disabled", disabled),
-        ]
+        doc = frappe.get_doc("Department", existing_name)
+        
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_validate = True
+        doc.flags.ignore_links = True
+        doc.flags.ignore_mandatory = True
+
+        doc.department_name = department_name
+        doc.parent_department = parent_department
+        doc.company = company
+        doc.is_group = is_group
+        doc.disabled = disabled
+        
         if has_remote_id:
-            pairs.append(("remote_id", src.remote_id))
+            doc.remote_id = src.remote_id
         if has_source_site:
-            pairs.append(("source_site", source_site))
+            doc.source_site = source_site
 
-        set_clause = ", ".join(f"`{col}` = %s" for col, _ in pairs) + ", modified = NOW()"
-        values = [v for _, v in pairs] + [existing_name]
-
-        frappe.db.sql(
-            f"UPDATE `tabDepartment` SET {set_clause} WHERE name = %s",
-            tuple(values),
-        )
-        frappe.db.commit()
-        final_name = existing_name
+        doc.save()  # ORM save — writes to the transaction, no explicit commit needed
+        final_name = doc.name
 
     else:
         # ----------------------------------------------------------
@@ -146,8 +144,7 @@ def upsert_department(src, existing_name):
         doc.flags.ignore_links = True
         doc.flags.ignore_mandatory = True
 
-        doc.save()
-        frappe.db.commit()
+        doc.save()  # ORM save — writes to the transaction, no explicit commit needed
         final_name = doc.name
 
     # ----------------------------------------------------------
@@ -156,14 +153,9 @@ def upsert_department(src, existing_name):
     # ----------------------------------------------------------
     ext_meta = frappe.get_meta("External Department")
     if ext_meta.has_field("remote_id"):
-        frappe.db.set_value(
-            "External Department",
-            src.name,
-            "remote_id",
-            final_name,
-            update_modified=False,
-        )
-        frappe.db.commit()
+        # Use db_set on the source doc (ORM equivalent of frappe.db.set_value)
+        src.db_set("remote_id", final_name, update_modified=False)
+        
 
     frappe.clear_document_cache("Department", final_name)
     return frappe.get_doc("Department", final_name)
@@ -195,12 +187,16 @@ def sync_bulk_departments(names):
     """
     Bulk sync departments from External Department to Department.
     Processed in background queue.
+
+    All database writes (save/db_set) happen within a single transaction.
+    Frappe automatically commits the transaction when the background job finishes.
     """
     results = []
 
     for name in names:
         try:
-            frappe.db.commit()
+            
+            
             src = frappe.get_doc("External Department", name)
 
             department_name = getattr(src, "department_name", None) or src.name
@@ -219,8 +215,7 @@ def sync_bulk_departments(names):
                 }
             )
 
-            if len(results) % 10 == 0:
-                frappe.db.commit()
+            # NO batch commit every 10 records — the single transaction handles it
 
         except Exception as e:
             import traceback
@@ -234,5 +229,5 @@ def sync_bulk_departments(names):
                 }
             )
 
-    frappe.db.commit()
+    
     return results

@@ -6,7 +6,6 @@ from frappe.utils import flt, nowdate
 # ==========================================================
 # HELPERS
 # ==========================================================
-
 def sync_docstatus(doc, target_status):
     """
     Forcefully sets docstatus to match the source using direct DB writes.
@@ -44,8 +43,6 @@ def _force_docstatus_db(name, doctype, target_docstatus):
                     WHERE parent = %s AND parenttype = %s""",
                 (target_docstatus, name, doctype)
             )
-
-    frappe.db.commit()
 
 
 def resolve_account(account_head):
@@ -240,7 +237,7 @@ def _insert_po_items_safely(po_name, src, company_abbr=None, conversion_rate=1.0
     once we know the real child names.
     """
     if not src.items:
-        return 0, []
+        return 0, [], []
 
     success_count = 0
     errors = []
@@ -344,9 +341,6 @@ def _insert_po_items_safely(po_name, src, company_abbr=None, conversion_rate=1.0
             errors.append(error_msg)
             frappe.log_error(title=f"PO item insert failed: {po_name}", message=error_msg)
 
-    if success_count > 0:
-        frappe.db.commit()
-
     return success_count, errors, inserted_map
 
 
@@ -414,9 +408,6 @@ def _insert_po_taxes_safely(po_name, src, conversion_rate=1.0):
             errors.append(error_msg)
             frappe.log_error(title=f"PO tax insert failed: {po_name}", message=error_msg)
 
-    if success_count > 0:
-        frappe.db.commit()
-
     return success_count, errors
 
 
@@ -425,6 +416,11 @@ def _insert_po_taxes_safely(po_name, src, conversion_rate=1.0):
 # ==========================================================
 
 def upsert_purchase_order(src, existing_name):
+    """Every raw SQL statement and
+    ORM call below runs inside the same open transaction; the caller
+    (sync_bulk_purchase_orders) decides when this record's work becomes
+    durable.
+    """
     company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
     conversion_rate = flt(src.conversion_rate) or 1.0
     target_name = _build_target_name(company_abbr, src.remote_id or src.name)
@@ -436,7 +432,6 @@ def upsert_purchase_order(src, existing_name):
         frappe.db.sql("DELETE FROM `tabPurchase Order Item` WHERE parent = %s", (existing_name,))
         frappe.db.sql("DELETE FROM `tabPurchase Taxes and Charges` WHERE parent = %s AND parenttype = 'Purchase Order'", (existing_name,))
         frappe.db.sql("DELETE FROM `tabPayment Schedule` WHERE parent = %s AND parenttype = 'Purchase Order'", (existing_name,))
-        frappe.db.commit()
 
         frappe.db.sql("""
             UPDATE `tabPurchase Order`
@@ -501,7 +496,6 @@ def upsert_purchase_order(src, existing_name):
             getattr(src, "in_words", ""), getattr(src, "base_in_words", ""),
             existing_name
         ))
-        frappe.db.commit()
 
         po_name = existing_name
 
@@ -572,7 +566,6 @@ def upsert_purchase_order(src, existing_name):
         doc.set("taxes", [])
         doc.set("payment_schedule", [])
         doc.save()
-        frappe.db.commit()
 
         po_name = doc.name
 
@@ -633,14 +626,12 @@ def upsert_purchase_order(src, existing_name):
                         "custom_remote_id", new_child_name,
                         update_modified=False
                     )
-            frappe.db.commit()
 
     # ----------------------------------------------------------
     # Write back remote_id onto the External PO parent
     # ----------------------------------------------------------
     if frappe.get_meta("External Purchase Order").has_field("remote_id"):
         frappe.db.set_value("External Purchase Order", src.name, "remote_id", po_name, update_modified=False)
-        frappe.db.commit()
 
     # ----------------------------------------------------------
     # Reload and sync docstatus
@@ -670,10 +661,21 @@ def sync_purchase_order_docs(source_doctype: str, names):
 
 
 def sync_bulk_purchase_orders(names):
+    """
+    Runs as a background job. No explicit commits anywhere in this loop -
+    Frappe's job runner commits automatically once this function returns
+    without an uncaught exception (and rolls back the whole job if one
+    does). Each External PO gets its own savepoint so one bad record can
+    be cleanly discarded without losing the records already processed
+    earlier in the same batch.
+    """
     results = []
+
     for name in names:
+        savepoint = f"po_sync_{frappe.generate_hash(length=10)}"
+        frappe.db.savepoint(savepoint)
+
         try:
-            frappe.db.commit()
             src = frappe.get_doc("External Purchase Order", name)
 
             company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
@@ -691,10 +693,8 @@ def sync_bulk_purchase_orders(names):
                 "docstatus": doc.docstatus
             })
 
-            if len(results) % 10 == 0:
-                frappe.db.commit()
-
         except Exception as e:
+            frappe.db.rollback(save_point=savepoint)
             import traceback
             results.append({
                 "name": name,
@@ -703,5 +703,4 @@ def sync_bulk_purchase_orders(names):
                 "traceback": traceback.format_exc()
             })
 
-    frappe.db.commit()
     return results

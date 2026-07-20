@@ -315,16 +315,7 @@ def sync_doc_by_key(
 
     elif target_doctype == "Sales Person":
         _apply_sales_person_sync_rules(tgt)
-    # elif target_doctype == "Asset":
-    #     _apply_asset_sync_rules(src=src, tgt=tgt, key_field=key_field)
-    #     tgt.insert()
-        
-    #     if tgt.docstatus == 1:
-    #         # This is the 'Force' button for precision errors
-    #         tgt.flags.ignore_validate_update_after_submit = True
-    #         tgt.submit()
-            
-    #     frappe.db.commit()
+
     elif target_doctype == "Asset":
         _apply_asset_sync_rules(src=src, tgt=tgt, key_field=key_field)
         tgt.flags.ignore_mandatory = True
@@ -341,7 +332,6 @@ def sync_doc_by_key(
             tgt.submit()
             tgt.cancel()
 
-        frappe.db.commit()
         return {                   # ← EARLY RETURN to skip the tgt.save() below
             "doctype": "Asset",
             "name": tgt.name,
@@ -497,7 +487,6 @@ def sync_external_docs(
         )
         results.append(res["name"])
 
-    frappe.db.commit()
     return results
 
 

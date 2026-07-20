@@ -29,6 +29,22 @@ PROGRESS_KEY_PREFIX = "rfq_sync_progress"
 PARENT_REMOTE_ID_FIELD = "remote_id"
 
 
+# ---------------------------------------------------------------------------
+# NOTE ON TRANSACTIONS
+# ---------------------------------------------------------------------------
+# Persistence is left to
+# Frappe's own lifecycle:
+#   - sync_request_for_quotation_from_remote is a whitelisted request; Frappe
+#     commits automatically once it returns without an uncaught exception.
+#   - process_rfq_chunk runs as a background job (frappe.enqueue); the job
+#     runner commits automatically on a clean return and rolls back the
+#     whole job if an exception propagates out of it.
+# Each RFQ item gets its own savepoint in _process_rfq_item, so one bad
+# item can be discarded without losing the other items already processed
+# earlier in the same chunk.
+# ---------------------------------------------------------------------------
+
+
 def _fetch_remote_names(base_url, headers, remote_dt):
     url = f"{base_url}/api/resource/{remote_dt}"
     names = []
@@ -159,6 +175,8 @@ def _dedupe_external_rfq_children(parent_name):
     """
     Remove duplicate item/supplier rows on External Request for Quotation.
     Same pattern as PI / RFQ target sync dedupe — keeps earliest row per key.
+
+    Does NOT commit - caller controls the transaction boundary.
     """
     from frappe.utils import flt
 
@@ -220,8 +238,6 @@ def _dedupe_external_rfq_children(parent_name):
         ],
     )
 
-    frappe.db.commit()
-
 
 def _safe_dedupe_external_rfq(parent_name):
     """Never let a dedupe bug mark an otherwise-successful sync as failed."""
@@ -239,6 +255,10 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
     Custom _process_item for RFQ. Builds the local name directly from
     company_abbr + remote_id (see _build_rfq_local_name) instead of
     relying on naming_series autoname generation.
+
+    Does NOT commit. Wraps its own work in a savepoint so a failure here
+    rolls back only this item's writes, not every item already processed
+    earlier in the same chunk.
     """
     original_remote_id = item.get('name') or item.get('id')
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
@@ -247,88 +267,89 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
     if not original_remote_id:
         return False
 
-    target_name = _build_rfq_local_name(company_abbr, original_remote_id)
-
-    # ✅ Look up existing record by "remote_id" — the field that actually
-    # exists on the parent doctype — and also by the deterministic target
-    # name itself, so re-syncs always find and replace the same row.
-    existing_name = None
-    if "remote_id" in local_fields:
-        existing_name = frappe.db.get_value(local_dt, {PARENT_REMOTE_ID_FIELD: original_remote_id}, "name")
-    if not existing_name and frappe.db.exists(local_dt, target_name):
-        existing_name = target_name
-
-    # Purge parent + child rows keyed on BOTH looked-up name AND target name.
-    # Clears orphan child rows left by a previous interrupted sync (parent gone
-    # but items/suppliers survived), which otherwise causes 1× duplication per
-    # re-fetch — same pattern as generic _process_item.
-    purge_parent_names = {n for n in (existing_name, target_name) if n}
-    for df in frappe.get_meta(local_dt).get_table_fields():
-        for parent_name in purge_parent_names:
-            frappe.db.delete(df.options, {
-                "parent": parent_name,
-                "parenttype": local_dt,
-            })
-    if existing_name:
-        frappe.db.delete(local_dt, existing_name)
-    frappe.db.commit()
-
-    # ✅ Create new doc with an EXPLICIT deterministic name — bypasses
-    # naming_series autoname generation entirely, so there's no dependency
-    # on the Select field's configured dropdown options and no counter
-    # race between parallel chunk workers.
-    doc = frappe.new_doc(local_dt)
-    doc.__islocal = True
-    doc.name = target_name
-    doc.flags.name_set = True
-
-    # Keep naming_series populated as a plain display value (not used for
-    # name generation) — dynamically built from the company abbreviation,
-    # never hardcoded to one company and never taken from the remote's
-    # own naming_series value (which was overriding ours previously).
-    if "naming_series" in local_fields:
-        doc.naming_series = f"{company_abbr}-RFQ-.YY.-"
-
-    # Store remote_id for linking, on the PARENT field name that actually
-    # exists: "remote_id", not "custom_remote_id".
-    if "remote_id" in local_fields:
-        doc.remote_id = original_remote_id
-
-    # Map fields
-    for field, value in item.items():
-        if field in local_fields and field not in [
-            'name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus', 'remote_id'
-        ] and field not in deferred_fields:
-            if value is not None:
-                if isinstance(value, list):
-                    cleaned_rows = _prepare_child_rows_for_sync(doc, field, value)
-                    for row_data in cleaned_rows:
-                        doc.append(field, row_data)
-                else:
-                    doc.set(field, value)
-
-    # Set company
-    if 'company' in local_fields and company:
-        doc.company = company
-
-    # Set site_url
-    for site_url_fieldname in ("source_site", "site_url"):
-        if site_url_fieldname in local_fields:
-            doc.set(site_url_fieldname, site_url)
-
-    # Flags
-    doc.flags.ignore_links = True
-    doc.flags.ignore_permissions = True
-    doc.flags.ignore_mandatory = True
-    doc.flags.ignore_validate = True
+    savepoint = f"rfq_item_{frappe.generate_hash(length=10)}"
+    frappe.db.savepoint(savepoint)
 
     try:
+        target_name = _build_rfq_local_name(company_abbr, original_remote_id)
+
+        # ✅ Look up existing record by "remote_id" — the field that actually
+        # exists on the parent doctype — and also by the deterministic target
+        # name itself, so re-syncs always find and replace the same row.
+        existing_name = None
+        if "remote_id" in local_fields:
+            existing_name = frappe.db.get_value(local_dt, {PARENT_REMOTE_ID_FIELD: original_remote_id}, "name")
+        if not existing_name and frappe.db.exists(local_dt, target_name):
+            existing_name = target_name
+
+        # Purge parent + child rows keyed on BOTH looked-up name AND target name.
+        # Clears orphan child rows left by a previous interrupted sync (parent gone
+        # but items/suppliers survived), which otherwise causes 1× duplication per
+        # re-fetch — same pattern as generic _process_item.
+        purge_parent_names = {n for n in (existing_name, target_name) if n}
+        for df in frappe.get_meta(local_dt).get_table_fields():
+            for parent_name in purge_parent_names:
+                frappe.db.delete(df.options, {
+                    "parent": parent_name,
+                    "parenttype": local_dt,
+                })
+        if existing_name:
+            frappe.db.delete(local_dt, existing_name)
+
+        # ✅ Create new doc with an EXPLICIT deterministic name — bypasses
+        # naming_series autoname generation entirely, so there's no dependency
+        # on the Select field's configured dropdown options and no counter
+        # race between parallel chunk workers.
+        doc = frappe.new_doc(local_dt)
+        doc.__islocal = True
+        doc.name = target_name
+        doc.flags.name_set = True
+
+        # Keep naming_series populated as a plain display value (not used for
+        # name generation) — dynamically built from the company abbreviation,
+        # never hardcoded to one company and never taken from the remote's
+        # own naming_series value (which was overriding ours previously).
+        if "naming_series" in local_fields:
+            doc.naming_series = f"{company_abbr}-RFQ-.YY.-"
+
+        # Store remote_id for linking, on the PARENT field name that actually
+        # exists: "remote_id", not "custom_remote_id".
+        if "remote_id" in local_fields:
+            doc.remote_id = original_remote_id
+
+        # Map fields
+        for field, value in item.items():
+            if field in local_fields and field not in [
+                'name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus', 'remote_id'
+            ] and field not in deferred_fields:
+                if value is not None:
+                    if isinstance(value, list):
+                        cleaned_rows = _prepare_child_rows_for_sync(doc, field, value)
+                        for row_data in cleaned_rows:
+                            doc.append(field, row_data)
+                    else:
+                        doc.set(field, value)
+
+        # Set company
+        if 'company' in local_fields and company:
+            doc.company = company
+
+        # Set site_url
+        for site_url_fieldname in ("source_site", "site_url"):
+            if site_url_fieldname in local_fields:
+                doc.set(site_url_fieldname, site_url)
+
+        # Flags
+        doc.flags.ignore_links = True
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_mandatory = True
+        doc.flags.ignore_validate = True
+
         doc.insert(
             ignore_permissions=True,
             ignore_links=True,
             ignore_mandatory=True
         )
-        frappe.db.commit()
 
         # Set deferred fields
         for field in deferred_fields:
@@ -340,15 +361,13 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
 
-        frappe.db.commit()
-
         # PI-style safety net: strip any leftover duplicate child rows
         _safe_dedupe_external_rfq(doc.name)
 
         return True
 
     except Exception as e:
-        frappe.db.rollback()
+        frappe.db.rollback(save_point=savepoint)
         errors.append({"remote_id": original_remote_id, "error": str(e)})
         return False
 
@@ -436,7 +455,6 @@ def sync_request_for_quotation_from_remote(site_url, api_key, api_secret, ref_do
             _release_sync_lock(child_docname)
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
 
         chunks = [names[i:i + CHUNK_SIZE] for i in range(0, len(names), CHUNK_SIZE)]
@@ -516,7 +534,6 @@ def process_rfq_chunk(site_url, api_key, api_secret, company, company_abbr, conf
 
             last_sync = frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            frappe.db.commit()
             _release_sync_lock(child_docname)
             frappe.publish_realtime(
                 "request_for_quotation_sync_complete",

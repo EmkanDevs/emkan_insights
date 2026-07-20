@@ -1,10 +1,8 @@
-# Copyright (c) 2026, Mukesh Variyani and contributors
-# For license information, please see license.txt
-
 import frappe
 import json
 from frappe.model.document import Document
 from frappe.utils import cint, flt
+from contextlib import contextmanager
 
 
 class ExternalStockEntry(Document):
@@ -19,8 +17,24 @@ SYSTEM_FIELDS = {
 
 IGNORE_ITEM_FIELDS = {
     "quotation", "quotation_item", "prevdoc_doctype",
-    "prevdoc_docname", "so_detail", "against_sales_order"
+    "prevdoc_docname", "so_detail", "against_sales_order",
+    "last_scanned_warehouse",
 }
+
+
+# ==========================================================
+# SAVEPOINT CONTEXT MANAGER
+# ==========================================================
+
+@contextmanager
+def savepoint_context(name):
+    safe_name = frappe.scrub(name)[:50]
+    frappe.db.savepoint(safe_name)
+    try:
+        yield
+    except Exception:
+        frappe.db.rollback(save_point=safe_name)
+        raise
 
 
 # ==========================================================
@@ -116,7 +130,7 @@ def _force_cancel_doc(doctype, docname):
             modified_by = SUBSTRING_INDEX(USER(), '@', 1)
         WHERE name = %s
     """.format(doctype=doctype), docname)
-    
+
     # Update child tables
     meta = frappe.get_meta(doctype)
     for df in meta.get_table_fields():
@@ -129,7 +143,7 @@ def _force_cancel_doc(doctype, docname):
                     modified_by = SUBSTRING_INDEX(USER(), '@', 1)
                 WHERE parent = %s AND parenttype = %s
             """.format(child_doctype=child_doctype), (docname, doctype))
-    
+
     # Clear document cache
     frappe.clear_document_cache(doctype, docname)
 
@@ -145,18 +159,17 @@ def _safe_cancel_doc(doc, log_prefix=""):
         doc.flags.ignore_validate = True
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_links = True
-        doc.cancel()
-        frappe.db.commit()
+        doc.cancel()  # ORM cancel writes to DB
+
         _log(f"{log_prefix} cancelled normally", "")
         return True
     except Exception as normal_cancel_err:
         _log(f"{log_prefix} normal cancel failed, attempting force cancel",
              f"Error: {str(normal_cancel_err)}")
-        
+
         # Fallback: Force cancel via SQL
         try:
             _force_cancel_doc(doc.doctype, doc.name)
-            frappe.db.commit()
             _log(f"{log_prefix} force cancelled successfully", "")
             return True
         except Exception as force_cancel_err:
@@ -181,7 +194,8 @@ def _build_target_name(company_abbr, base_id):
     if not base_id:
         frappe.throw("Missing base id for Stock Entry naming")
 
-    if base_id.startswith(f"{company_abbr}-"):
+    double_prefix = f"{company_abbr}-{company_abbr}-"
+    if base_id.startswith(double_prefix):
         return base_id
 
     return f"{company_abbr}-{base_id}"
@@ -204,8 +218,9 @@ def _doctype_has_field(doctype, fieldname):
 
 
 def _filter_valid_fields(doctype, values):
-    meta = frappe.get_meta(doctype)
-    valid_fields = set(meta.get_valid_columns())
+    meta_columns = set(frappe.get_meta(doctype).get_valid_columns())
+    db_columns = set(frappe.db.get_table_columns(doctype))
+    valid_fields = meta_columns & db_columns
     return {k: v for k, v in values.items() if k in valid_fields}
 
 
@@ -313,7 +328,7 @@ def _resolve_material_request(remote_mr_name, company_abbr=None):
 
 
 def _remap_material_request_links(stock_entry_name, external, company_abbr):
-    
+
     if not stock_entry_name or not external:
         return
 
@@ -485,9 +500,6 @@ def _deduplicate_child_table(parent_name, child_table, key_fields):
     for name in to_delete:
         frappe.db.sql(f"DELETE FROM `tab{child_table}` WHERE name = %s", (name,))
 
-    if to_delete:
-        frappe.db.commit()
-
 
 def _safe_dedupe(parent_name):
     """Safely deduplicate Stock Entry child tables."""
@@ -529,15 +541,13 @@ def _sync_existing_docstatus(existing_name, external):
             # External is cancelled - we need to cancel local too
             if local_docstatus == 0:
                 # Draft locally -> submit first, then cancel
-                se.submit()
-                frappe.db.commit()
+                se.submit()  # ORM submit writes to DB
                 se = frappe.get_doc("Stock Entry", existing_name)
-            
+
             # Now cancel (whether it was 0 or 1 before)
             _safe_cancel_doc(se, log_prefix=f"Stock Entry {existing_name}")
             _safe_dedupe(se.name)
-            frappe.db.commit()
-            
+
             # Verify
             final_docstatus = frappe.db.get_value("Stock Entry", se.name, "docstatus")
             if final_docstatus == 2:
@@ -548,10 +558,8 @@ def _sync_existing_docstatus(existing_name, external):
                 return {"name": se.name, "status": "exists", "warning": "cancel verification failed"}
 
         elif target_docstatus == 1 and local_docstatus == 0:
-            se.submit()
-            frappe.db.commit()
+            se.submit()  # ORM submit writes to DB
             _safe_dedupe(se.name)
-            frappe.db.commit()
             return {"name": se.name, "status": "docstatus_synced", "docstatus": 1}
 
         else:
@@ -565,42 +573,14 @@ def _sync_existing_docstatus(existing_name, external):
 
 
 # ==========================================================
-# MAIN SYNC
+# BUILD HEADER VALUES FOR DIRECT SQL INSERT
 # ==========================================================
 
-def sync_external_stock_entry(external_name, company):
-    external = frappe.get_doc("External Stock Entry", external_name)
+def _build_header_values(external, company, company_abbr):
+    """Build a dict of valid header field values for direct SQL insert."""
+    header = {}
 
-    company_abbr = _get_company_abbr(company)
-    base_id = external.name
-    target_name = _build_target_name(company_abbr, base_id)
-
-    # Check if it already exists locally
-    existing = frappe.db.get_value(
-        "Stock Entry", {"remote_id": base_id}, "name"
-    ) or (target_name if frappe.db.exists("Stock Entry", target_name) else None)
-
-    if existing:
-        # Existing SE path only syncs docstatus — still remap MR links by remote_id
-        try:
-            _remap_material_request_links(existing, external, company_abbr)
-            frappe.db.commit()
-        except Exception:
-            _log(
-                f"Stock Entry {existing} material_request remap failed",
-                frappe.get_traceback(),
-            )
-        return _sync_existing_docstatus(existing, external)
-
-    se = frappe.new_doc("Stock Entry")
-
-    if _doctype_has_field("Stock Entry", "remote_id"):
-        se.remote_id = base_id
-
-    if hasattr(se, "source_site"):
-        se.source_site = getattr(external, "source_site", None)
-
-    # Copy header fields (exclude child tables and link fields)
+    # Copy simple fields (exclude child tables, system fields, link fields)
     source_data = external.as_dict()
     for field, value in source_data.items():
         if field in SYSTEM_FIELDS:
@@ -609,151 +589,272 @@ def sync_external_stock_entry(external_name, company):
             continue
         if field in STOCK_ENTRY_PARENT_LINKS:
             continue
+        if not _doctype_has_field("Stock Entry", field):
+            continue
+        header[field] = value
 
-        if _doctype_has_field("Stock Entry", field):
-            se.set(field, value)
-
-    se.company = company
+    # Override company
+    header["company"] = company
 
     # Resolve parent-level links with company prefix
-    _apply_parent_link_mapping(se, external, company_abbr)
+    for fieldname, linked_doctype in STOCK_ENTRY_PARENT_LINKS.items():
+        if not _doctype_has_field("Stock Entry", fieldname):
+            continue
 
-    # ==========================================================
-    # CHILD TABLE: items (Stock Entry Detail)
-    # ==========================================================
-    se.set("items", [])
-    if hasattr(external, "items") and external.items:
-        seen = set()
-        for row in external.items:
-            item_row = {}
-            for field, value in row.as_dict().items():
-                if field in SYSTEM_FIELDS:
-                    continue
-                if field in IGNORE_ITEM_FIELDS:
-                    continue
-                item_row[field] = value
+        raw_value = getattr(external, fieldname, None)
+        if not raw_value:
+            header[fieldname] = None
+            continue
 
-            # Resolve all linked fields with company prefix
-            _apply_item_link_mapping(item_row, company_abbr, external.name)
+        if fieldname in COMPANY_PREFIXED_PARENT_FIELDS:
+            header[fieldname] = _prefix_reference(company_abbr, raw_value)
+            continue
 
-            # Resolve material_request_item if material_request was resolved
-            _resolve_material_request_item(item_row)
+        resolved = _resolve_link_with_prefix(linked_doctype, raw_value, company_abbr)
+        if resolved:
+            header[fieldname] = resolved
+        else:
+            header[fieldname] = None
 
-            # Filter to only valid fields
-            item_row = _filter_valid_fields("Stock Entry Detail", item_row)
-
-            # Deduplicate
-            fingerprint = _make_item_fingerprint(item_row)
-            if fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-
-            se.append("items", item_row)
-
-    # ==========================================================
-    # CHILD TABLE: additional_costs (Landed Cost Taxes and Charges)
-    # ==========================================================
-    se.set("additional_costs", [])
-    if hasattr(external, "additional_costs") and external.additional_costs:
-        for row in external.additional_costs:
-            cost_row = {}
-            for field, value in row.as_dict().items():
-                if field in SYSTEM_FIELDS:
-                    continue
-                cost_row[field] = value
-
-            cost_row = _filter_valid_fields("Landed Cost Taxes and Charges", cost_row)
-            se.append("additional_costs", cost_row)
-
-    # ==========================================================
-    # LOG PRE-INSERT STATE
-    # ==========================================================
-    _log(f"Stock Entry {target_name} pre-insert check",
-         f"Items: {len(se.items)}, Stock Entry Type: {se.stock_entry_type}, "
-         f"Company: {se.company}, External docstatus: {external.docstatus}")
-
-    # ==========================================================
-    # INSERT with target name set BEFORE insert
-    # ==========================================================
-    se.flags.name_set = True
-    se.name = target_name
-    se.flags.ignore_permissions = True
-    se.flags.ignore_validate = True
-    se.flags.ignore_mandatory = True
-    se.flags.ignore_links = True
-    se.flags.ignore_naming_series = True
-
-    try:
-        se.insert(
-            ignore_permissions=True,
-            ignore_links=True,
-            ignore_mandatory=True
-        )
-    except Exception:
-        frappe.log_error(title=f"Stock Entry Insert FAILED: {external_name}", message=frappe.get_traceback())
-        raise
-
-    # Ensure remote_id is set
+    # Set remote_id to the EXTERNAL name (not the local name)
     if _doctype_has_field("Stock Entry", "remote_id"):
-        frappe.db.set_value("Stock Entry", se.name, "remote_id", base_id, update_modified=False)
+        header["remote_id"] = (external.remote_id or external.name or "").strip()
 
-    # ==========================================================
-    # NAMING SAFETY NET
-    # ==========================================================
-    if se.name != target_name:
-        if not frappe.db.exists("Stock Entry", target_name):
-            frappe.db.sql("""
-                UPDATE `tabStock Entry`
-                SET name = %s
-                WHERE name = %s
-            """, (target_name, se.name))
+    if _doctype_has_field("Stock Entry", "source_site"):
+        header["source_site"] = getattr(external, "source_site", None)
 
-        old_name = se.name
-        for child_table in ["Stock Entry Detail", "Landed Cost Taxes and Charges"]:
-            if frappe.db.exists("DocType", child_table):
-                frappe.db.sql("""
-                    UPDATE `tab{0}`
-                    SET parent = %s
-                    WHERE parent = %s
-                """.format(child_table), (target_name, old_name))
+    # Filter to only valid columns
+    header = _filter_valid_fields("Stock Entry", header)
 
-        se.name = target_name
+    return header
 
-    # Write back name to External Stock Entry remote_id field
-    ext_meta = frappe.get_meta("External Stock Entry")
-    if ext_meta.has_field("remote_id"):
-        frappe.db.set_value(
-            "External Stock Entry", external_name,
-            "remote_id", target_name,
-            update_modified=False
+
+# ==========================================================
+# BUILD CHILD ROW VALUES
+# ==========================================================
+
+def _build_child_rows(external, company_abbr):
+    """Build deduplicated child row dicts for Stock Entry Detail."""
+    rows = []
+    seen = set()
+
+    if not hasattr(external, "items") or not external.items:
+        return rows
+
+    for row in external.items:
+        item_row = {}
+        for field, value in row.as_dict().items():
+            if field in SYSTEM_FIELDS:
+                continue
+            if field in IGNORE_ITEM_FIELDS:
+                continue
+            item_row[field] = value
+
+        # Resolve all linked fields with company prefix
+        _apply_item_link_mapping(item_row, company_abbr, external.name)
+
+        # Resolve material_request_item if material_request was resolved
+        _resolve_material_request_item(item_row)
+
+        # Filter to only valid fields
+        item_row = _filter_valid_fields("Stock Entry Detail", item_row)
+
+        # Deduplicate
+        fingerprint = _make_item_fingerprint(item_row)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+
+        rows.append(item_row)
+
+    return rows
+
+
+def _build_additional_cost_rows(external):
+    """Build child row dicts for Landed Cost Taxes and Charges."""
+    rows = []
+
+    if not hasattr(external, "additional_costs") or not external.additional_costs:
+        return rows
+
+    for row in external.additional_costs:
+        cost_row = {}
+        for field, value in row.as_dict().items():
+            if field in SYSTEM_FIELDS:
+                continue
+            cost_row[field] = value
+
+        cost_row = _filter_valid_fields("Landed Cost Taxes and Charges", cost_row)
+        rows.append(cost_row)
+
+    return rows
+
+
+# ==========================================================
+# DIRECT SQL INSERT HELPERS (NO COMMIT)
+# ==========================================================
+
+def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows):
+    """
+    Insert Stock Entry and child tables directly via SQL.
+    No savepoints, no rollback calls — relies on Frappe's automatic
+    transaction rollback when the exception propagates.
+    """
+    
+    # ── Collision check ──────────────────────────────────────────
+    if frappe.db.exists("Stock Entry", target_name):
+        raise frappe.ValidationError(
+            _("Stock Entry {0} already exists. Cannot create duplicate.").format(target_name)
         )
 
-    frappe.db.commit()
+    now = frappe.utils.now()
+    user = frappe.session.user
+
+    # ── Insert parent: Stock Entry ───────────────────────────────
+    meta = frappe.get_meta("Stock Entry")
+    valid_columns = set(frappe.db.get_table_columns("Stock Entry"))
+
+    header_values["name"] = target_name
+    header_values["creation"] = now
+    header_values["modified"] = now
+    header_values["owner"] = user
+    header_values["modified_by"] = user
+    header_values["docstatus"] = 0
+    header_values["idx"] = 0
+
+    fields = [f for f in header_values.keys() if f in valid_columns]
+    placeholders = ", ".join(["%s"] * len(fields))
+    values = [header_values.get(f) for f in fields]
+
+    frappe.db.sql(
+        f"INSERT INTO `tabStock Entry` ({', '.join(fields)}) VALUES ({placeholders})",
+        values
+    )
+
+    # ── Insert children: Stock Entry Detail ──────────────────────
+    for idx, item_row in enumerate(item_rows, start=1):
+        child_name = frappe.generate_hash("", 10)
+        item_row["name"] = child_name
+        item_row["parent"] = target_name
+        item_row["parenttype"] = "Stock Entry"
+        item_row["parentfield"] = "items"
+        item_row["idx"] = idx
+        item_row["creation"] = now
+        item_row["modified"] = now
+        item_row["owner"] = user
+        item_row["modified_by"] = user
+        item_row["docstatus"] = 0
+
+        child_meta = frappe.get_meta("Stock Entry Detail")
+        child_valid = set(frappe.db.get_table_columns("Stock Entry Detail"))
+        child_fields = [f for f in item_row.keys() if f in child_valid]
+        child_placeholders = ", ".join(["%s"] * len(child_fields))
+        child_values = [item_row.get(f) for f in child_fields]
+
+        frappe.db.sql(
+            f"INSERT INTO `tabStock Entry Detail` ({', '.join(child_fields)}) VALUES ({child_placeholders})",
+            child_values
+        )
+
+    # ── Insert children: Landed Cost Taxes and Charges ───────────
+    for idx, cost_row in enumerate(cost_rows, start=1):
+        child_name = frappe.generate_hash("", 10)
+        cost_row["name"] = child_name
+        cost_row["parent"] = target_name
+        cost_row["parenttype"] = "Stock Entry"
+        cost_row["parentfield"] = "additional_costs"
+        cost_row["idx"] = idx
+        cost_row["creation"] = now
+        cost_row["modified"] = now
+        cost_row["owner"] = user
+        cost_row["modified_by"] = user
+        cost_row["docstatus"] = 0
+
+        child_meta = frappe.get_meta("Landed Cost Taxes and Charges")
+        child_valid = set(frappe.db.get_table_columns("Landed Cost Taxes and Charges"))
+        child_fields = [f for f in cost_row.keys() if f in child_valid]
+        child_placeholders = ", ".join(["%s"] * len(child_fields))
+        child_values = [cost_row.get(f) for f in child_fields]
+
+        frappe.db.sql(
+            f"INSERT INTO `tabLanded Cost Taxes and Charges` ({', '.join(child_fields)}) VALUES ({child_placeholders})",
+            child_values
+        )
+
+    return target_name
+
+
+# ==========================================================
+# MAIN SYNC
+# ==========================================================
+
+def sync_external_stock_entry(external_name, company):
+    external = frappe.get_doc("External Stock Entry", external_name)
+
+    company_abbr = _get_company_abbr(company)
+    source_stock_entry_id = (external.remote_id or external.name or "").strip()
+    target_name = _build_target_name(company_abbr, source_stock_entry_id)
+
+    existing = frappe.db.get_value(
+        "Stock Entry", {"remote_id": source_stock_entry_id}, "name"
+    ) or (target_name if frappe.db.exists("Stock Entry", target_name) else None)
+
+    if existing:
+        # Existing SE path only syncs docstatus — still remap MR links by remote_id
+        try:
+            _remap_material_request_links(existing, external, company_abbr)
+        except Exception:
+            _log(
+                f"Stock Entry {existing} material_request remap failed",
+                frappe.get_traceback(),
+            )
+        return _sync_existing_docstatus(existing, external)
+
+    # ==========================================================
+    # CREATE PATH: Direct SQL insert to bypass naming series
+    # ==========================================================
+
+    # Build header values
+    header_values = _build_header_values(external, company, company_abbr)
+
+    # Build child rows
+    item_rows = _build_child_rows(external, company_abbr)
+    cost_rows = _build_additional_cost_rows(external)
+
+    # Log pre-insert state
+    _log(f"Stock Entry {target_name} pre-insert check",
+         f"Items: {len(item_rows)}, Stock Entry Type: {header_values.get('stock_entry_type')}, "
+         f"Company: {company}, External docstatus: {external.docstatus}")
+
+    # Direct SQL insert — bypasses naming series completely
+    _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows)
+
+    # Write back name to External Stock Entry remote_id field via ORM
+    ext_meta = frappe.get_meta("External Stock Entry")
+    # if ext_meta.has_field("remote_id"):
+        # external.db_set("remote_id", target_name, update_modified=False)
+
     _safe_dedupe(target_name)
-    frappe.db.commit()
 
     # Always remap MR links after insert (draft + submitted).
-    # Draft rows previously kept the remote MR name because existing-only
-    # remap never ran until a later re-sync.
     try:
-        _remap_material_request_links(se.name, external, company_abbr)
-        frappe.db.commit()
+        _remap_material_request_links(target_name, external, company_abbr)
     except Exception:
         _log(
-            f"Stock Entry {se.name} material_request post-insert remap failed",
+            f"Stock Entry {target_name} material_request post-insert remap failed",
             frappe.get_traceback(),
         )
 
-    _log(f"Stock Entry {se.name} inserted successfully",
-         f"Docstatus after insert: {se.docstatus}")
+    _log(f"Stock Entry {target_name} inserted successfully",
+         f"Docstatus after insert: 0")
 
     # ==========================================================
-    # DOCSTATUS SYNC - KEY FIX HERE
+    # DOCSTATUS SYNC
     # ==========================================================
     target_docstatus = cint(external.docstatus)
 
-    frappe.clear_document_cache("Stock Entry", se.name)
-    se = frappe.get_doc("Stock Entry", se.name)
+    frappe.clear_document_cache("Stock Entry", target_name)
+    se = frappe.get_doc("Stock Entry", target_name)
 
     _log(f"Stock Entry {se.name} pre-docstatus-sync",
          f"External docstatus: {target_docstatus}, Current docstatus: {se.docstatus}")
@@ -765,12 +866,10 @@ def sync_external_stock_entry(external_name, company):
             se.flags.ignore_validate = True
             se.flags.ignore_mandatory = True
             se.flags.ignore_links = True
-            se.submit()
-            frappe.db.commit()
+            se.submit()  # ORM submit writes to DB
             _safe_dedupe(se.name)
-            frappe.db.commit()
             _log(f"Stock Entry {se.name} submitted successfully", "")
-            
+
             actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
             return {
                 "name": se.name,
@@ -792,36 +891,32 @@ def sync_external_stock_entry(external_name, company):
             }
 
     elif target_docstatus == 2:
-        # ============================================================
-        # KEY FIX: Handle cancelled external Stock Entry properly
-        # ============================================================
+        # Handle cancelled external Stock Entry
         try:
             se.flags.ignore_permissions = True
             se.flags.ignore_validate = True
             se.flags.ignore_mandatory = True
             se.flags.ignore_links = True
-            
+
             # Submit first (required before cancel)
-            se.submit()
-            frappe.db.commit()
+            se.submit()  # ORM submit writes to DB
             _log(f"Stock Entry {se.name} submitted (step 1 of cancel)", "")
 
             # Re-fetch and cancel with safe cancel (includes force fallback)
             se = frappe.get_doc("Stock Entry", se.name)
             _safe_cancel_doc(se, log_prefix=f"Stock Entry {se.name}")
-            
+
             _safe_dedupe(se.name)
-            frappe.db.commit()
-            
+
             # Verify the cancel worked
             final_docstatus = frappe.db.get_value("Stock Entry", se.name, "docstatus")
             final_status = frappe.db.get_value("Stock Entry", se.name, "status")
-            
+
             _log(f"Stock Entry {se.name} cancel complete",
                  f"Final docstatus: {final_docstatus}, Final status: {final_status}")
-            
+
             actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
-            
+
             if final_docstatus == 2:
                 return {
                     "name": se.name,
@@ -843,13 +938,12 @@ def sync_external_stock_entry(external_name, company):
             tb = frappe.get_traceback()
             _log(f"Stock Entry {se.name} CANCEL FAILED - CRITICAL",
                  f"Error: {str(cancel_err)}\n\nTraceback:\n{tb}")
-            
+
             # Last resort: Force set docstatus directly
             try:
                 _force_cancel_doc("Stock Entry", se.name)
-                frappe.db.commit()
                 _log(f"Stock Entry {se.name} force cancelled as last resort", "")
-                
+
                 actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
                 return {
                     "name": se.name,
@@ -860,7 +954,7 @@ def sync_external_stock_entry(external_name, company):
             except Exception as force_err:
                 _log(f"Stock Entry {se.name} FORCE CANCEL ALSO FAILED",
                      f"Force error: {str(force_err)}")
-                
+
                 actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
                 return {
                     "name": se.name,
@@ -896,11 +990,13 @@ def sync_stock_entry_docs(source_doctype=None, names=None):
 
     for name in names:
         try:
-            frappe.db.commit()  # Reset any partial transaction state
-            
-            external_doc = frappe.get_doc(source_doctype or "External Stock Entry", name)
-            result = sync_external_stock_entry(name, external_doc.company)
-            results.append(result)
+            # If sync_external_stock_entry fails midway (e.g. after insert but before submit),
+            # the savepoint rolls back the partial insert cleanly, preventing ghost Draft Stock Entries
+            # from polluting the next iteration.
+            with savepoint_context(f'sync_se_{name}'):
+                external_doc = frappe.get_doc(source_doctype or "External Stock Entry", name)
+                result = sync_external_stock_entry(name, external_doc.company)
+                results.append(result)
 
         except Exception as e:
             frappe.log_error(

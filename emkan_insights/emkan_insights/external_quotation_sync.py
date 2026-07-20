@@ -68,7 +68,6 @@ def sync_external_quotation_docs(source_doctype, names):
 
             # Commit per record so a later failure in the batch doesn't
             # roll back records that already succeeded.
-            frappe.db.commit()
 
             if existing:
                 updated.append(doc.name)

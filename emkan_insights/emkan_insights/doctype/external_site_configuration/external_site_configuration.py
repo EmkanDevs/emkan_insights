@@ -92,6 +92,7 @@ def _locked_response(child_docname):
     }
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER: fetch full docs for doctypes that need child tables
 # ─────────────────────────────────────────────────────────────────────────────
@@ -269,7 +270,6 @@ def _ensure_tree_parent(local_dt, parent_field, name_field, parent_remote, compa
             existing = frappe.db.get_value(local_dt, {"name": parent_remote}, "name")
             return existing or parent_remote
         raise
-    frappe.db.commit()
     return parent_doc.name
 
 
@@ -298,7 +298,6 @@ def _ensure_root_account(local_dt, name_field, root_label, company=None):
             existing = frappe.db.get_value(local_dt, {"name": root_label}, "name")
             return existing or root_label
         raise
-    frappe.db.commit()
     return root_doc.name
 
 
@@ -354,7 +353,6 @@ def _bypass_address_lock(local_dt, doc):
             updates,
             update_modified=False
         )
-        frappe.db.commit()
         for field in updates:
             doc.set(field, None)
 
@@ -590,7 +588,6 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     if existing_name:
         # Delete the parent document itself
         frappe.db.delete(local_dt, existing_name)
-    frappe.db.commit()
 
     # Always create as a brand new document
     doc = frappe.new_doc(local_dt)
@@ -645,7 +642,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         except Exception as e:
             # Roll back to before this doc's insert attempt so no
             # partial parent/child rows are left behind.
-            frappe.db.rollback(save_point=savepoint)
+            frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
 
             if _is_duplicate_conflict(e) and doc.is_new():
                 existing = None
@@ -657,7 +654,6 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                             break
                 if existing:
                     frappe.db.set_value(local_dt, existing, "remote_id", remote_id, update_modified=False)
-                    frappe.db.commit()
                     return True
                 else:
                     raise
@@ -674,11 +670,10 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
 
-        frappe.db.commit()
         return True
 
     except Exception as e:
-        frappe.db.rollback(save_point=savepoint)
+        frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
         errors.append({"remote_id": remote_id, "error": str(e)})
         return False
 # ─────────────────────────────────────────────────────────────────────────────
@@ -764,10 +759,10 @@ def sync_accounts_from_remote(site_url, api_key, api_secret, child_docname=None,
     last_sync = frappe.utils.now()
     if child_docname:
         frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
 
     return {
         "count": count,
+        "fatal_error": len(not_saved) > 0 and len(errors) == 0,
         "fetched_total": len(data),
         "not_saved_count": len(not_saved),
         "last_sync": last_sync,
@@ -788,7 +783,7 @@ def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, compan
         "Cost Center": "emkan_insights.emkan_insights.sync_cost_centers_from_remote.sync_cost_centers_from_remote",
         "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
         "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
-        #"Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+        "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
         "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
         "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote", 
     }
@@ -989,10 +984,10 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
 
     last_sync = frappe.utils.now()
     frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
 
     return {
         "count": count,
+        "fatal_error": len(not_saved) > 0 and len(errors) == 0,
         "fetched_total": len(data),
         "not_saved_count": len(not_saved),
         "last_sync": last_sync,

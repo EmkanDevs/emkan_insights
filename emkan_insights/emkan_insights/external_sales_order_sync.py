@@ -158,14 +158,12 @@ def _safe_cancel_doc(doc, log_prefix=""):
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_links = True
         doc.cancel()
-        frappe.db.commit()
         return True
     except Exception as normal_cancel_err:
         _log(f"{log_prefix} normal cancel failed, attempting force cancel",
              f"Error: {str(normal_cancel_err)}")
         try:
             _force_cancel_doc(doc.doctype, doc.name)
-            frappe.db.commit()
             return True
         except Exception as force_cancel_err:
             _log(f"{log_prefix} force cancel also failed",
@@ -181,20 +179,17 @@ def _safe_submit_doc(doc, log_prefix=""):
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_links = True
         doc.submit()
-        frappe.db.commit()
         return True
     except Exception as submit_err:
         # submit() may have already written docstatus=1 before on_submit threw
         current = cint(frappe.db.get_value(doc.doctype, doc.name, "docstatus"))
         if current == 1:
-            frappe.db.commit()
             return True
 
         _log(f"{log_prefix} normal submit failed, attempting force submit",
              f"Error: {str(submit_err)}")
         try:
             _force_submit_doc(doc.doctype, doc.name)
-            frappe.db.commit()
             return True
         except Exception as force_submit_err:
             _log(f"{log_prefix} force submit also failed",
@@ -221,7 +216,7 @@ def _sync_existing_docstatus(existing_name, external):
         if target_docstatus == 2:
             if local_docstatus == 0:
                 _safe_submit_doc(so, log_prefix=f"Sales Order {existing_name}")
-                so = frappe.get_doc("Sales Order", existing_name)
+                so.reload()
 
             _safe_cancel_doc(so, log_prefix=f"Sales Order {existing_name}")
             final_docstatus = cint(frappe.db.get_value("Sales Order", existing_name, "docstatus"))
@@ -259,7 +254,6 @@ def _sync_existing_docstatus(existing_name, external):
         # If a prior partial submit already landed, treat as synced
         final_docstatus = cint(frappe.db.get_value("Sales Order", existing_name, "docstatus"))
         if final_docstatus == target_docstatus:
-            frappe.db.commit()
             return {"name": existing_name, "status": "docstatus_synced", "docstatus": final_docstatus}
 
         _log(f"Sales Order {existing_name} docstatus transition failed", frappe.get_traceback())
@@ -511,8 +505,6 @@ def sync_external_sales_order_docs(source_doctype, names):
 
                 so.name = target_name
 
-            frappe.db.commit()
-
             # ------------------------------------------------
             # VERIFY: confirm items actually landed
             # ------------------------------------------------
@@ -571,7 +563,6 @@ def sync_external_sales_order_docs(source_doctype, names):
                          frappe.get_traceback())
                     try:
                         _force_cancel_doc("Sales Order", target_name)
-                        frappe.db.commit()
                         results.append({
                             "name": target_name,
                             "status": "synced",
@@ -592,8 +583,6 @@ def sync_external_sales_order_docs(source_doctype, names):
                     "docstatus": 0,
                     "items_count": actual_item_count,
                 })
-
-            frappe.db.commit()
 
         except Exception as e:
             frappe.db.rollback()

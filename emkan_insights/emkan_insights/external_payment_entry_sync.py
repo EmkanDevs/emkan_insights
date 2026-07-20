@@ -282,7 +282,6 @@ def sync_external_payment_entry(source_doctype, external_name):
                         WHERE parent = %s AND parenttype = %s
                     """, (target_name, old_name, LOCAL_PARENTTYPE))
 
-            frappe.db.commit()
             doc.name = target_name
         else:
             frappe.log_error(

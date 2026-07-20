@@ -111,7 +111,6 @@ def sync_leads_from_remote(site_url, api_key, api_secret, ref_doctype, child_doc
     # 7. Update Last Sync
     last_sync = frappe.utils.now()
     frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    frappe.db.commit()
 
     return {
         "count": count,

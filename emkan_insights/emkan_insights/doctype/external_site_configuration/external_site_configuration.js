@@ -99,9 +99,9 @@ frappe.ui.form.on('External Site Configuration CT', {
             "Cost Center": "emkan_insights.emkan_insights.sync_cost_centers_from_remote.sync_cost_centers_from_remote",
             "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
             "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
-           // "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+            "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
             "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
-             "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
+            "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
         };
         const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
         const sync_method = sync_methods[row.ref_doctype] || generic_method;
@@ -194,48 +194,48 @@ frappe.ui.form.on('External Site Configuration CT', {
     },
 
     
-    test: function (frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
+    // test: function (frm, cdt, cdn) {
+    //     let row = locals[cdt][cdn];
 
-        // Added Location to the allowed list for testing
-        const allowed = ["Purchase Receipt", "Stock Entry", "Location"];
+    //     // Added Location to the allowed list for testing
+    //     const allowed = ["Purchase Receipt", "Stock Entry", "Location"];
         
-        if (!allowed.includes(row.ref_doctype)) {
-            frappe.msgprint(__('The "test" button is currently active for: ' + allowed.join(', ')));
-            return;
-        }
+    //     if (!allowed.includes(row.ref_doctype)) {
+    //         frappe.msgprint(__('The "test" button is currently active for: ' + allowed.join(', ')));
+    //         return;
+    //     }
 
-        frappe.call({
-            method: "emkan_insights.emkan_insights.doctype.external_site_configuration.se_pr_sync.force_sync_transaction",
-            args: {
-                site_url: frm.doc.site_url,
-                api_key: frm.doc.api_key,
-                api_secret: frm.doc.api_secret,
-                doctype: row.ref_doctype,
-                child_docname: cdn
-            },
-            freeze: true,
-            freeze_message: __(`Testing Sync for ${row.ref_doctype}...`),
-            callback: function (r) {
-                if (r.message && r.message.status === "success") {
-                    // This alert now shows both FETCHED and SAVED counts
-                    frappe.show_alert({
-                        message: __(`Fetched ${r.message.fetched}, Saved/Updated ${r.message.count} records.`),
-                        indicator: r.message.fetched > 0 ? 'green' : 'orange'
-                    });
+    //     frappe.call({
+    //         method: "emkan_insights.emkan_insights.doctype.external_site_configuration.se_pr_sync.force_sync_transaction",
+    //         args: {
+    //             site_url: frm.doc.site_url,
+    //             api_key: frm.doc.api_key,
+    //             api_secret: frm.doc.api_secret,
+    //             doctype: row.ref_doctype,
+    //             child_docname: cdn
+    //         },
+    //         freeze: true,
+    //         freeze_message: __(`Testing Sync for ${row.ref_doctype}...`),
+    //         callback: function (r) {
+    //             if (r.message && r.message.status === "success") {
+    //                 // This alert now shows both FETCHED and SAVED counts
+    //                 frappe.show_alert({
+    //                     message: __(`Fetched ${r.message.fetched}, Saved/Updated ${r.message.count} records.`),
+    //                     indicator: r.message.fetched > 0 ? 'green' : 'orange'
+    //                 });
                     
-                    frappe.model.set_value(cdt, cdn, 'last_sync', r.message.last_sync);
-                    frm.refresh_field('external_site_configuration_ct');
-                } else {
-                    frappe.msgprint({
-                        title: __('Sync Failed'),
-                        indicator: 'red',
-                        message: r.message ? r.message.error : __("Unknown Error")
-                    });
-                }
-            }
-        });
-    },
+    //                 frappe.model.set_value(cdt, cdn, 'last_sync', r.message.last_sync);
+    //                 frm.refresh_field('external_site_configuration_ct');
+    //             } else {
+    //                 frappe.msgprint({
+    //                     title: __('Sync Failed'),
+    //                     indicator: 'red',
+    //                     message: r.message ? r.message.error : __("Unknown Error")
+    //                 });
+    //             }
+    //         }
+    //     });
+    // },
 });
 
 

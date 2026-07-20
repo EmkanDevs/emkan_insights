@@ -46,6 +46,12 @@ def sync_supplier_quotation_docs(source_doctype: str, names=None):
 # ==========================================================
 
 def sync_bulk_supplier_quotations(names):
+    """
+    Processed in background queue.
+    
+    All database writes happen within a single transaction.
+    Frappe automatically commits the transaction when the background job finishes.
+    """
 
     sources = frappe.get_all(
         "External Supplier Quotation",
@@ -158,10 +164,7 @@ def sync_bulk_supplier_quotations(names):
                 )
             )
 
-        if idx % 50 == 0:
-            frappe.db.commit()
-
-    frappe.db.commit()
+        # NO batch commit every 50 records
 
     if failed_names:
         frappe.log_error(
@@ -238,7 +241,6 @@ def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
             item.flags.ignore_mandatory = True
             item.flags.ignore_validate = True
             item.insert(ignore_permissions=True)
-            frappe.db.commit()
             return row_item_code
         except Exception as e:
             frappe.log_error(f"Direct Item create failed for {row_item_code}: {str(e)}", "SQ Sync")
@@ -288,7 +290,7 @@ def _auto_create_item(ext_item):
         item.flags.ignore_mandatory = True
         item.flags.ignore_validate = True
         item.insert(ignore_permissions=True)
-        frappe.db.commit()
+        
         return item_code
     except Exception as e:
         frappe.log_error(f"Auto-create Item failed for {item_code}: {str(e)}", "SQ Sync - Auto Create Item")
@@ -344,7 +346,7 @@ def _ensure_item_uom(item_code, uom):
             "uom": uom,
             "conversion_factor": 1.0
         }).insert(ignore_permissions=True)
-        frappe.db.commit()
+        
     except Exception as e:
         frappe.log_error(
             title=f"Failed to auto-register UOM {uom} on Item {item_code}",
@@ -524,6 +526,8 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
         doc = frappe.get_doc("Supplier Quotation", existing_name)
 
         if doc.docstatus in (1, 2):
+            # Force revert to draft via raw SQL. Frappe has no ORM method 
+            # to revert docstatus to 0. The SQL updates write to the transaction.
             frappe.db.set_value("Supplier Quotation", doc.name, "docstatus", 0, update_modified=False)
             frappe.db.sql(
                 """UPDATE `tabSupplier Quotation Item`
@@ -537,7 +541,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
                 WHERE parent = %s AND parenttype = 'Supplier Quotation'""",
                 (doc.name,)
             )
-            frappe.db.commit()
+            
             doc.docstatus = 0
 
         doc.set("items", [])
@@ -733,12 +737,10 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     # FIX: always (re)link External SQ -> Supplier Quotation, not just on
     # first creation — covers the case where existing_name was resolved
     # via the target_name fallback above and remote_id wasn't set yet.
-    if frappe.db.get_value("External Supplier Quotation", src.name, "remote_id") != doc.name:
-        frappe.db.set_value(
-            "External Supplier Quotation", src.name,
-            "remote_id", doc.name
-        )
-    frappe.db.commit()
+    if getattr(src, "remote_id") != doc.name:
+        src.db_set("remote_id", doc.name)  # ORM equivalent of frappe.db.set_value
+    
+    
 
     return doc
 
@@ -747,7 +749,10 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
 # ==========================================================
 
 def sync_docstatus(doc, target_status):
-
+    """
+    Submits or cancels the document using ORM methods.
+    All writes persist in the current transaction automatically.
+    """
     current = doc.docstatus
 
     if target_status == 0:
@@ -756,17 +761,14 @@ def sync_docstatus(doc, target_status):
 
     elif target_status == 1:
         if current == 0:
-            doc.submit()
-            frappe.db.commit()
+            doc.submit()  # ORM submit writes to DB
+
         elif current == 2:
             frappe.log_error(f"Cannot resubmit cancelled SQTN {doc.name}", "SQ Sync")
 
     elif target_status == 2:
         if current == 0:
-            doc.submit()
-            frappe.db.commit()
-            doc.cancel()
-            frappe.db.commit()
+            doc.submit()  # ORM submit writes to DB
+            doc.cancel()  # ORM cancel writes to DB
         elif current == 1:
-            doc.cancel()
-            frappe.db.commit()
+            doc.cancel()  # ORM cancel writes to DB

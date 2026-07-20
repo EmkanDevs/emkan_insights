@@ -75,18 +75,20 @@ def sync_external_opportunities(names=None):
 # ==========================================================
 
 def sync_opportunity_batch(names):
+    """
+    Runs inside a background worker (via frappe.enqueue). The worker
+    already wraps this call in a transaction and commits once on
+    success / rolls back on an unhandled failure,
+    """
 
     success = 0
     failed = 0
 
-    for idx, source_name in enumerate(names, start=1):
+    for source_name in names:
 
         try:
             sync_single_opportunity(source_name)
             success += 1
-
-            if idx % 20 == 0:
-                frappe.db.commit()
 
         except Exception:
 
@@ -96,8 +98,6 @@ def sync_opportunity_batch(names):
                 title=f"External Opportunity Sync Failed: {source_name}",
                 message=frappe.get_traceback()
             )
-
-    frappe.db.commit()
 
     return {
         "success": success,
@@ -325,12 +325,12 @@ def sync_single_opportunity(source_name):
                 if value is None:
                     continue
                 new_row[fieldname] = value
-            
+
             # CRITICAL FIX: Map remote_id from source row to custom_remote_id on target
             # External Opportunity Item has 'remote_id', Opportunity Item has 'custom_remote_id'
             if "remote_id" in row_data and "custom_remote_id" in child_valid_columns:
                 new_row["custom_remote_id"] = row_data["remote_id"]
-            
+
             if new_row:
                 opportunity.append(target_field, new_row)
 
@@ -346,13 +346,9 @@ def sync_single_opportunity(source_name):
     opportunity.flags.ignore_validate = True
     opportunity.flags.ignore_links = True
 
-    if existing:
-        opportunity.db_update()
-        opportunity.update_children()
-    else:
-        opportunity.db_insert()
-        for df in opportunity.meta.get_table_fields():
-            for d in opportunity.get(df.fieldname):
-                d.db_insert()
+    # save() handles both insert (new doc) and update (existing doc),
+    # and automatically syncs child tables - no need for db_insert()/
+    # db_update() or manually looping over table fields.
+    opportunity.save()
 
     return opportunity.name

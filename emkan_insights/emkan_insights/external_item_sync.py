@@ -51,7 +51,12 @@ def sync_external_items(names=None):
 # ==========================================================
 
 def sync_item_batch(names):
-
+    """
+    Processed in background queue.
+    
+    All database writes (item.save()) happen within a single transaction.
+    Frappe automatically commits the transaction when the background job finishes.
+    """
     success = 0
     failed = 0
 
@@ -61,9 +66,7 @@ def sync_item_batch(names):
             sync_single_item(source_name)
             success += 1
 
-            # periodic commit
-            if idx % 20 == 0:
-                frappe.db.commit()
+            # NO periodic commit — the single transaction handles it safely
 
         except Exception:
 
@@ -74,7 +77,6 @@ def sync_item_batch(names):
                 message=frappe.get_traceback()
             )
 
-    frappe.db.commit()
 
     return {
         "success": success,

@@ -69,18 +69,20 @@ def sync_external_prospects(names=None):
 
 
 def sync_prospect_batch(names):
+	"""
+	Runs inside a background worker (via frappe.enqueue). The worker
+	already wraps this call in a transaction and commits once on
+	success / rolls back on an unhandled failure
+	"""
 
 	success = 0
 	failed = 0
 
-	for idx, source_name in enumerate(names, start=1):
+	for source_name in names:
 
 		try:
 			sync_single_prospect(source_name)
 			success += 1
-
-			if idx % 20 == 0:
-				frappe.db.commit()
 
 		except Exception:
 
@@ -90,8 +92,6 @@ def sync_prospect_batch(names):
 				title=f"External Prospect Sync Failed: {source_name}",
 				message=frappe.get_traceback()
 			)
-
-	frappe.db.commit()
 
 	return {
 		"success": success,
@@ -161,7 +161,7 @@ def sync_single_prospect(source_name):
 	company_name = getattr(src, "company_name", None) or source_name
 	# Clean for ID: replace spaces with hyphens, remove dots
 	clean_name = company_name.strip().replace(" ", "-").replace(".", "")
-	
+
 	target_name = _build_target_name(company_abbr, clean_name)
 
 	existing = None
@@ -282,15 +282,9 @@ def sync_single_prospect(source_name):
 	prospect.flags.ignore_validate = True
 	prospect.flags.ignore_links = True
 
-	if existing:
-		prospect.db_update()
-		prospect.update_children()
-	else:
-		if not prospect.name:
-			prospect.name = f"{company_abbr}-{clean_name}"
-		prospect.db_insert()
-		for df in prospect.meta.get_table_fields():
-			for d in prospect.get(df.fieldname):
-				d.db_insert()
+	# save() handles both insert (new doc) and update (existing doc),
+	# and automatically syncs child tables - no need for db_insert()/
+	# db_update() or manually looping over table fields.
+	prospect.save()
 
 	return prospect.name

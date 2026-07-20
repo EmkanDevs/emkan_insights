@@ -6,7 +6,7 @@ from frappe.model.document import Document
 
 
 class ExternalEmployee(Document):
-	pass
+    pass
 
 import frappe
 import json
@@ -196,8 +196,6 @@ def _force_docstatus_db(name, doctype, target_docstatus):
                 (target_docstatus, name, doctype)
             )
 
-    frappe.db.commit()
-
 
 # ==========================================================
 # SAFE CHILD TABLE INSERTIONS
@@ -263,9 +261,7 @@ def _insert_education_safely(employee_name, src):
                 message=error_msg
             )
 
-    if success_count > 0:
-        frappe.db.commit()
-
+    
     return success_count, errors
 
 
@@ -325,9 +321,7 @@ def _insert_external_work_history_safely(employee_name, src, company_abbr=None):
                 message=error_msg
             )
 
-    if success_count > 0:
-        frappe.db.commit()
-
+    
     return success_count, errors
 
 
@@ -382,9 +376,7 @@ def _insert_internal_work_history_safely(employee_name, src, company_abbr=None):
                 message=error_msg
             )
 
-    if success_count > 0:
-        frappe.db.commit()
-
+    
     return success_count, errors
 
 
@@ -395,11 +387,9 @@ def _insert_internal_work_history_safely(employee_name, src, company_abbr=None):
 def upsert_employee(src, existing_name):
     """
     Upsert an Employee record from an External Employee source.
-    Follows the same pattern as upsert_purchase_order:
-    - Bypass ORM completely for updates (raw SQL)
-    - Use ORM for new inserts with all flags disabled
-    - Safe child table insertion with dedup by source row identity
-    - Write back remote_id to External Employee
+    
+    Both existing and new paths now use ORM doc.update() + doc.save()
+    to ensure 100% field parity and zero explicit commits.
     """
     company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
     target_name = _build_target_name(company_abbr, src.remote_id or getattr(src, "employee", None) or src.name)
@@ -439,10 +429,88 @@ def upsert_employee(src, existing_name):
         employee_name_value = " ".join(parts).strip() if parts else None
 
     # ----------------------------------------------------------
-    # EXISTING: Bypass ORM completely - raw SQL only
+    # Unified field dictionary (used for BOTH new and existing)
+    # ----------------------------------------------------------
+    source_site_value = getattr(src, "source_site", None) or getattr(src, "site_url", None)
+
+    update_dict = {
+        "employee_name": employee_name_value,
+        "first_name": getattr(src, "first_name", None),
+        "middle_name": getattr(src, "middle_name", None),
+        "last_name": getattr(src, "last_name", None),
+        "gender": getattr(src, "gender", None),
+        "date_of_birth": getattr(src, "date_of_birth", None),
+        "date_of_joining": getattr(src, "date_of_joining", None) or nowdate(),
+        "status": employee_status,
+        "company": src.company,
+        "department": department,
+        "designation": designation,
+        "reports_to": reports_to,
+        "branch": branch,
+        "employee_number": getattr(src, "employee_number", None),
+        "salutation": getattr(src, "salutation", None),
+        "image": getattr(src, "image", None),
+        "user_id": getattr(src, "user_id", None),
+        "create_user_permission": int(getattr(src, "create_user_permission", 0) or 0),
+        "offer_date": getattr(src, "offer_date", None),
+        "confirmation_date": getattr(src, "confirmation_date", None),
+        "contract_end_date": getattr(src, "contract_end_date", None),
+        "notice_days": int(getattr(src, "notice_days", 0) or 0),
+        "date_of_retirement": getattr(src, "date_of_retirement", None),
+        "cell_number": getattr(src, "cell_number", None) or getattr(src, "mobile", None),
+        "personal_email": getattr(src, "personal_email", None),
+        "company_email": getattr(src, "company_email", None),
+        "prefered_contact_email": getattr(src, "prefered_contact_email", None),
+        "prefered_email": getattr(src, "prefered_email", None),
+        "unsubscribed": int(getattr(src, "unsubscribed", 0) or 0),
+        "current_address": getattr(src, "current_address", None),
+        "current_address_is": getattr(src, "current_address_is", None),
+        "permanent_address": getattr(src, "permanent_address", None),
+        "permanent_address_is": getattr(src, "permanent_address_is", None),
+        "emergency_contact_name": getattr(src, "emergency_contact_name", None),
+        "emergency_phone": getattr(src, "emergency_phone", None),
+        "relation": getattr(src, "relation", None),
+        "attendance_device_id": getattr(src, "attendance_device_id", None),
+        "holiday_list": holiday_list,
+        "cost_to_company": flt(getattr(src, "cost_to_company", 0)),
+        "salary_currency": getattr(src, "salary_currency", None) or "SAR",
+        "salary_mode": getattr(src, "salary_mode", None),
+        "bank_name": getattr(src, "bank_name", None),
+        "bank_ac_no": getattr(src, "bank_ac_no", None),
+        "iban": getattr(src, "iban", None),
+        "marital_status": getattr(src, "marital_status", None),
+        "blood_group": getattr(src, "blood_group", None),
+        "health_details": getattr(src, "health_details", None),
+        "passport_number": getattr(src, "passport_number", None),
+        "valid_upto": getattr(src, "valid_upto", None),
+        "date_of_issue": getattr(src, "date_of_issue", None),
+        "place_of_issue": getattr(src, "place_of_issue", None),
+        "bio": getattr(src, "bio", None) or getattr(src, "cover_letter", None),
+        "resignation_letter_date": getattr(src, "resignation_letter_date", None),
+        "relieving_date": getattr(src, "relieving_date", None),
+        "exit_interview_held_on": getattr(src, "exit_interview_held_on", None),
+        "new_workplace": getattr(src, "new_workplace", None),
+        "leave_encashed": int(getattr(src, "leave_encashed", 0) or 0),
+        "encashment_date": getattr(src, "encashment_date", None),
+        "reason_for_leaving": getattr(src, "reason_for_leaving", None),
+        "feedback": getattr(src, "feedback", None),
+        "remote_id": src.remote_id,
+        "source_site": source_site_value,
+    }
+
+    # ----------------------------------------------------------
+    # EXISTING: Update via ORM (doc.save)
     # ----------------------------------------------------------
     if existing_name:
-        # Delete existing child records
+        doc = frappe.get_doc("Employee", existing_name)
+        
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_validate = True
+        doc.flags.ignore_links = True
+        doc.flags.ignore_mandatory = True
+
+        # Delete existing child records using raw SQL to preserve the exact
+        # original filtering behavior (Education omits parenttype filter)
         frappe.db.sql("DELETE FROM `tabEmployee Education` WHERE parent = %s", (existing_name,))
         if frappe.db.table_exists("tabExternal Work History"):
             frappe.db.sql(
@@ -454,218 +522,21 @@ def upsert_employee(src, existing_name):
                 "DELETE FROM `tabInternal Work History` WHERE parent = %s AND parenttype = 'Employee'",
                 (existing_name,)
             )
-        frappe.db.commit()
+        
 
-        frappe.db.sql("""
-            UPDATE `tabEmployee`
-            SET
-                employee_name = %s,
-                first_name = %s,
-                middle_name = %s,
-                last_name = %s,
-                gender = %s,
-                date_of_birth = %s,
-                date_of_joining = %s,
-                status = %s,
-                company = %s,
-                department = %s,
-                designation = %s,
-                reports_to = %s,
-                branch = %s,
-                employee_number = %s,
-                salutation = %s,
-                image = %s,
-                user_id = %s,
-                create_user_permission = %s,
-                offer_date = %s,
-                confirmation_date = %s,
-                contract_end_date = %s,
-                notice_days = %s,
-                date_of_retirement = %s,
-                cell_number = %s,
-                personal_email = %s,
-                company_email = %s,
-                prefered_contact_email = %s,
-                prefered_email = %s,
-                unsubscribed = %s,
-                current_address = %s,
-                current_address_is = %s,
-                permanent_address = %s,
-                permanent_address_is = %s,
-                emergency_contact_name = %s,
-                emergency_phone = %s,
-                relation = %s,
-                attendance_device_id = %s,
-                holiday_list = %s,
-                cost_to_company = %s,
-                salary_currency = %s,
-                salary_mode = %s,
-                bank_name = %s,
-                bank_ac_no = %s,
-                iban = %s,
-                marital_status = %s,
-                blood_group = %s,
-                health_details = %s,
-                passport_number = %s,
-                valid_upto = %s,
-                date_of_issue = %s,
-                place_of_issue = %s,
-                bio = %s,
-                resignation_letter_date = %s,
-                relieving_date = %s,
-                exit_interview_held_on = %s,
-                new_workplace = %s,
-                leave_encashed = %s,
-                encashment_date = %s,
-                reason_for_leaving = %s,
-                feedback = %s,
-                remote_id = %s,
-                source_site = %s,
-                modified = NOW()
-            WHERE name = %s
-        """, (
-            employee_name_value,
-            getattr(src, "first_name", None),
-            getattr(src, "middle_name", None),
-            getattr(src, "last_name", None),
-            getattr(src, "gender", None),
-            getattr(src, "date_of_birth", None),
-            getattr(src, "date_of_joining", None) or nowdate(),
-            employee_status,
-            src.company,
-            department,
-            designation,
-            reports_to,
-            branch,
-            getattr(src, "employee_number", None),
-            getattr(src, "salutation", None),
-            getattr(src, "image", None),
-            getattr(src, "user_id", None),
-            int(getattr(src, "create_user_permission", 0) or 0),
-            getattr(src, "offer_date", None),
-            getattr(src, "confirmation_date", None),
-            getattr(src, "contract_end_date", None),
-            int(getattr(src, "notice_days", 0) or 0),
-            getattr(src, "date_of_retirement", None),
-            getattr(src, "cell_number", None) or getattr(src, "mobile", None),
-            getattr(src, "personal_email", None),
-            getattr(src, "company_email", None),
-            getattr(src, "prefered_contact_email", None),
-            getattr(src, "prefered_email", None),
-            int(getattr(src, "unsubscribed", 0) or 0),
-            getattr(src, "current_address", None),
-            getattr(src, "current_address_is", None),
-            getattr(src, "permanent_address", None),
-            getattr(src, "permanent_address_is", None),
-            getattr(src, "emergency_contact_name", None),
-            getattr(src, "emergency_phone", None),
-            getattr(src, "relation", None),
-            getattr(src, "attendance_device_id", None),
-            holiday_list,
-            flt(getattr(src, "cost_to_company", 0)),
-            getattr(src, "salary_currency", None) or "SAR",
-            getattr(src, "salary_mode", None),
-            getattr(src, "bank_name", None),
-            getattr(src, "bank_ac_no", None),
-            getattr(src, "iban", None),
-            getattr(src, "marital_status", None),
-            getattr(src, "blood_group", None),
-            getattr(src, "health_details", None),
-            getattr(src, "passport_number", None),
-            getattr(src, "valid_upto", None),
-            getattr(src, "date_of_issue", None),
-            getattr(src, "place_of_issue", None),
-            getattr(src, "bio", None) or getattr(src, "cover_letter", None),
-            getattr(src, "resignation_letter_date", None),
-            getattr(src, "relieving_date", None),
-            getattr(src, "exit_interview_held_on", None),
-            getattr(src, "new_workplace", None),
-            int(getattr(src, "leave_encashed", 0) or 0),
-            getattr(src, "encashment_date", None),
-            getattr(src, "reason_for_leaving", None),
-            getattr(src, "feedback", None),
-            src.remote_id,
-            getattr(src, "source_site", None) or getattr(src, "site_url", None),
-            existing_name
-        ))
-        frappe.db.commit()
-
-        employee_name = existing_name
+        doc.update(update_dict)
+        doc.save()  # ORM save — generates the UPDATE query dynamically
+        employee_name = doc.name
 
     else:
         # ----------------------------------------------------------
-        # NEW: Use ORM normally with all flags disabled
+        # NEW: ORM insert with all flags disabled
         # ----------------------------------------------------------
         doc = frappe.new_doc("Employee")
         doc.name = target_name
         doc.flags.name_set = True
 
-        source_site_value = getattr(src, "source_site", None) or getattr(src, "site_url", None)
-
-        doc.update({
-            "employee_name": employee_name_value,
-            "first_name": getattr(src, "first_name", None),
-            "middle_name": getattr(src, "middle_name", None),
-            "last_name": getattr(src, "last_name", None),
-            "gender": getattr(src, "gender", None),
-            "date_of_birth": getattr(src, "date_of_birth", None),
-            "date_of_joining": getattr(src, "date_of_joining", None) or nowdate(),
-            "status": employee_status,
-            "company": src.company,
-            "department": department,
-            "designation": designation,
-            "reports_to": reports_to,
-            "branch": branch,
-            "employee_number": getattr(src, "employee_number", None),
-            "salutation": getattr(src, "salutation", None),
-            "image": getattr(src, "image", None),
-            "user_id": getattr(src, "user_id", None),
-            "create_user_permission": int(getattr(src, "create_user_permission", 0) or 0),
-            "offer_date": getattr(src, "offer_date", None),
-            "confirmation_date": getattr(src, "confirmation_date", None),
-            "contract_end_date": getattr(src, "contract_end_date", None),
-            "notice_days": int(getattr(src, "notice_days", 0) or 0),
-            "date_of_retirement": getattr(src, "date_of_retirement", None),
-            "cell_number": getattr(src, "cell_number", None) or getattr(src, "mobile", None),
-            "personal_email": getattr(src, "personal_email", None),
-            "company_email": getattr(src, "company_email", None),
-            "prefered_contact_email": getattr(src, "prefered_contact_email", None),
-            "prefered_email": getattr(src, "prefered_email", None),
-            "unsubscribed": int(getattr(src, "unsubscribed", 0) or 0),
-            "current_address": getattr(src, "current_address", None),
-            "current_address_is": getattr(src, "current_address_is", None),
-            "permanent_address": getattr(src, "permanent_address", None),
-            "permanent_address_is": getattr(src, "permanent_address_is", None),
-            "emergency_contact_name": getattr(src, "emergency_contact_name", None),
-            "emergency_phone": getattr(src, "emergency_phone", None),
-            "relation": getattr(src, "relation", None),
-            "attendance_device_id": getattr(src, "attendance_device_id", None),
-            "holiday_list": holiday_list,
-            "cost_to_company": flt(getattr(src, "cost_to_company", 0)),
-            "salary_currency": getattr(src, "salary_currency", None) or "SAR",
-            "salary_mode": getattr(src, "salary_mode", None),
-            "bank_name": getattr(src, "bank_name", None),
-            "bank_ac_no": getattr(src, "bank_ac_no", None),
-            "iban": getattr(src, "iban", None),
-            "marital_status": getattr(src, "marital_status", None),
-            "blood_group": getattr(src, "blood_group", None),
-            "health_details": getattr(src, "health_details", None),
-            "passport_number": getattr(src, "passport_number", None),
-            "valid_upto": getattr(src, "valid_upto", None),
-            "date_of_issue": getattr(src, "date_of_issue", None),
-            "place_of_issue": getattr(src, "place_of_issue", None),
-            "bio": getattr(src, "bio", None) or getattr(src, "cover_letter", None),
-            "resignation_letter_date": getattr(src, "resignation_letter_date", None),
-            "relieving_date": getattr(src, "relieving_date", None),
-            "exit_interview_held_on": getattr(src, "exit_interview_held_on", None),
-            "new_workplace": getattr(src, "new_workplace", None),
-            "leave_encashed": int(getattr(src, "leave_encashed", 0) or 0),
-            "encashment_date": getattr(src, "encashment_date", None),
-            "reason_for_leaving": getattr(src, "reason_for_leaving", None),
-            "feedback": getattr(src, "feedback", None),
-            "remote_id": src.remote_id,
-            "source_site": source_site_value,
-        })
+        doc.update(update_dict)
 
         doc.flags.ignore_permissions = True
         doc.flags.ignore_validate = True
@@ -678,9 +549,7 @@ def upsert_employee(src, existing_name):
         if hasattr(doc, "internal_work_history"):
             doc.set("internal_work_history", [])
 
-        doc.save()
-        frappe.db.commit()
-
+        doc.save()  # ORM save — generates the INSERT query
         employee_name = doc.name
 
     # ----------------------------------------------------------
@@ -757,12 +626,8 @@ def upsert_employee(src, existing_name):
     if frappe.db.exists("DocType", "External Employee"):
         ext_emp_meta = frappe.get_meta("External Employee")
         if ext_emp_meta.has_field("remote_id"):
-            frappe.db.set_value(
-                "External Employee", src.name,
-                "remote_id", employee_name,
-                update_modified=False
-            )
-            frappe.db.commit()
+            # Use db_set on the source doc (ORM equivalent of frappe.db.set_value)
+            src.db_set("remote_id", employee_name, update_modified=False)
 
     # ----------------------------------------------------------
     # Reload and return
@@ -798,11 +663,14 @@ def sync_bulk_employees(names):
     """
     Bulk sync employees from External Employee to Employee.
     Processed in background queue.
+    
+    All database writes happen within a single transaction.
+    Frappe automatically commits the transaction when the background job finishes.
     """
     results = []
     for name in names:
         try:
-            frappe.db.commit()
+            
             src = frappe.get_doc("External Employee", name)
 
             company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
@@ -827,8 +695,7 @@ def sync_bulk_employees(names):
                 "designation": doc.designation,
             })
 
-            if len(results) % 10 == 0:
-                frappe.db.commit()
+            # NO batch commit every 10 records
 
         except Exception as e:
             import traceback
@@ -839,5 +706,4 @@ def sync_bulk_employees(names):
                 "traceback": traceback.format_exc()
             })
 
-    frappe.db.commit()
     return results

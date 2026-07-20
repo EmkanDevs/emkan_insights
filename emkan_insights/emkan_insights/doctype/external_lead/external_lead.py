@@ -70,18 +70,20 @@ def sync_external_leads(names=None):
 # ==========================================================
 
 def sync_lead_batch(names):
+    """
+    Runs inside a background worker (via frappe.enqueue). The worker
+    already wraps this call in a transaction and commits once on
+    success / rolls back on an unhandled failure,
+    """
 
     success = 0
     failed = 0
 
-    for idx, source_name in enumerate(names, start=1):
+    for source_name in names:
 
         try:
             sync_single_lead(source_name)
             success += 1
-
-            if idx % 20 == 0:
-                frappe.db.commit()
 
         except Exception:
 
@@ -91,8 +93,6 @@ def sync_lead_batch(names):
                 title=f"External Lead Sync Failed: {source_name}",
                 message=frappe.get_traceback()
             )
-
-    frappe.db.commit()
 
     return {
         "success": success,
@@ -146,7 +146,7 @@ def sync_single_lead(source_name):
 
     # Use the External Lead's name as the remote_id
     remote_id = src.name
-    
+
     # Build target name with company prefix
     target_name = _build_target_name(company_abbr, remote_id)
 
@@ -250,13 +250,9 @@ def sync_single_lead(source_name):
     lead.flags.ignore_validate = True
     lead.flags.ignore_links = True
 
-    if existing:
-        lead.db_update()
-        lead.update_children()
-    else:
-        lead.db_insert()
-        for df in lead.meta.get_table_fields():
-            for d in lead.get(df.fieldname):
-                d.db_insert()
+    # save() handles both insert (new doc) and update (existing doc),
+    # and automatically syncs child tables - no need for db_insert()/
+    # db_update() or manually looping over table fields.
+    lead.save()
 
     return lead.name

@@ -125,18 +125,15 @@ def _safe_submit_doc(doc, log_prefix=""):
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_links = True
         doc.submit()
-        frappe.db.commit()
         return True
     except Exception as submit_err:
         current = cint(frappe.db.get_value(doc.doctype, doc.name, "docstatus"))
         if current == 1:
-            frappe.db.commit()
             return True
         _log(f"{log_prefix} normal submit failed, attempting force submit",
              f"Error: {str(submit_err)}")
         try:
             _force_submit_doc(doc.doctype, doc.name)
-            frappe.db.commit()
             return True
         except Exception as force_submit_err:
             _log(f"{log_prefix} force submit also failed",
@@ -151,14 +148,12 @@ def _safe_cancel_doc(doc, log_prefix=""):
         doc.flags.ignore_mandatory = True
         doc.flags.ignore_links = True
         doc.cancel()
-        frappe.db.commit()
         return True
     except Exception as normal_cancel_err:
         _log(f"{log_prefix} normal cancel failed, attempting force cancel",
              f"Error: {str(normal_cancel_err)}")
         try:
             _force_cancel_doc(doc.doctype, doc.name)
-            frappe.db.commit()
             return True
         except Exception as force_cancel_err:
             _log(f"{log_prefix} force cancel also failed",
@@ -180,7 +175,7 @@ def _sync_existing_docstatus(existing_name, external):
         if target_docstatus == 2:
             if local_docstatus == 0:
                 _safe_submit_doc(je, log_prefix=f"Journal Entry {existing_name}")
-                je = frappe.get_doc("Journal Entry", existing_name)
+                je.reload()
             _safe_cancel_doc(je, log_prefix=f"Journal Entry {existing_name}")
             final = cint(frappe.db.get_value("Journal Entry", existing_name, "docstatus"))
             return {"name": existing_name, "status": "docstatus_synced", "docstatus": final}
@@ -199,7 +194,6 @@ def _sync_existing_docstatus(existing_name, external):
     except Exception as e:
         final = cint(frappe.db.get_value("Journal Entry", existing_name, "docstatus"))
         if final == target_docstatus:
-            frappe.db.commit()
             return {"name": existing_name, "status": "docstatus_synced", "docstatus": final}
         _log(f"Journal Entry {existing_name} docstatus transition failed", frappe.get_traceback())
         return {"name": existing_name, "status": "exists", "error": str(e)}
@@ -400,8 +394,6 @@ def sync_external_journal_entries(names):
                     "Journal Entry", je.name, "remote_id", remote_id, update_modified=False
                 )
 
-            frappe.db.commit()
-
             # DOCSTATUS SYNC (same as Sales Order / Stock Entry)
             target_status = cint(ext.docstatus)
             frappe.clear_document_cache("Journal Entry", je.name)
@@ -417,7 +409,6 @@ def sync_external_journal_entries(names):
 
             final_status = cint(frappe.db.get_value("Journal Entry", je.name, "docstatus"))
             result["created"].append({"name": je.name, "docstatus": final_status})
-            frappe.db.commit()
 
         except Exception as e:
             frappe.db.rollback()

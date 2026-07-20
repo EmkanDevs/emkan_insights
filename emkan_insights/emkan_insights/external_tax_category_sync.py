@@ -69,8 +69,6 @@ def sync_bulk_tax_categories(names):
                 f"Tax Category Sync Failed - {row.name}"
             )
 
-    frappe.db.commit()
-
     return {
         "success": success,
         "failed": failed
