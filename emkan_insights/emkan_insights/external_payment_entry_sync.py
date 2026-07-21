@@ -155,11 +155,15 @@ def sync_external_payment_entry(source_doctype, external_name):
         return existing
 
     # ------------------------------------------------------
-    # Dependency Checks
+    # Dependency Checks (Resolve Party FIRST)
     # ------------------------------------------------------
+    local_party = None
     if src.party_type and src.party:
-        if not frappe.db.exists(src.party_type, src.party):
-            frappe.throw(f"{src.party_type} {src.party} not found. Sync master first.")
+        local_party = resolve_local_doc(
+            src.party_type, src.party, company_abbr=company_abbr, company=company
+        )
+        if not local_party:
+            frappe.throw(f"{src.party_type} {src.party} not found locally. Sync master first.")
 
     if src.paid_from and not frappe.db.exists("Account", src.paid_from):
         frappe.throw(f"Account {src.paid_from} not found.")
@@ -189,6 +193,12 @@ def sync_external_payment_entry(source_doctype, external_name):
     # Ensure company + remote_id stick after generic copy
     doc.company = company
     doc.remote_id = remote_id
+
+    # ------------------------------------------------------
+    # Apply Resolved Party Name
+    # ------------------------------------------------------
+    if local_party:
+        doc.party = local_party
 
     # ------------------------------------------------------
     # References Table — resolve reference_name to local docs

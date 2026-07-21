@@ -22,7 +22,7 @@ IGNORE_ITEM_FIELDS = {
 # loop blindly overwrite them with unresolved raw values from the source doc.
 EXPLICITLY_HANDLED_HEADER_FIELDS = {
     "items", "taxes", "payment_schedule", "remote_id", "custom_remote_id",
-    "customer"
+    "customer", "return_against"  # <--- ADDED "return_against" HERE
 }
 
 
@@ -264,6 +264,19 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             # Resolve customer explicitly instead of copying it verbatim
             # through the generic loop above.
             si.customer = _resolve_customer(ext_si.get("customer"), company_abbr)
+
+            # ------------------------------------------------
+            # RESOLVE RETURN AGAINST (Company Prefix Fix)
+            # ------------------------------------------------
+            if ext_si.get("return_against"):
+                local_return_against = resolve_local_doc("Sales Invoice", ext_si.return_against, company_abbr)
+                if local_return_against:
+                    si.return_against = local_return_against
+                else:
+                    frappe.log_error(
+                        title=f"Sales Invoice Sync - return_against '{ext_si.return_against}' unresolved",
+                        message="Return against Sales Invoice could not be resolved to a local SI. Leaving field blank."
+                    )
 
             # ------------------------------------------------
             # ITEMS

@@ -241,7 +241,14 @@ def balance_journal_entry(je):
 
 
 def _build_account_rows(ext, company_abbr, company):
-    account_totals = {}
+    """
+    Copy each account row from the external JE 1-to-1.
+    No grouping and no net-zero filtering — mirrors the PR sync row copy.
+    Grouping/netting was the root cause of records being silently skipped:
+    rows where debit==credit per group were dropped, and if all rows cancelled
+    out the entire JE was skipped with a "Zero balance rows" error.
+    """
+    final_rows = []
 
     for row in ext.accounts:
         # Keep all account rows (do not drop Stock / other types)
@@ -255,45 +262,17 @@ def _build_account_rows(ext, company_abbr, company):
         party_type = row.get("party_type") or None
         party = _resolve_party(party_type, row.get("party"), company_abbr)
 
-        group_key = (
-            row.account,
-            reference_type or "",
-            reference_name or "",
-            party_type or "",
-            party or "",
-        )
-        if group_key not in account_totals:
-            account_totals[group_key] = {
-                "account": row.account,
-                "debit": 0.0,
-                "credit": 0.0,
-                "party_type": party_type,
-                "party": party,
-                "cost_center": row.cost_center or frappe.get_cached_value("Company", company, "cost_center"),
-                "reference_type": reference_type,
-                "reference_name": reference_name,
-            }
-
-        account_totals[group_key]["debit"] += flt(row.debit_in_account_currency)
-        account_totals[group_key]["credit"] += flt(row.credit_in_account_currency)
-
-    final_rows = []
-    for vals in account_totals.values():
-        net_amount = flt(vals["debit"] - vals["credit"], 2)
-        if net_amount == 0:
-            continue
-
         final_rows.append({
-            "account": vals["account"],
-            "party_type": vals["party_type"],
-            "party": vals["party"],
-            "cost_center": vals["cost_center"],
-            "reference_type": vals["reference_type"],
-            "reference_name": vals["reference_name"],
-            "debit_in_account_currency": net_amount if net_amount > 0 else 0,
-            "credit_in_account_currency": abs(net_amount) if net_amount < 0 else 0,
-            "debit": net_amount if net_amount > 0 else 0,
-            "credit": abs(net_amount) if net_amount < 0 else 0,
+            "account": row.account,
+            "party_type": party_type,
+            "party": party,
+            "cost_center": row.cost_center or frappe.get_cached_value("Company", company, "cost_center"),
+            "reference_type": reference_type,
+            "reference_name": reference_name,
+            "debit_in_account_currency": flt(row.debit_in_account_currency),
+            "credit_in_account_currency": flt(row.credit_in_account_currency),
+            "debit": flt(row.debit_in_account_currency),
+            "credit": flt(row.credit_in_account_currency),
         })
 
     return final_rows
@@ -348,7 +327,7 @@ def sync_external_journal_entries(names):
             je.flags.name_set = True
             je.flags.ignore_naming_series = True
             if frappe.get_meta("Journal Entry").has_field("remote_id"):
-                je.remote_id = remote_id
+                je.remote_id = remote_id 
 
             je.voucher_type = ext.voucher_type or "Journal Entry"
             je.posting_date = ext.posting_date
@@ -357,12 +336,19 @@ def sync_external_journal_entries(names):
 
             final_rows = _build_account_rows(ext, company_abbr, ext.company)
             if not final_rows:
-                result["failed"].append({"external": name, "error": "Zero balance rows"})
+                # All account rows were blank (no account set). Log but do not skip —
+                # this is a data issue worth recording, not a reason to abort the whole batch.
+                _log(
+                    f"Journal Entry {name} has no valid account rows",
+                    "All rows were skipped because 'account' field was empty.",
+                )
+                result["failed"].append({"external": name, "error": "No valid account rows (account field missing on all rows)"})
                 continue
 
             je.set("accounts", final_rows)
             balance_journal_entry(je)
-            je.set("accounts", [r for r in je.accounts if flt(r.debit) > 0 or flt(r.credit) > 0])
+            # Do NOT filter out zero-amount rows after balancing — keep all rows as-is
+            # to preserve the original JE structure (mirrors PR sync behaviour).
 
             je.total_debit = sum(flt(r.debit) for r in je.accounts)
             je.total_credit = sum(flt(r.credit) for r in je.accounts)
@@ -411,7 +397,11 @@ def sync_external_journal_entries(names):
             result["created"].append({"name": je.name, "docstatus": final_status})
 
         except Exception as e:
-            frappe.db.rollback()
+            # Do NOT call frappe.db.rollback() here.
+            # If je.insert() already succeeded but a later step (e.g. submit) raised,
+            # rolling back would silently delete the inserted document — exactly the
+            # bug that caused records to go missing. Mirror the PR sync pattern:
+            # log the error and continue, leaving any partial work intact.
             frappe.log_error(frappe.get_traceback(), f"Sync Error: {name}")
             result["failed"].append({"external": name, "error": str(e)})
 
