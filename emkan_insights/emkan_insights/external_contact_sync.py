@@ -46,7 +46,7 @@ def sync_external_contact_docs(source_doctype, names):
             for field, value in ext_contact.as_dict().items():
                 if field not in SYSTEM_FIELDS and field not in [
                     "first_name", "last_name", "remote_id", "name", 
-                    "email_ids", "phone_nos", "links", "naming_series"
+                    "email_ids", "phone_nos", "links", "naming_series" , "source_site" , "user"
                 ] and hasattr(contact, field):
                     contact.set(field, value)
 
@@ -114,8 +114,6 @@ def sync_external_contact_docs(source_doctype, names):
             # --- INSERT WITH FLAGS ---
             contact.insert(
                 ignore_permissions=True, 
-                ignore_links=True,
-                ignore_mandatory=True
             )
             
             results.append({"name": contact.name, "status": "synced"})

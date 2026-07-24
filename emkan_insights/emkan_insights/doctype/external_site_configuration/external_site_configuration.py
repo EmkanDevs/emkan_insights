@@ -422,6 +422,56 @@ def _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id):
             doc.company = company
 
 
+#def _prepare_child_rows_for_sync(doc, table_fieldname, rows):
+    # table_df = doc.meta.get_field(table_fieldname)
+    # if not table_df or table_df.fieldtype != "Table" or not table_df.options:
+    #     return rows
+
+    # child_meta = frappe.get_meta(table_df.options)
+    # child_fieldnames = {df.fieldname for df in child_meta.fields}
+
+    # cleaned_rows = []
+    # seen_row_ids = set()
+    # seen_row_fingerprints = set()
+
+    # for row in rows:
+    #     if not isinstance(row, dict):
+    #         cleaned_rows.append(row)
+    #         continue
+
+    #     row = dict(row)
+    #     remote_child_row_id = row.get("name")
+    #     if remote_child_row_id and remote_child_row_id in seen_row_ids:
+    #         continue
+
+    #     row.pop("name", None)
+    #     row.pop("idx", None)
+    #     row.pop("parent", None)
+    #     row.pop("parenttype", None)
+    #     row.pop("parentfield", None)
+    #     row.pop("docstatus", None)
+    #     row.pop("owner", None)
+    #     row.pop("creation", None)
+    #     row.pop("modified", None)
+    #     row.pop("modified_by", None)
+
+    #     if "custom_remote_id" in child_fieldnames and remote_child_row_id:
+    #         row["custom_remote_id"] = remote_child_row_id
+
+    #     fingerprint_row = dict(row)
+    #     fingerprint_row.pop("custom_remote_id", None)
+    #     row_fingerprint = json.dumps(fingerprint_row, sort_keys=True, default=str)
+    #     if row_fingerprint in seen_row_fingerprints:
+    #         continue
+
+    #     if remote_child_row_id:
+    #         seen_row_ids.add(remote_child_row_id)
+    #     seen_row_fingerprints.add(row_fingerprint)
+    #     cleaned_rows.append(row)
+
+    # return cleaned_rows
+
+
 def _prepare_child_rows_for_sync(doc, table_fieldname, rows):
     table_df = doc.meta.get_field(table_fieldname)
     if not table_df or table_df.fieldtype != "Table" or not table_df.options:
@@ -441,6 +491,8 @@ def _prepare_child_rows_for_sync(doc, table_fieldname, rows):
 
         row = dict(row)
         remote_child_row_id = row.get("name")
+
+        # True duplicate: same remote child row synced twice in this batch.
         if remote_child_row_id and remote_child_row_id in seen_row_ids:
             continue
 
@@ -458,19 +510,26 @@ def _prepare_child_rows_for_sync(doc, table_fieldname, rows):
         if "custom_remote_id" in child_fieldnames and remote_child_row_id:
             row["custom_remote_id"] = remote_child_row_id
 
-        fingerprint_row = dict(row)
-        fingerprint_row.pop("custom_remote_id", None)
-        row_fingerprint = json.dumps(fingerprint_row, sort_keys=True, default=str)
-        if row_fingerprint in seen_row_fingerprints:
-            continue
-
         if remote_child_row_id:
+            # We have a real remote identity for this row - that's the only
+            # thing that should decide uniqueness. Two rows CAN legitimately
+            # have identical field values (e.g. two JE account lines with the
+            # same account/amount), so do NOT drop them based on content.
             seen_row_ids.add(remote_child_row_id)
-        seen_row_fingerprints.add(row_fingerprint)
+        else:
+            # No remote id to key on at all - content fingerprint is the only
+            # fallback available to avoid re-adding an obviously identical
+            # row within the same batch.
+            fingerprint_row = dict(row)
+            fingerprint_row.pop("custom_remote_id", None)
+            row_fingerprint = json.dumps(fingerprint_row, sort_keys=True, default=str)
+            if row_fingerprint in seen_row_fingerprints:
+                continue
+            seen_row_fingerprints.add(row_fingerprint)
+
         cleaned_rows.append(row)
 
     return cleaned_rows
-
 
 def _dedupe_saved_child_rows_by_remote_id(local_dt, docname):
     meta = frappe.get_meta(local_dt)
@@ -523,8 +582,10 @@ COMPANY_PREFIXED_EXTERNAL_DOCTYPES = {
     "External Purchase Receipt",
     "External Purchase Invoice",
     "External Stock Entry",
+    "External Stock Reconciliation",
     "External Payment Request",
     "External Request for Quotation",
+    "External Journal Entry"
 }
 
 
@@ -594,6 +655,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     doc.__islocal = True
     doc.name = remote_id
     doc.flags.ignore_naming_series = True
+    doc.flags.name_set = True
 
     # ── Map fields ──
     for field, value in item.items():
@@ -784,8 +846,10 @@ def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, compan
         "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
         "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
         "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+        "Stock Reconciliation": "emkan_insights.emkan_insights.sync_stock_reconciliation_from_remote.sync_stock_reconciliations_from_remote",
         "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
         "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote", 
+        "Journal Entry":  "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
     }
     sync_method = dedicated_sync_methods.get(
         ref_doctype,
@@ -872,6 +936,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         "Purchase Order": "External Purchase Order",
         "Sales Order": "External Sales Order",
         "Stock Entry": "External Stock Entry",
+        "Stock Reconciliation": "External Stock Reconciliation",
         "Project": "External Project",
         "Request for Quotation": "External Request for Quotation",
         "Supplier Quotation": "External Supplier Quotation",
@@ -952,7 +1017,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
 
     if remote_dt in [
         "Asset Category", "Purchase Invoice", "Payment Entry", "Purchase Order",
-        "Stock Entry", "Purchase Receipt", "Request for Quotation", "Supplier Quotation","Employee","Department","Designation"
+        "Stock Entry", "Stock Reconciliation", "Purchase Receipt", "Request for Quotation", "Supplier Quotation","Employee","Department","Designation",
         "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
         "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
         "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order","Vehicle","Batch Plant",

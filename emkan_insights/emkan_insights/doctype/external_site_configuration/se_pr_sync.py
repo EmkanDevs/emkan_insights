@@ -49,9 +49,6 @@ def force_sync_transaction(site_url, api_key, api_secret, doctype, child_docname
 
             # BYPASS ALL VALIDATION
             doc.flags.ignore_permissions = True
-            doc.flags.ignore_links = True
-            doc.flags.ignore_validate = True
-            doc.flags.ignore_mandatory = True 
 
             doc.save(ignore_permissions=True)
             count += 1

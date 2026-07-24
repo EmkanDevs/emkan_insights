@@ -162,8 +162,6 @@ def sync_external_assets(source_doctype, names):
             # Use db_insert to bypass Asset controller validation (same approach
             # as the Material Request sync). The controller runs stock/account
             # checks that fail for externally-imported records.
-            asset.flags.ignore_links     = True
-            asset.flags.ignore_mandatory = True
             asset.db_insert()
 
             # Manually insert finance_books child rows
@@ -173,8 +171,6 @@ def sync_external_assets(source_doctype, names):
                 fb.parentfield = "finance_books"
                 if not fb.name:
                     fb.name = frappe.generate_hash("", 10)
-                fb.flags.ignore_links     = True
-                fb.flags.ignore_mandatory = True
                 fb.db_insert()
 
             results.append({

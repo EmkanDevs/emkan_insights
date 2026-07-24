@@ -154,9 +154,6 @@ def _safe_cancel_doc(doc, log_prefix=""):
     """Cancel with force-cancel fallback (same as Stock Entry sync)."""
     try:
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
-        doc.flags.ignore_links = True
         doc.cancel()
         return True
     except Exception as normal_cancel_err:
@@ -175,9 +172,6 @@ def _safe_submit_doc(doc, log_prefix=""):
     """Submit with force-submit fallback when Quotation over-limit etc. blocks."""
     try:
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
-        doc.flags.ignore_links = True
         doc.submit()
         return True
     except Exception as submit_err:
@@ -323,9 +317,6 @@ def sync_external_sales_order_docs(source_doctype, names):
             # FLAGS
             # ------------------------------------------------
             so.flags.ignore_permissions = True
-            so.flags.ignore_mandatory = True
-            so.flags.ignore_links = True
-            so.flags.ignore_validate = True
             so.flags.ignore_naming_series = True
 
             # ------------------------------------------------
@@ -470,8 +461,6 @@ def sync_external_sales_order_docs(source_doctype, names):
             # ------------------------------------------------
             so.insert(
                 ignore_permissions=True,
-                ignore_links=True,
-                ignore_mandatory=True
             )
 
             # ------------------------------------------------

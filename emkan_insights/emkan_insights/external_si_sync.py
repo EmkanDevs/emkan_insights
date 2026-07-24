@@ -15,29 +15,22 @@ IGNORE_ITEM_FIELDS = {
     "prevdoc_docname",
     "so_detail",
     "against_sales_order",
+    "si_detail",
+    "sales_invoice_item",  # resolved explicitly below for return entries
     "name"
 }
 
-# Fields resolved explicitly further down — don't let the generic field-copy
-# loop blindly overwrite them with unresolved raw values from the source doc.
 EXPLICITLY_HANDLED_HEADER_FIELDS = {
     "items", "taxes", "payment_schedule", "remote_id", "custom_remote_id",
-    "customer", "return_against"  # <--- ADDED "return_against" HERE
+    "customer", "return_against"
 }
 
 
 # ==========================================================
-# DUPLICATE CLEANUP (kept as a post-insert safety net)
+# DUPLICATE CLEANUP
 # ==========================================================
 
 def clean_duplicate_si_items(parent_name):
-    """
-    Belt-and-suspenders cleanup: if two item rows still ended up identical
-    in every tracked field (including custom_remote_id — meaning they trace
-    back to the exact same source row), remove the extra one. The real fix
-    is deduping before appending (see _dedupe_source_items below); this stays
-    as a safety net in case anything slips through.
-    """
     frappe.db.sql("""
         DELETE t1 FROM `tabSales Invoice Item` t1
         INNER JOIN `tabSales Invoice Item` t2
@@ -55,7 +48,6 @@ def clean_duplicate_si_items(parent_name):
 
 
 def _dedupe_source_items(ext_items):
-    
     seen = set()
     deduped = []
     for row in ext_items:
@@ -72,7 +64,6 @@ def _dedupe_source_items(ext_items):
 # ==========================================================
 
 def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
-    
     if not remote_or_local_name:
         return None
 
@@ -94,18 +85,34 @@ def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
     return None
 
 
-def get_child_detail(doctype, parent, item_code):
+def get_child_detail(doctype, parent, item_code, remote_child_id=None):
     if not parent:
         return None
+
+    if remote_child_id:
+        match = frappe.db.get_value(
+            doctype,
+            {
+                "parent": parent,
+                "custom_remote_id": remote_child_id
+            },
+            "name"
+        )
+
+        if match:
+            return match
+
     return frappe.db.get_value(
         doctype,
-        {"parent": parent, "item_code": item_code},
+        {
+            "parent": parent,
+            "item_code": item_code
+        },
         "name"
     )
 
 
 def _resolve_customer(customer_ref, company_abbr):
-    
     if not customer_ref:
         return None
 
@@ -119,18 +126,12 @@ def _resolve_customer(customer_ref, company_abbr):
 
 
 def _resolve_default_warehouse(company):
-    """Resolve a real warehouse for the invoice's own company."""
     if not company:
         return None
     return frappe.db.get_value("Warehouse", {"is_group": 0, "company": company}, "name")
 
 
 def _ensure_item_uom(item_code, uom):
-    """
-    ERPNext throws 'UOM {uom} not found in Item {item_code}' if a transaction
-    row uses a UOM that isn't registered on that Item. Auto-register it
-    (conversion factor 1.0) instead of letting the whole invoice fail.
-    """
     if not item_code or not uom:
         return
 
@@ -162,6 +163,67 @@ def _ensure_item_uom(item_code, uom):
 
 
 # ==========================================================
+# COST CENTER RESOLVER  ← THE KEY FIX
+# ==========================================================
+
+def _resolve_cost_center(cost_center, company, company_abbr, cc_cache):
+    """
+    Resolve a cost center from the source document to a valid local one.
+
+    Handles every variant seen in the wild:
+      1. Exact match                            → use as-is
+      2. Double company suffix "X - IMC - IMC"  → strip to "X - IMC"
+      3. Missing company suffix "X"             → append " - IMC"
+      4. Wrong company suffix "X - OTHER"       → try without suffix
+      5. Nothing matches                        → fall back to company default
+
+    All lookups are cached in cc_cache to avoid repeated DB hits
+    when the same cost center appears on many item rows.
+    """
+    if not cost_center:
+        return None
+
+    # Check cache first
+    if cost_center in cc_cache:
+        return cc_cache[cost_center]
+
+    result = None
+    single_suffix = f" - {company_abbr}" if company_abbr else ""
+    double_suffix = f"{single_suffix}{single_suffix}" if company_abbr else ""
+
+    # --- Tier 1: Exact match ---
+    if frappe.db.exists("Cost Center", cost_center):
+        result = cost_center
+
+    # --- Tier 2: Fix double suffix "X - IMC - IMC" → "X - IMC" ---
+    if not result and double_suffix and cost_center.endswith(double_suffix):
+        candidate = cost_center[: -len(double_suffix)] + single_suffix
+        if frappe.db.exists("Cost Center", candidate):
+            result = candidate
+
+    # --- Tier 3: Strip single suffix "X - IMC" → "X" ---
+    if not result and single_suffix and cost_center.endswith(single_suffix):
+        candidate = cost_center[: -len(single_suffix)]
+        if frappe.db.exists("Cost Center", candidate):
+            result = candidate
+
+    # --- Tier 4: Add single suffix "X" → "X - IMC" ---
+    if not result and single_suffix and not cost_center.endswith(single_suffix):
+        candidate = cost_center + single_suffix
+        if frappe.db.exists("Cost Center", candidate):
+            result = candidate
+
+    # --- Tier 5: Company default cost center ---
+    if not result and company:
+        default_cc = frappe.db.get_value("Company", company, "cost_center")
+        if default_cc and frappe.db.exists("Cost Center", default_cc):
+            result = default_cc
+
+    cc_cache[cost_center] = result
+    return result
+
+
+# ==========================================================
 # MAIN ENTRY POINT
 # ==========================================================
 
@@ -173,23 +235,24 @@ def sync_external_sales_invoice_docs(source_doctype, names):
 
     results = []
 
+    # Cache for cost center resolution — survives across all invoices
+    # in this batch so repeated cost centers don't hit the DB each time.
+    cc_cache = {}
+
     for name in names:
         try:
             ext_si = frappe.get_doc(source_doctype, name)
             remote_id = ext_si.name
 
             # ------------------------------------------------
-            # BUILD TARGET NAME: {company_abbr}-{remote_id}
-            # Same pattern as Sales Order sync (always prefix,
-            # e.g. IMC-ACC-SINV-26-00025 → IMC-IMC-ACC-SINV-26-00025).
+            # BUILD TARGET NAME
             # ------------------------------------------------
             company_abbr = frappe.db.get_value('Company', ext_si.company, 'abbr') or ''
 
             if not company_abbr:
                 frappe.log_error(
                     f"Sales Invoice Sync: no company abbr found for company "
-                    f"'{ext_si.company}' on {remote_id}. Name will be created "
-                    f"without a company prefix.",
+                    f"'{ext_si.company}' on {remote_id}.",
                     "ExternalSalesInvoice Sync - missing company abbr"
                 )
 
@@ -212,7 +275,7 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 )
 
             # ------------------------------------------------
-            # Check existing by dynamic remote_id field
+            # Check existing
             # ------------------------------------------------
             existing_si = frappe.db.get_value(
                 "Sales Invoice",
@@ -221,30 +284,14 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             ) or (target_name if frappe.db.exists("Sales Invoice", target_name) else None)
 
             if existing_si:
-                results.append({
-                    "name": existing_si,
-                    "status": "exists"
-                })
+                results.append({"name": existing_si, "status": "exists"})
                 continue
 
             si = frappe.new_doc("Sales Invoice")
 
-            # ------------------------------------------------
-            # SET NAME WITH COMPANY ABBR PREFIX
-            # ------------------------------------------------
             si.set(remote_id_field, remote_id)
             si.name = target_name
             si.flags.name_set = True
-
-            # ------------------------------------------------
-            # FLAGS
-            # ------------------------------------------------
-            si.flags.ignore_permissions = True
-            si.flags.ignore_validate = True
-            si.flags.ignore_mandatory = True
-            si.flags.ignore_links = True
-            si.flags.ignore_naming_series = True
-            frappe.flags.ignore_stock_validation = True
 
             if hasattr(si, "source_site"):
                 si.source_site = ext_si.source_site
@@ -253,7 +300,6 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             # COPY MAIN FIELDS
             # ------------------------------------------------
             for field, value in ext_si.as_dict().items():
-
                 if (
                     field not in SYSTEM_FIELDS
                     and field not in EXPLICITLY_HANDLED_HEADER_FIELDS
@@ -261,12 +307,20 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 ):
                     si.set(field, value)
 
-            # Resolve customer explicitly instead of copying it verbatim
-            # through the generic loop above.
+            # Preserve source posting/due dates. Without set_posting_time=1,
+            # ERPNext's validate_posting_time() overwrites posting_date to
+            # today, which then fails: due_date < posting_date.
+            si.posting_date = ext_si.posting_date
+            if ext_si.get("posting_time"):
+                si.posting_time = ext_si.posting_time
+            if ext_si.get("due_date"):
+                si.due_date = ext_si.due_date
+            si.set_posting_time = 1
+
             si.customer = _resolve_customer(ext_si.get("customer"), company_abbr)
 
             # ------------------------------------------------
-            # RESOLVE RETURN AGAINST (Company Prefix Fix)
+            # RESOLVE RETURN AGAINST
             # ------------------------------------------------
             if ext_si.get("return_against"):
                 local_return_against = resolve_local_doc("Sales Invoice", ext_si.return_against, company_abbr)
@@ -275,113 +329,236 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 else:
                     frappe.log_error(
                         title=f"Sales Invoice Sync - return_against '{ext_si.return_against}' unresolved",
-                        message="Return against Sales Invoice could not be resolved to a local SI. Leaving field blank."
+                        message="Return against SI could not be resolved. Leaving blank."
                     )
-
             # ------------------------------------------------
             # ITEMS
             # ------------------------------------------------
             si.set("items", [])
-
-            # Dedupe by source row identity before ever appending, instead
-            # of only cleaning up duplicates after insert.
             deduped_items = _dedupe_source_items(ext_si.items)
 
             for row in deduped_items:
-
                 item_row = {}
 
                 for field, value in row.as_dict().items():
-
-                    if (
-                        field not in SYSTEM_FIELDS
-                        and field not in IGNORE_ITEM_FIELDS
-                    ):
+                    if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                         item_row[field] = value
 
-                # Resolve Sales Order with company abbr (3-tier)
+                # Resolve Sales Order
                 if row.get("sales_order"):
                     local_so = resolve_local_doc("Sales Order", row.sales_order, company_abbr)
                     item_row["sales_order"] = local_so
                     item_row["so_detail"] = get_child_detail(
-                        "Sales Order Item", local_so, row.item_code
+                        "Sales Order Item",
+                        local_so,
+                        row.item_code,
+                        remote_child_id=row.get("so_detail")
                     ) if local_so else None
                 else:
                     item_row["sales_order"] = None
                     item_row["so_detail"] = None
 
-                # Resolve Delivery Note with company abbr (3-tier)
+                # Resolve Delivery Note
                 if row.get("delivery_note"):
                     local_dn = resolve_local_doc("Delivery Note", row.delivery_note, company_abbr)
                     item_row["delivery_note"] = local_dn
                     item_row["dn_detail"] = get_child_detail(
-                        "Delivery Note Item", local_dn, row.item_code
+                        "Delivery Note Item",
+                        local_dn,
+                        row.item_code,
+                        remote_child_id=row.get("dn_detail")
                     ) if local_dn else None
                 else:
                     item_row["delivery_note"] = None
                     item_row["dn_detail"] = None
 
-                # Resolve Purchase Order with company abbr (3-tier)
+                # Resolve Purchase Order
                 if row.get("purchase_order"):
                     local_po = resolve_local_doc("Purchase Order", row.purchase_order, company_abbr)
                     item_row["purchase_order"] = local_po
                     item_row["po_detail"] = get_child_detail(
-                        "Purchase Order Item", local_po, row.item_code
+                        "Purchase Order Item",
+                        local_po,
+                        row.item_code,
+                        remote_child_id=row.get("po_detail")
                     ) if local_po else None
                 else:
                     item_row["purchase_order"] = None
                     item_row["po_detail"] = None
 
-                # Map external row identity to custom_remote_id
+                # Resolve SI Detail (Return Invoice)
+                if si.return_against and row.get("si_detail"):
+                    item_row["si_detail"] = get_child_detail(
+                        "Sales Invoice Item",
+                        si.return_against,
+                        row.item_code,
+                        remote_child_id=row.get("si_detail")
+                    )
+                else:
+                    item_row["si_detail"] = None
+
+                # Resolve sales_invoice_item (required for return invoice validation).
+                #
+                # ERPNext's validate_returned_items() checks:
+                #   key = (item_code, sales_invoice_item)
+                # and that key must exist in the *local* return_against SI's items
+                # (keyed by their local `name`).
+                #
+                # On the source system, items[i].sales_invoice_item holds the remote
+                # row name (e.g. "SV-PR-LR-RM-00003"), which does NOT match the local
+                # row name.  We resolve it here via custom_remote_id.
+                if si.return_against:
+                    remote_sii = row.get("sales_invoice_item") or row.get("name")
+                    local_sii = None
+                    if remote_sii:
+                        # 1. Match by custom_remote_id on the local return_against SI
+                        local_sii = frappe.db.get_value(
+                            "Sales Invoice Item",
+                            {"parent": si.return_against, "custom_remote_id": remote_sii},
+                            "name"
+                        )
+                        # 2. Fallback: match by item_code if only one row has that item
+                        if not local_sii:
+                            local_sii = frappe.db.get_value(
+                                "Sales Invoice Item",
+                                {"parent": si.return_against, "item_code": row.item_code},
+                                "name"
+                            )
+                    item_row["sales_invoice_item"] = local_sii
+                else:
+                    item_row["sales_invoice_item"] = None
+
+                # Map external row identity
                 if frappe.get_meta("Sales Invoice Item").has_field("custom_remote_id"):
                     item_row["custom_remote_id"] = row.name
 
-                # Resolve a real per-company default warehouse.
+                # Resolve warehouse
                 if not item_row.get("warehouse"):
                     item_row["warehouse"] = _resolve_default_warehouse(ext_si.company)
 
-                # Auto-register the item's UOM if missing - avoids
-                # "UOM X not found in Item Y".
+                # Auto-register UOM
                 if item_row.get("item_code") and item_row.get("uom"):
                     _ensure_item_uom(item_row["item_code"], item_row["uom"])
 
+                # Append ONLY ONCE
                 si.append("items", item_row)
 
             # ------------------------------------------------
             # TAXES
             # ------------------------------------------------
             if hasattr(ext_si, "taxes"):
-
                 si.set("taxes", [])
-
                 for row in ext_si.taxes:
-
                     tax_row = {}
-
                     for field, value in row.as_dict().items():
-
                         if field not in SYSTEM_FIELDS:
                             tax_row[field] = value
-
                     si.append("taxes", tax_row)
 
             # ------------------------------------------------
             # PAYMENT SCHEDULE
             # ------------------------------------------------
             if hasattr(ext_si, "payment_schedule"):
-
                 si.set("payment_schedule", [])
-
                 for row in ext_si.payment_schedule:
-
                     schedule_row = {}
-
                     for field, value in row.as_dict().items():
-
                         if field not in SYSTEM_FIELDS:
                             schedule_row[field] = value
-
                     si.append("payment_schedule", schedule_row)
+
+            # ============================================================
+            # FIX 1 — COST CENTER RESOLUTION  (THE CRITICAL FIX)
+            # ============================================================
+            #
+            # Source documents carry cost centers like:
+            #   "PV0023 RPO#... - PETRO-V LEAK AND SEAL NON METALLIC - IMC"
+            #   "PV003 ... - PETRO-V ... - IMC - IMC"   ← double suffix
+            #
+            # Many of these do NOT exist in the local system.
+            # ERPNext's make_gl_entries() silently drops any row whose
+            # cost_center is invalid — that is your missing 18 GL entries.
+            #
+            # Resolution strategy (per item row):
+            #   1. Try exact match
+            #   2. Fix double suffix "X - IMC - IMC" → "X - IMC"
+            #   3. Try without suffix "X - IMC" → "X"
+            #   4. Try adding suffix "X" → "X - IMC"
+            #   5. Fall back to company default cost center
+            #   6. If STILL nothing, clear to None so that
+            #      set_missing_values() picks up the Item's
+            #      default_cost_center as last resort.
+            #
+            # Same logic applied to tax rows (they also generate GL
+            # entries and also carry cost_center).
+            # ============================================================
+
+            for item in si.items:
+                if item.cost_center:
+                    original_cc = item.cost_center
+                    resolved_cc = _resolve_cost_center(
+                        original_cc, ext_si.company, company_abbr, cc_cache
+                    )
+                    if resolved_cc:
+                        item.cost_center = resolved_cc
+                    else:
+                        frappe.log_error(
+                            title=f"SI Sync: Cost Center unresolved — {remote_id}",
+                            message=(
+                                f"Item: {item.item_code}\n"
+                                f"Source Cost Center: {original_cc}\n"
+                                f"Could not resolve to any local Cost Center. "
+                                f"Clearing so set_missing_values() uses item default."
+                            )
+                        )
+                        item.cost_center = None
+
+            for tax in si.taxes:
+                if tax.cost_center:
+                    original_cc = tax.cost_center
+                    resolved_cc = _resolve_cost_center(
+                        original_cc, ext_si.company, company_abbr, cc_cache
+                    )
+                    if resolved_cc:
+                        tax.cost_center = resolved_cc
+                    else:
+                        frappe.log_error(
+                            title=f"SI Sync: Tax Cost Center unresolved — {remote_id}",
+                            message=(
+                                f"Tax: {getattr(tax, 'description', '') or getattr(tax, 'account_head', '')}\n"
+                                f"Source Cost Center: {original_cc}\n"
+                                f"Could not resolve. Clearing cost center on tax row."
+                            )
+                        )
+                        tax.cost_center = None
+
+            # ============================================================
+            # FIX 2 — INCOME / EXPENSE ACCOUNT RESOLUTION
+            # ============================================================
+            # Accounts copied from source may not exist locally.
+            # Clear invalid ones so set_missing_values() assigns the
+            # correct local defaults from the Item master.
+            # ============================================================
+
+            for item in si.items:
+                if item.income_account and not frappe.db.exists("Account", item.income_account):
+                    item.income_account = None
+                if item.expense_account and not frappe.db.exists("Account", item.expense_account):
+                    item.expense_account = None
+
+            # ============================================================
+            # FIX 3 — CALCULATE TOTALS FOR GL ENTRY GENERATION
+            # ============================================================
+            # set_missing_values(): fills income_account, expense_account,
+            #   cost_center (if still None), item_wise_tax_detail
+            # calculate_taxes_and_totals(): fills base_net_amount,
+            #   base_tax_amount_after_discount_amount,
+            #   item.item_wise_tax_detail, all header totals
+            # ALL of these are REQUIRED by make_gl_entries().
+            # ============================================================
+
+            si.set_missing_values()
+            si.calculate_taxes_and_totals()
 
             # ------------------------------------------------
             # INSERT
@@ -389,21 +566,15 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             si.merge_similar_items = 0
             si.insert(
                 ignore_permissions=True,
-                ignore_links=True,
-                ignore_mandatory=True
             )
 
-            # Safety net — should be a no-op now that items are deduped
-            # before appending, but kept in case anything slips through.
             clean_duplicate_si_items(si.name)
 
             # ------------------------------------------------
             # NAMING SAFETY NET
             # ------------------------------------------------
             if si.name != target_name:
-
                 if not frappe.db.exists("Sales Invoice", target_name):
-
                     old_name = si.name
 
                     frappe.db.sql("""

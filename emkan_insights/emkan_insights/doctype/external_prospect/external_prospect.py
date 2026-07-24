@@ -278,9 +278,6 @@ def sync_single_prospect(source_name):
 	sync_child_table("notes", "notes", "CRM Note")
 
 	prospect.flags.ignore_permissions = True
-	prospect.flags.ignore_mandatory = True
-	prospect.flags.ignore_validate = True
-	prospect.flags.ignore_links = True
 
 	# save() handles both insert (new doc) and update (existing doc),
 	# and automatically syncs child tables - no need for db_insert()/

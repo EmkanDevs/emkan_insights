@@ -56,10 +56,6 @@ def sync_item_tax_templates(names):
             # --------------------------------------------------
 
             doc.flags.ignore_permissions = True
-            doc.flags.ignore_mandatory = True
-            doc.flags.ignore_validate = True
-            doc.flags.ignore_validate_update_after_submit = True
-            doc.flags.ignore_links = True
             doc.flags.ignore_children = False
             doc.flags.ignore_version = True
             doc.flags.ignore_if_duplicate = True
@@ -67,15 +63,12 @@ def sync_item_tax_templates(names):
             if doc.is_new():
                 doc.insert(
                     ignore_permissions=True,
-                    ignore_links=True,
                     ignore_if_duplicate=True,
-                    ignore_mandatory=True
                 )
             else:
                 doc.save(
                     ignore_permissions=True,
                     ignore_version=True,
-                    ignore_mandatory=True
                 )
 
             synced.append(doc.name)

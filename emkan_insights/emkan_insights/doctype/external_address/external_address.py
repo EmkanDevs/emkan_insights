@@ -142,14 +142,11 @@ def sync_external_records(names):
 
 			# Flags
 			doc.flags.ignore_permissions = True
-			doc.flags.ignore_mandatory = True
-			doc.flags.ignore_validate = True
-			doc.flags.ignore_links = True
 
 			if existing:
 				doc.save(ignore_permissions=True)
 			else:
-				doc.insert(ignore_permissions=True, ignore_mandatory=True)
+				doc.insert(ignore_permissions=True)
 
 			# Clean duplicates on target Address after save (same as PI)
 			_safe_dedupe(doc.name, "Address")

@@ -246,9 +246,6 @@ def sync_single_lead(source_name):
     # ------------------------------------------------------
 
     lead.flags.ignore_permissions = True
-    lead.flags.ignore_mandatory = True
-    lead.flags.ignore_validate = True
-    lead.flags.ignore_links = True
 
     # save() handles both insert (new doc) and update (existing doc),
     # and automatically syncs child tables - no need for db_insert()/

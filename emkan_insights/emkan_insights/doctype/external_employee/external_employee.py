@@ -505,9 +505,6 @@ def upsert_employee(src, existing_name):
         doc = frappe.get_doc("Employee", existing_name)
         
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         # Delete existing child records using raw SQL to preserve the exact
         # original filtering behavior (Education omits parenttype filter)
@@ -539,9 +536,6 @@ def upsert_employee(src, existing_name):
         doc.update(update_dict)
 
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         doc.set("education", [])
         if hasattr(doc, "external_work_history"):

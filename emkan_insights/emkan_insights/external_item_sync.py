@@ -321,9 +321,6 @@ def sync_single_item(source_name):
     # ------------------------------------------------------
 
     item.flags.ignore_permissions = True
-    item.flags.ignore_mandatory = True
-    item.flags.ignore_validate = True
-    item.flags.ignore_links = True
 
     item.save()
 

@@ -342,9 +342,6 @@ def sync_single_opportunity(source_name):
     # ------------------------------------------------------
 
     opportunity.flags.ignore_permissions = True
-    opportunity.flags.ignore_mandatory = True
-    opportunity.flags.ignore_validate = True
-    opportunity.flags.ignore_links = True
 
     # save() handles both insert (new doc) and update (existing doc),
     # and automatically syncs child tables - no need for db_insert()/

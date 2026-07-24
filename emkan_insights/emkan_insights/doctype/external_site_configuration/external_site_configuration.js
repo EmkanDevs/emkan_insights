@@ -100,8 +100,10 @@ frappe.ui.form.on('External Site Configuration CT', {
             "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
             "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
             "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
+            "Stock Reconciliation": "emkan_insights.emkan_insights.sync_stock_reconciliation_from_remote.sync_stock_reconciliations_from_remote",
             "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
             "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
+            "Journal Entry":  "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
         };
         const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
         const sync_method = sync_methods[row.ref_doctype] || generic_method;
@@ -369,6 +371,7 @@ function get_mapping() {
         "Purchase Order" : "External Purchase Order",
         "Sales Order": "External Sales Order",
         "Stock Entry": "External Stock Entry",
+        "Stock Reconciliation": "External Stock Reconciliation",
         "Project" : "External Project",
         "Request for Quotation": "External Request for Quotation",
         "Supplier Quotation": "External Supplier Quotation",

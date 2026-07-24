@@ -24,6 +24,7 @@
   "apply_tds",
   "remote_id",
   "source_site",
+  "is_synced",
   "2_add_edit_gl_entries",
   "accounts",
   "section_break99",
@@ -564,6 +565,13 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "is_synced",
+   "fieldtype": "Check",
+   "label": "Is Synced"
   }
  ],
  "icon": "fa fa-file-text",
@@ -578,7 +586,7 @@
    "table_fieldname": "payment_entries"
   }
  ],
- "modified": "2026-03-05 13:33:12.292885",
+ "modified": "2026-07-22 15:28:55.225310",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Journal Entry",

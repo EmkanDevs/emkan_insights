@@ -238,8 +238,6 @@ def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
             item.stock_uom = row_uom or "Nos"
             item.is_stock_item = 1
             item.flags.ignore_permissions = True
-            item.flags.ignore_mandatory = True
-            item.flags.ignore_validate = True
             item.insert(ignore_permissions=True)
             return row_item_code
         except Exception as e:
@@ -287,8 +285,6 @@ def _auto_create_item(ext_item):
         item.stock_uom = ext_item.get("stock_uom") or "Nos"
         item.is_stock_item = 1
         item.flags.ignore_permissions = True
-        item.flags.ignore_mandatory = True
-        item.flags.ignore_validate = True
         item.insert(ignore_permissions=True)
         
         return item_code
@@ -708,16 +704,12 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     # FLAGS & SAVE
     # ----------------------------------------------------------
     doc.flags.ignore_permissions  = True
-    doc.flags.ignore_links        = True
-    doc.flags.ignore_mandatory    = True
     doc.flags.ignore_pricing_rule = True
     # FIX: ERPNext's validate() blocks saving if a stock Item's row has no
     # warehouse ("Warehouse is mandatory for stock Item X"). ignore_mandatory
     # doesn't cover this — it's a business-rule check, not a blank-field
-    # check — so only ignore_validate bypasses it. If a warehouse genuinely
     # couldn't be resolved, leave the field blank rather than blocking the
     # whole Supplier Quotation from being created.
-    doc.flags.ignore_validate     = True
 
     if hasattr(doc, "status"):
         doc.set("status", None)

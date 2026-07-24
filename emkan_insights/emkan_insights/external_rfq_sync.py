@@ -76,8 +76,6 @@ def _safe_cancel_doc(doc, log_prefix=""):
 
     try:
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
         doc.cancel()
         _log(f"{log_prefix} cancelled normally", "")
         return True
@@ -217,8 +215,6 @@ def _sync_existing_docstatus(existing, external):
     try:
         rfq = frappe.get_doc("Request for Quotation", existing)
         rfq.flags.ignore_permissions = True
-        rfq.flags.ignore_validate = True
-        rfq.flags.ignore_mandatory = True
 
         if external.docstatus == 2:
             # External is cancelled - we need to cancel local too
@@ -419,8 +415,6 @@ def _sync_single_rfq(name):
     # FLAGS
     # -------------------------------------------------
     rfq.flags.ignore_permissions = True
-    rfq.flags.ignore_validate = True
-    rfq.flags.ignore_mandatory = True
     rfq.flags.ignore_naming_series = True
 
     # -------------------------------------------------
@@ -428,8 +422,6 @@ def _sync_single_rfq(name):
     # -------------------------------------------------
     rfq.insert(
         ignore_permissions=True,
-        ignore_links=True,
-        ignore_mandatory=True
     )
     _safe_dedupe(rfq.name)
 
@@ -476,8 +468,6 @@ def _sync_single_rfq(name):
     if external.docstatus == 1:
         try:
             rfq.flags.ignore_permissions = True
-            rfq.flags.ignore_validate = True
-            rfq.flags.ignore_mandatory = True
             rfq.submit()
             _safe_dedupe(rfq.name)
             _log(f"RFQ {rfq.name} submitted successfully", "")
@@ -501,8 +491,6 @@ def _sync_single_rfq(name):
     elif external.docstatus == 2:
         try:
             rfq.flags.ignore_permissions = True
-            rfq.flags.ignore_validate = True
-            rfq.flags.ignore_mandatory = True
 
             # Submit first (required before cancel)
             rfq.submit()

@@ -26,6 +26,67 @@ def _log(title, message):
 
 
 # -----------------------------------------------------
+# GL ENTRY REVERSAL HELPER
+# -----------------------------------------------------
+
+def _cancel_gl_entries_for_voucher(doctype, docname):
+    """
+    Properly reverse GL Entries for a voucher by creating cancellation entries.
+
+    ERPNext normally does this inside on_cancel via make_gl_entries(cancel=True).
+    When we force-cancel via raw SQL that hook is skipped, so we call this
+    function explicitly to ensure the cancellation GL entries are written.
+
+    Strategy:
+      1. Try ERPNext's make_reverse_gl_entries (available in v13/v14/v15).
+      2. If that import fails, mark existing GL entries as is_cancelled=1 as a
+         last-resort — this at least prevents double-counting even though it
+         doesn't create the reversal rows.
+    """
+    existing_gl_entries = frappe.get_all(
+        "GL Entry",
+        filters={
+            "voucher_type": doctype,
+            "voucher_no": docname,
+            "is_cancelled": 0,
+        },
+        fields=["*"],
+    )
+
+    if not existing_gl_entries:
+        # Nothing to reverse — either already cancelled or never submitted.
+        return
+
+    try:
+        from erpnext.accounts.general_ledger import make_reverse_gl_entries
+        make_reverse_gl_entries(existing_gl_entries)
+        _log(
+            f"GL entries reversed for {doctype} {docname}",
+            f"Reversed {len(existing_gl_entries)} GL entry row(s).",
+        )
+    except ImportError:
+        # make_reverse_gl_entries not available on this ERPNext version.
+        # Fall back: mark originals as cancelled so reports exclude them.
+        frappe.db.sql(
+            """
+            UPDATE `tabGL Entry`
+            SET is_cancelled = 1, modified = NOW()
+            WHERE voucher_type = %s AND voucher_no = %s AND is_cancelled = 0
+            """,
+            (doctype, docname),
+        )
+        _log(
+            f"GL entries marked cancelled (fallback) for {doctype} {docname}",
+            f"make_reverse_gl_entries not available; {len(existing_gl_entries)} row(s) marked is_cancelled=1.",
+        )
+    except Exception as gle_err:
+        _log(
+            f"GL entry reversal failed for {doctype} {docname}",
+            f"Error: {str(gle_err)}\n\n{frappe.get_traceback()}",
+        )
+
+
+# -----------------------------------------------------
 # FORCE CANCEL HELPERS
 # -----------------------------------------------------
 
@@ -34,7 +95,17 @@ def _force_cancel_doc(doctype, docname):
     Force cancel a document by directly updating the database.
     Use as fallback when normal cancel() fails due to linked docs or validations.
     No explicit commit — the ORM caller or request end handles persistence.
+
+    IMPORTANT: We reverse GL Entries BEFORE setting docstatus=2 so that the
+    cancellation rows are written with the correct voucher reference while the
+    document is still technically submitted (docstatus=1).  Without this step
+    the on_cancel hook is never called and the reversal GL entries are never
+    created, causing the local GL entry count to diverge from the remote.
     """
+    # Step 1: Reverse GL Entries first (while docstatus is still 1 / submitted)
+    _cancel_gl_entries_for_voucher(doctype, docname)
+
+    # Step 2: Set docstatus=2 on the parent document via SQL
     frappe.db.sql("""
         UPDATE `tab{doctype}`
         SET docstatus = 2, 
@@ -43,7 +114,8 @@ def _force_cancel_doc(doctype, docname):
             modified_by = SUBSTRING_INDEX(USER(), '@', 1)
         WHERE name = %s
     """.format(doctype=doctype), docname)
-    
+
+    # Step 3: Cascade docstatus=2 to all child tables
     meta = frappe.get_meta(doctype)
     for df in meta.get_table_fields():
         child_doctype = df.options
@@ -55,7 +127,7 @@ def _force_cancel_doc(doctype, docname):
                     modified_by = SUBSTRING_INDEX(USER(), '@', 1)
                 WHERE parent = %s AND parenttype = %s
             """.format(child_doctype=child_doctype), (docname, doctype))
-    
+
     frappe.clear_document_cache(doctype, docname)
 
 
@@ -67,9 +139,6 @@ def _safe_cancel_doc(doc, log_prefix=""):
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
-        doc.flags.ignore_links = True
         doc.cancel()  # ORM submit — writes to DB, no explicit commit needed
         _log(f"{log_prefix} cancelled normally", "")
         return True
@@ -167,6 +236,25 @@ def resolve_local_mr(remote_or_local_mr):
 
     return None
 
+def resolve_local_pinv(remote_or_local_pinv, company_abbr=None):
+    if not remote_or_local_pinv:
+        return None
+
+    local_name = frappe.db.get_value(
+        "Purchase Invoice", {"remote_id": remote_or_local_pinv}, "name"
+    )
+    if local_name:
+        return local_name
+
+    if frappe.db.exists("Purchase Invoice", remote_or_local_pinv):
+        return remote_or_local_pinv
+
+    if company_abbr and not remote_or_local_pinv.startswith(f"{company_abbr}-"):
+        prefixed = f"{company_abbr}-{remote_or_local_pinv}"
+        if frappe.db.exists("Purchase Invoice", prefixed):
+            return prefixed
+
+    return None
 
 def get_po_detail(purchase_order, item_code):
     if not purchase_order:
@@ -179,8 +267,25 @@ def get_po_detail(purchase_order, item_code):
 
 
 def get_pr_detail(purchase_receipt, item_code, remote_pr_item=None):
+    """
+    Resolve the local Purchase Receipt Item row this invoice item should
+    bill against.
+
+    Returns (pr_detail_name, ambiguous) where `ambiguous` is True when we
+    deliberately declined to pick a match.
+
+    IMPORTANT: if the remote didn't supply a purchase_receipt_item id (or it
+    doesn't match anything locally), and there is more than one PR Item row
+    with the same item_code on this receipt, we do NOT guess by falling back
+    to "first match by item_code". Guessing here has previously caused one
+    PR Item row to get billed by multiple invoices while a sibling row with
+    the same item_code goes unbilled — which surfaces later as "Over Billing
+    Allowance exceeded" on submit. Leaving the link unresolved is safer than
+    picking a possibly-wrong row; the item still gets inserted, just without
+    a PR reference, and the caller logs it for manual review.
+    """
     if not purchase_receipt:
-        return None
+        return None, False
 
     if remote_pr_item:
         exact = frappe.db.get_value(
@@ -189,13 +294,22 @@ def get_pr_detail(purchase_receipt, item_code, remote_pr_item=None):
             "name"
         )
         if exact:
-            return exact
+            return exact, False
 
-    return frappe.db.get_value(
+    candidates = frappe.get_all(
         "Purchase Receipt Item",
-        {"parent": purchase_receipt, "item_code": item_code},
-        "name"
+        filters={"parent": purchase_receipt, "item_code": item_code},
+        pluck="name",
     )
+
+    if len(candidates) == 1:
+        return candidates[0], False
+    if len(candidates) == 0:
+        return None, False
+
+    # Multiple PR Item rows share this item_code and we have no reliable
+    # remote_pr_item to disambiguate — refuse to guess.
+    return None, True
 
 
 def get_mr_detail(material_request, item_code):
@@ -329,6 +443,10 @@ def _copy_header_fields(source_doc, target_doc):
     """
     Copy scalar fields only. Child tables must be rebuilt deliberately so
     remote child row names cannot collide with local Purchase Invoice rows.
+
+    NOTE: For return invoices, values like total_qty, total, net_total, etc.
+    will be negative. These MUST be preserved as-is — they are used as a
+    starting point only and _recalculate_totals() will recompute them.
     """
     target_table_fields = _get_table_fieldnames(target_doc.meta)
 
@@ -340,6 +458,7 @@ def _copy_header_fields(source_doc, target_doc):
         if field in target_table_fields:
             continue
         if hasattr(target_doc, field):
+            # Preserve exact value including negative for returns
             target_doc.set(field, value)
 
 
@@ -360,28 +479,87 @@ def _copy_child_row_fields(row, target_child_doctype):
 
 
 # -----------------------------------------------------
+# TOTALS RECALCULATION (root fix for debit/credit mismatch)
+# -----------------------------------------------------
+
+def _recalculate_totals(pi):
+    """
+    Recompute item amounts, tax totals, and grand total from what is
+    ACTUALLY in the doc's child tables right now — rather than trusting the
+    scalar total fields that were copied verbatim from the remote doc by
+    _copy_header_fields.
+    Must be called AFTER items/taxes are fully inserted and the doc has been
+    reloaded, and BEFORE every pi.submit() call.
+    """
+    try:
+        pi.calculate_taxes_and_totals()
+    except Exception:
+        _log(
+            title=f"PI {pi.name} totals recalculation failed",
+            message=frappe.get_traceback()
+        )
+
+
+# -----------------------------------------------------
 # INSERT ITEMS ONE-BY-ONE WITH ERROR ISOLATION
 # -----------------------------------------------------
 
-def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None):
-    """
-    Insert Purchase Invoice Items one at a time, catching each error
-    so one bad item doesn't kill the entire batch.
-
-    InnoDB rolls back only the failed statement on constraint errors,
-    so successfully inserted rows remain in the transaction and will
-    be persisted at request end. No explicit commit is needed.
-    
-    Returns: (success_count, error_list)
-    """
-    if not ext_pi.items:
-        return 0, []
-
+def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
+    ...
     success_count = 0
     errors = []
+    if is_return is None:
+        is_return = cint(ext_pi.get("is_return", 0))
+    else:
+        is_return = cint(is_return)
 
     for idx, row in enumerate(ext_pi.items, start=1):
         try:
+            # Get raw qty and convert - preserve the sign!
+            raw_qty = row.get("qty")
+            qty = flt(raw_qty)
+            
+            # ---------------------------------------------------------
+            # Quantity validation - mirrors ERPNext's validate_qty():
+            #   "if not self.is_return and flt(item.qty) <= 0"
+            #
+            # RETURN invoices (is_return=1):
+            #   - Negative qty: VALID (expected for returns/debit notes)
+            #   - Zero qty: INVALID (skip)
+            #   - Positive qty: Allow (some systems use positive with is_return flag)
+            #
+            # REGULAR invoices (is_return=0):
+            #   - Positive qty: VALID
+            #   - Zero qty: INVALID (skip)
+            #   - Negative qty: INVALID (skip - would fail at submit time)
+            # ---------------------------------------------------------
+            if qty == 0:
+                error_msg = (
+                    f"Item {idx} (row name: {row.name}, item_code: {row.item_code}): "
+                    f"qty is zero (remote qty={raw_qty}); skipping insert."
+                )
+                errors.append(error_msg)
+                _log(
+                    title=f"PI item skipped (zero qty) for {pi_name}",
+                    message=error_msg
+                )
+                continue
+            
+            if not is_return and qty < 0:
+                # Regular (non-return) invoices cannot have negative qty
+                # This would fail at submit time with "quantity must be positive"
+                error_msg = (
+                    f"Item {idx} (row name: {row.name}, item_code: {row.item_code}): "
+                    f"negative qty ({qty}) not allowed for non-return invoice; skipping."
+                )
+                errors.append(error_msg)
+                _log(
+                    title=f"PI item skipped (negative qty on non-return) for {pi_name}",
+                    message=error_msg
+                )
+                continue
+
+            # Build item row - start fresh to avoid any field contamination
             item_row = {"doctype": "Purchase Invoice Item"}
 
             for field, value in row.as_dict().items():
@@ -393,6 +571,8 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None):
                              "po_detail", "pr_detail", "material_request",
                              "material_request_item"}:
                     continue
+                # IMPORTANT: Copy value AS-IS to preserve negative qty for returns
+                # Do NOT use abs() or any transformation here
                 item_row[field] = value
 
             # Resolve PO
@@ -407,11 +587,31 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None):
             # Resolve PR
             if row.purchase_receipt:
                 local_pr = resolve_local_pr(row.purchase_receipt, company_abbr)
-                item_row["purchase_receipt"] = local_pr
-                item_row["pr_detail"] = get_pr_detail(
-                    local_pr, row.item_code,
-                    remote_pr_item=row.get("purchase_receipt_item")
-                ) if local_pr else None
+                if local_pr:
+                    pr_detail, ambiguous = get_pr_detail(
+                        local_pr, row.item_code,
+                        remote_pr_item=row.get("purchase_receipt_item")
+                    )
+                    if ambiguous:
+                        item_row["purchase_receipt"] = None
+                        item_row["pr_detail"] = None
+                        warn_msg = (
+                            f"Item {idx} (row name: {row.name}, item_code: {row.item_code}): "
+                            f"multiple Purchase Receipt Item rows on {local_pr} share this "
+                            f"item_code and no purchase_receipt_item id was provided to "
+                            f"disambiguate; left unlinked to avoid mis-billing. Needs manual review."
+                        )
+                        errors.append(warn_msg)
+                        _log(
+                            title=f"PI item PR link ambiguous for {pi_name}",
+                            message=warn_msg
+                        )
+                    else:
+                        item_row["purchase_receipt"] = local_pr
+                        item_row["pr_detail"] = pr_detail
+                else:
+                    item_row["purchase_receipt"] = None
+                    item_row["pr_detail"] = None
             else:
                 item_row["purchase_receipt"] = None
                 item_row["pr_detail"] = None
@@ -425,6 +625,14 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None):
                 item_row["material_request"] = None
                 item_row["material_request_item"] = None
 
+            if is_return:
+                current_qty = flt(item_row.get("qty", 0))
+                if current_qty > 0:
+                    item_row["qty"] = -current_qty
+                    frappe.logger().debug(
+                        f"PI {pi_name} item {idx}: converted qty {current_qty} -> {-current_qty} for return"
+                    )
+
             # Parent linkage
             item_row["parent"] = pi_name
             item_row["parentfield"] = "items"
@@ -433,8 +641,15 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None):
             item_row["name"] = frappe.generate_hash(length=10)
 
             # Use db_insert() directly to bypass ALL validation
+            # This ensures negative qty values for returns are inserted exactly as-is
             child_doc = frappe.get_doc(item_row)
             child_doc.db_insert()
+
+            # Log successful insert for return items with negative qty (debugging)
+            if is_return and qty < 0:
+                frappe.logger().debug(
+                    f"PI {pi_name} item {idx}: inserted with negative qty={qty} for return"
+                )
 
             success_count += 1
 
@@ -465,16 +680,27 @@ def _sync_existing_docstatus(existing_name, ext_pi):
     if local_docstatus == target_docstatus:
         return {"name": existing_name, "status": "exists"}
 
+    if target_docstatus in (1, 2):
+        local_item_count = _get_child_count("Purchase Invoice Item", existing_name, "Purchase Invoice")
+        if local_item_count == 0:
+            _log(
+                title=f"PI {existing_name} has zero items, submit skipped",
+                message="Cannot submit/cancel a Purchase Invoice with zero items.",
+            )
+            return {
+                "name": existing_name,
+                "status": "exists",
+                "warning": "zero items; submit skipped",
+            }
+
     try:
         pi = frappe.get_doc("Purchase Invoice", existing_name)
         pi.flags.ignore_permissions = True
-        pi.flags.ignore_validate = True
-        pi.flags.ignore_mandatory = True
-        pi.flags.ignore_links = True
 
         if target_docstatus == 1:
             if local_docstatus == 0:
-                pi.submit()  # ORM submit — persists via db_update, no commit needed
+                _recalculate_totals(pi)
+                pi.submit() 
                 _safe_dedupe(pi.name)
                 _log(f"PI {pi.name} docstatus synced: Draft -> Submitted", "")
                 return {"name": pi.name, "status": "docstatus_synced", "docstatus": 1}
@@ -488,7 +714,8 @@ def _sync_existing_docstatus(existing_name, ext_pi):
         elif target_docstatus == 2:
             if local_docstatus == 0:
                 # Draft -> need to submit first, then cancel
-                pi.submit()  # ORM submit
+                _recalculate_totals(pi)
+                pi.submit()  
                 pi = frappe.get_doc("Purchase Invoice", existing_name)
             
             # Now cancel (whether it was 0 or 1 before)
@@ -535,7 +762,15 @@ def _sync_single_purchase_invoice(source_doctype, name):
         ext_pi.reload()
 
         if not ext_pi.items:
-            actual_count = frappe.db.count(f"{source_doctype} Item", {"parent": name})
+            # FIX: Get the actual child doctype from meta instead of
+            # guessing f"{source_doctype} Item" which produces a
+            # non-existent table name (e.g. "External Purchase Invoice Item").
+            actual_count = 0
+            for df in ext_pi.meta.get_table_fields():
+                if df.fieldname == "items":
+                    actual_count = frappe.db.count(df.options, {"parent": name})
+                    break
+
             if actual_count > 0:
                 ext_pi = frappe.get_doc(source_doctype, name)
                 for field in ext_pi.meta.get_table_fields():
@@ -625,6 +860,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
 
     # Copy scalar header fields only
     _copy_header_fields(ext_pi, pi)
+    pi.set_posting_time = 1
 
     # Fix currency
     if not pi.currency:
@@ -632,14 +868,59 @@ def _sync_single_purchase_invoice(source_doctype, name):
             "Company", pi.company, "default_currency"
         )
 
-    # Handle return
-    if ext_pi.get("is_return"):
-        if frappe.db.exists("Purchase Invoice", ext_pi.return_against):
-            pi.is_return = 1
-            pi.return_against = ext_pi.return_against
-        else:
-            pi.is_return = 0
-            pi.return_against = None
+    items_have_negative_qty = any(
+        flt(row.get("qty")) < 0 for row in (ext_pi.get("items") or [])
+    )
+    is_return_effective = cint(ext_pi.get("is_return", 0)) or items_have_negative_qty
+
+    # ---------------------------------------------------------------
+    # Defer is_return / return_against until AFTER the parent insert.
+    #
+    # ERPNext's validate_returned_items() (invoked from validate()
+    # during insert()) throws "Atleast one item should be entered with
+    # negative quantity in return document" when is_return=1 but the
+    # items table is empty. Here we insert the parent first and attach
+    # item rows afterwards via db_insert() to bypass validation, so we
+    # must NOT set is_return=1 before insert(). We stash the resolved
+    # values and apply them via db_set() once the parent row exists.
+    # At submit() time validate() runs again — by then the items are
+    # attached with negative qty, so validate_returned_items() passes.
+    # ---------------------------------------------------------------
+    deferred_is_return = 0
+    deferred_return_against = None
+    if is_return_effective:
+        deferred_is_return = 1
+        deferred_return_against = resolve_local_pinv(ext_pi.return_against, company_abbr)
+
+    # Clear any is_return/return_against that _copy_header_fields may have
+    # copied from the remote doc so the insert() validate hook doesn't trip.
+    pi.is_return = 0
+    pi.return_against = None
+
+    # ---------------------------------------------------------------
+    # Zero out negative total scalar fields before insert.
+    #
+    # _copy_header_fields() copied the remote return doc's totals verbatim
+    # (negative for returns). ERPNext's validate() only skips the
+    # "base_grand_total must be >= 0" check when is_return=1, but we just
+    # cleared is_return (see above) so the check runs and rejects the
+    # negative base_grand_total. These scalar totals are meaningless with
+    # an empty items table anyway — _recalculate_totals() recomputes them
+    # from the actual child rows before submit(). Zero them here so insert
+    # passes; the real values are restored at submit time.
+    # ---------------------------------------------------------------
+    if deferred_is_return:
+        for _total_field in (
+            "total", "base_total", "net_total", "base_net_total",
+            "grand_total", "base_grand_total",
+            "rounded_total", "base_rounded_total",
+            "total_taxes_and_charges", "base_total_taxes_and_charges",
+            "discount_amount", "base_discount_amount",
+            "total_advance", "base_total_advance",
+            "outstanding_amount", "base_outstanding_amount",
+        ):
+            if hasattr(pi, _total_field):
+                pi.set(_total_field, 0)
 
     # ITEMS: placeholder — items inserted separately below
     pi.set("items", [])
@@ -669,23 +950,35 @@ def _sync_single_purchase_invoice(source_doctype, name):
             pi.append("payment_schedule", pay_row)
 
     # FLAGS
+    # items is mandatory (reqd=1) on Purchase Invoice, but we insert the
+    # parent first and attach item rows via db_insert() afterwards. Without
+    # ignore_mandatory, insert() throws "Data missing in table: Items".
     pi.flags.ignore_permissions = True
-    pi.flags.ignore_validate = True
-    pi.flags.ignore_mandatory = True
     pi.flags.ignore_naming_series = True
 
     # INSERT PARENT ONLY (no items yet) — ORM insert writes to DB
     pi.insert(
         ignore_permissions=True,
-        ignore_links=True,
-        ignore_mandatory=True
+        ignore_mandatory=True,
     )
 
     # Ensure remote_id is set via ORM (safety net, no commit needed)
     pi.db_set("remote_id", remote_id, update_modified=False)
 
+    # Apply deferred return flags now that the parent row exists and items
+    # will be attached next. Using db_set() bypasses validate() so we don't
+    # re-trigger validate_returned_items() before items are in place.
+    if deferred_is_return:
+        pi.db_set("is_return", 1, update_modified=False)
+        pi.db_set("return_against", deferred_return_against, update_modified=False)
+        # Keep the in-memory doc in sync for any subsequent ORM calls
+        pi.is_return = 1
+        pi.return_against = deferred_return_against
+
     # INSERT ITEMS ONE-BY-ONE WITH ERROR ISOLATION
-    success_count, item_errors = _insert_pi_items_safely(pi.name, ext_pi, company_abbr)
+    success_count, item_errors = _insert_pi_items_safely(
+        pi.name, ext_pi, company_abbr, is_return=is_return_effective
+    )
 
     if item_errors:
         _log(
@@ -693,11 +986,39 @@ def _sync_single_purchase_invoice(source_doctype, name):
             message="Item insert errors:\n" + "\n".join(item_errors)
         )
 
-    # VERIFY ITEM COUNT
+    # VERIFY ITEM COUNT — abort before submit if items are missing.
+    # Submitting with fewer items than the remote would cause make_gl_entries()
+    # to create fewer GL lines than exist on the remote, producing the
+    # GL entry count mismatch that was reported.
     actual_item_count = _get_child_count(
         "Purchase Invoice Item", pi.name, "Purchase Invoice"
     )
     expected_item_count = len(ext_pi.get("items") or [])
+
+    # ADD THIS BLOCK — a header with zero items can never submit (items is
+    # mandatory), so don't even try; leave it as Draft and flag it instead
+    # of letting pi.submit() blow up with "Data missing in table: Items".
+    if expected_item_count == 0:
+        _log(
+            title=f"PI Sync - {pi.name} has zero items, submit skipped",
+            message=(
+                f"External doc {remote_id} has 0 items in its items table "
+                f"even after the reload/fallback checks earlier in this "
+                f"function. Leaving local copy as Draft. This likely means "
+                f"either the remote document genuinely has no items, or its "
+                f"child rows failed to load — worth checking {remote_id} "
+                f"directly on the remote site."
+            ),
+        )
+        return {
+            "name": pi.name,
+            "status": "sync_error",
+            "docstatus": 0,
+            "expected_docstatus": cint(ext_pi.docstatus),
+            "items_synced": 0,
+            "items_expected": 0,
+            "error": "External document has zero items; submit skipped to avoid 'Data missing in table: Items'.",
+        }
 
     if actual_item_count != expected_item_count:
         _log(
@@ -705,8 +1026,23 @@ def _sync_single_purchase_invoice(source_doctype, name):
             message=f"Expected {expected_item_count} items, "
                     f"found {actual_item_count} after insert. "
                     f"Successfully inserted: {success_count}, "
-                    f"Errors: {len(item_errors)}."
+                    f"Errors: {len(item_errors)}. "
+                    f"Aborting submit to prevent GL entry count divergence."
         )
+        # Return a sync_error so the caller knows this PI needs attention.
+        # Do NOT submit — submitting with partial items creates the wrong
+        # number of GL entries (root cause of the 2875 vs 2847 mismatch).
+        return {
+            "name": pi.name,
+            "status": "sync_error",
+            "docstatus": 0,
+            "expected_docstatus": cint(ext_pi.docstatus),
+            "items_synced": actual_item_count,
+            "items_expected": expected_item_count,
+            "error": f"Item count mismatch ({actual_item_count}/{expected_item_count}); "
+                     f"submit aborted to prevent GL entry divergence. "
+                     f"Item errors: {'; '.join(item_errors) if item_errors else 'none'}.",
+        }
 
     # Clean duplicates
     _safe_dedupe(pi.name)
@@ -751,10 +1087,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
     pi = frappe.get_doc("Purchase Invoice", pi.name)
 
     pi.flags.ignore_permissions = True
-    pi.flags.ignore_validate = True
-    pi.flags.ignore_mandatory = True
     pi.flags.ignore_naming_series = True
-    pi.flags.ignore_links = True
 
     # -------------------------------------------------
     # DOCSTATUS SYNC FOR NEW DOCUMENTS
@@ -767,6 +1100,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
     if target_docstatus == 1:
         # Submit via ORM
         try:
+            _recalculate_totals(pi)
             pi.submit()
             _safe_dedupe(pi.name)
             _log(f"PI {pi.name} submitted successfully", "")
@@ -799,6 +1133,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
     elif target_docstatus == 2:
         # Submit first via ORM, then cancel
         try:
+            _recalculate_totals(pi)
             pi.submit()
             _safe_dedupe(pi.name)
             _log(f"PI {pi.name} submitted (step 1 of cancel)", "")
@@ -905,6 +1240,14 @@ def sync_external_purchase_invoice_docs(source_doctype, names):
         try:
             result = _sync_single_purchase_invoice(source_doctype, name)
             results.append(result)
+            frappe.db.set_value(
+                source_doctype,
+                name,
+                "is_synced",
+                1,
+                update_modified=False
+            )
+ 
 
         except Exception as e:
             error = frappe.get_traceback()

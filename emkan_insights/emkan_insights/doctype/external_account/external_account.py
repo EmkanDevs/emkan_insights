@@ -70,7 +70,6 @@ def add_external_account(args=None):
     external_account.old_parent = ""
     if cint(external_account.get("is_root")):
         external_account.parent_account = None
-        external_account.flags.ignore_mandatory = True
 
     external_account.insert()
     return external_account.name

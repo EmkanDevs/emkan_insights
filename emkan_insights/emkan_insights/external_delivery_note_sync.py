@@ -1,5 +1,7 @@
 import frappe
 import json
+import types
+from frappe.utils import cint, flt
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -7,46 +9,118 @@ SYSTEM_FIELDS = {
     "parent", "parentfield", "parenttype"
 }
 
-# "name" is included here (not just in SYSTEM_FIELDS) so it's explicit that
-# we never copy the external row's own name into a local field.
 IGNORE_ITEM_FIELDS = {
     "name"
 }
 
-# Fields resolved explicitly further down - don't let the generic field-copy
-# loop blindly overwrite them with unresolved raw values from the source doc.
 EXPLICITLY_HANDLED_HEADER_FIELDS = {
     "items", "taxes", "remote_id", "custom_remote_id", "customer",
     "is_return", "return_against"
 }
 
-# CONFIRMED: "External Delivery Note" reuses "Delivery Note Item" as its own
-# child table (there is no separate "External Delivery Note Item" doctype).
-# That means `tabDelivery Note Item` physically holds rows from BOTH:
-#   - real Delivery Note documents      (parenttype = "Delivery Note")
-#   - External Delivery Note documents  (parenttype = "External Delivery Note")
-# distinguished only by `parent` + `parenttype`. Every raw SQL statement
-# below against this table MUST filter on parenttype = 'Delivery Note'
-# explicitly, or it risks touching/deleting external staging rows (or,
-# in theory, colliding if a name string were ever reused across doctypes).
 LOCAL_ITEM_PARENTTYPE = "Delivery Note"
 
 
 # ==========================================================
-# DUPLICATE CLEANUP (kept as a post-insert safety net)
+# NEGATIVE STOCK BYPASS
+# ==========================================================
+
+def _bypass_negative_stock_validation(doc):
+    """
+    Temporarily bypass negative stock validation for this specific document instance.
+    Safe for concurrent requests because it only patches the instance, not the class.
+    """
+    original_update_sl = doc.update_stock_ledger
+
+    def patched_update_sl(self):
+        original_make_sl = self.make_sl_entries
+        
+        def patched_make_sl(sl_entries, allow_negative_stock=False, via_landed_cost_voucher=False):
+            # Force allow_negative_stock to True
+            original_make_sl(sl_entries, allow_negative_stock=True, via_landed_cost_voucher=via_landed_cost_voucher)
+            
+        self.make_sl_entries = patched_make_sl
+        original_update_sl(self)
+        self.make_sl_entries = original_make_sl
+
+    doc.update_stock_ledger = types.MethodType(patched_update_sl, doc)
+
+
+# ==========================================================
+# GL ENTRY DIAGNOSTIC LOGGER
+# ==========================================================
+
+def _verify_and_log_gl_entries(doc, action_taken):
+    """
+    Verify if GL entries were actually created for a document.
+    If missing, logs a detailed Error Log explaining exactly why.
+    """
+    if not doc or not doc.name:
+        return
+
+    enable_perpetual = frappe.db.get_value("Company", doc.company, "enable_perpetual_inventory")
+    
+    if not cint(enable_perpetual):
+        frappe.log_error(
+            title=f"DN Sync GL Skip: Perpetual Inventory Off ({doc.name})",
+            message=(
+                f"Action: {action_taken}\n\n"
+                f"Company '{doc.company}' does not have 'Enable Perpetual Inventory' checked. "
+                f"Delivery Notes do NOT create GL entries when perpetual inventory is disabled."
+            )
+        )
+        return
+
+    if action_taken == "Cancelled":
+        gl_count = frappe.db.count("GL Entry", {
+            "voucher_type": "Delivery Note",
+            "voucher_no": doc.name,
+            "is_cancelled": 1
+        })
+        if gl_count == 0:
+            frappe.log_error(
+                title=f"DN Sync GL Missing: Cancel entries missing for {doc.name}",
+                message=f"Document was cancelled, but 0 cancellation GL entries were found."
+            )
+        return
+
+    gl_count = frappe.db.count("GL Entry", {
+        "voucher_type": "Delivery Note",
+        "voucher_no": doc.name,
+        "is_cancelled": 0
+    })
+
+    if gl_count > 0:
+        return
+
+    items_summary = []
+    for item in doc.get("items", []):
+        items_summary.append(
+            f"- Item: {item.item_code} | Qty: {flt(item.qty)} | Rate: {flt(item.rate)} | "
+            f"Amount: {flt(item.amount)} | Warehouse: {item.warehouse} | "
+            f"Expense Account: {item.get('expense_account', 'NOT SET')}"
+        )
+
+    diag_message = (
+        f"Action: {action_taken}\n"
+        f"Company: {doc.company}\n"
+        f"Is Return: {doc.is_return}\n"
+        f"Total Qty: {flt(doc.total_qty)}\n"
+        f"Net Total: {flt(doc.net_total)}\n"
+        f"Items Details:\n" + ("\n".join(items_summary) if items_summary else "No items found!")
+    )
+
+    frappe.log_error(
+        title=f"DN Sync GL Missing: 0 GL Entries for {doc.name}",
+        message=diag_message
+    )
+
+
+# ==========================================================
+# DUPLICATE CLEANUP
 # ==========================================================
 
 def clean_duplicate_dn_items(parent_name):
-    """
-    Belt-and-suspenders cleanup: if two item rows still ended up identical
-    in every tracked field (including custom_remote_id - meaning they trace
-    back to the exact same source row), remove the extra one. The real fix
-    is deduping before appending (see _dedupe_source_items below); this stays
-    as a safety net in case anything slips through.
-
-    parenttype is explicitly filtered on both sides of the self-join since
-    `tabDelivery Note Item` is a shared table with External Delivery Note.
-    """
     frappe.db.sql("""
         DELETE t1 FROM `tabDelivery Note Item` t1
         INNER JOIN `tabDelivery Note Item` t2
@@ -65,14 +139,6 @@ def clean_duplicate_dn_items(parent_name):
 
 
 def _purge_orphan_local_dn_children(parent_name):
-    """
-    Remove orphaned child rows (items, taxes, packed items, etc.) left behind
-    when a local Delivery Note with this name was previously created and then
-    deleted. Only runs when the parent Delivery Note itself is absent, so it
-    can never touch the children of a live Delivery Note. Always scoped to
-    parenttype = 'Delivery Note' because these child tables are physically
-    shared with External Delivery Note.
-    """
     if not parent_name:
         return
     if frappe.db.exists("Delivery Note", parent_name):
@@ -85,18 +151,6 @@ def _purge_orphan_local_dn_children(parent_name):
 
 
 def _dedupe_source_items(ext_items):
-    """
-    Prevent duplicate rows from ever being appended in the first place,
-    instead of relying only on post-insert cleanup. If the source pull
-    (pagination overlap, retry, etc.) handed back the same underlying row
-    more than once - identified by its own unique row name - keep only the
-    first occurrence.
-
-    Note: ext_items here is already correctly scoped to this specific
-    External Delivery Note by Frappe's ORM (get_doc loads children filtered
-    by parent + parenttype + parentfield), so no extra scoping is needed
-    here even though the table is shared.
-    """
     seen = set()
     deduped = []
     for row in ext_items:
@@ -109,21 +163,10 @@ def _dedupe_source_items(ext_items):
 
 
 # ==========================================================
-# LINK RESOLVERS (same 3-tier pattern as the Sales Invoice sync)
+# LINK RESOLVERS
 # ==========================================================
 
 def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
-    """
-    Three-tier resolution:
-    1. Prefixed local name: {company_abbr}-{remote_name}
-    2. Remote ID lookup: {remote_id_field: remote_name}
-    3. Raw name existence check
-
-    Tier 3 covers the common case here: Sales Order / Delivery Note /
-    Purchase Order names on the source side already come out looking like
-    real local names (e.g. "SAL-ORD-IMC-26-01315"), so this resolves on
-    the first raw existence check without ever needing tier 1 or 2.
-    """
     if not remote_or_local_name:
         return None
 
@@ -146,29 +189,10 @@ def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
 
 
 def get_child_detail(doctype, parent, item_code, remote_child_id=None, parenttype=None):
-    """
-    Resolve the LOCAL child-row name for a link like `so_detail`.
-
-    PRIMARY: match on the source row's own remote child id via
-    `custom_remote_id`. This is exact and unambiguous - it maps to the precise
-    Sales Order line the source pointed at, even when the same item_code
-    appears on several lines of that order.
-
-    FALLBACK: match by (parent, item_code) only when the remote id can't be
-    resolved (e.g. the referenced Sales Order line was never synced locally).
-    Matching by item_code alone is what previously produced WRONG so_detail
-    mappings on orders that repeat an item.
-
-    `parenttype` is filtered explicitly because child tables such as
-    "Sales Order Item" are physically shared between real Sales Orders and
-    External Sales Orders.
-    """
     if parenttype is None:
-        # e.g. "Sales Order Item" -> "Sales Order"
         parenttype = doctype[:-5] if doctype.endswith(" Item") else None
 
     if remote_child_id:
-        # Exact: the remote child row under the specific resolved parent.
         if parent:
             filters = {"custom_remote_id": remote_child_id, "parent": parent}
             if parenttype:
@@ -177,11 +201,6 @@ def get_child_detail(doctype, parent, item_code, remote_child_id=None, parenttyp
             if match:
                 return match
 
-        # The remote child may exist under several rows sharing the same
-        # custom_remote_id - typically ONE live row plus ORPHANED rows
-        # (parent NULL/empty, or pointing at a parent doc that no longer
-        # exists) left behind by earlier sync runs. Never return an orphan:
-        # pick the row whose parent doc actually exists.
         cand_filters = {"custom_remote_id": remote_child_id}
         if parenttype:
             cand_filters["parenttype"] = parenttype
@@ -202,11 +221,6 @@ def get_child_detail(doctype, parent, item_code, remote_child_id=None, parenttyp
 
 
 def _resolve_customer(customer_ref, company_abbr):
-    """
-    Resolve the customer explicitly with a log (not a hard failure) if it
-    can't be resolved - leave blank and let ignore_mandatory cover it,
-    rather than dropping the whole delivery note.
-    """
     if not customer_ref:
         return None
 
@@ -220,21 +234,12 @@ def _resolve_customer(customer_ref, company_abbr):
 
 
 def _resolve_default_warehouse(company):
-    """Resolve a real warehouse for the delivery note's own company."""
     if not company:
         return None
     return frappe.db.get_value("Warehouse", {"is_group": 0, "company": company}, "name")
 
 
 def _ensure_item_uom(item_code, uom):
-    """
-    ERPNext throws 'UOM {uom} not found in Item {item_code}' if a transaction
-    row uses a UOM that isn't registered on that Item. Auto-register it
-    (conversion factor 1.0) instead of letting the whole delivery note fail.
-
-    The ORM insert() writes to the current transaction — no explicit commit
-    is needed. Frappe commits automatically at HTTP request end.
-    """
     if not item_code or not uom:
         return
 
@@ -273,13 +278,7 @@ def _ensure_item_uom(item_code, uom):
 def sync_external_delivery_note_docs(source_doctype, names):
     """
     Main sync entry point.
-
-    Each document is processed sequentially within a single transaction.
-    Frappe automatically commits the transaction at HTTP request end.
-
-    
     """
-
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -290,11 +289,6 @@ def sync_external_delivery_note_docs(source_doctype, names):
             ext_dn = frappe.get_doc(source_doctype, name)
             remote_id = ext_dn.name
 
-            # ------------------------------------------------
-            # BUILD TARGET NAME: {company_abbr}-{remote_id}
-            # Same pattern as Sales Order sync (always prefix,
-            # e.g. IMC-DN-26-00025 → IMC-IMC-DN-26-00025).
-            # ------------------------------------------------
             company_abbr = frappe.db.get_value("Company", ext_dn.company, "abbr") or ""
 
             if not company_abbr:
@@ -307,9 +301,6 @@ def sync_external_delivery_note_docs(source_doctype, names):
 
             target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
 
-            # ------------------------------------------------
-            # Dynamic remote_id field detection
-            # ------------------------------------------------
             remote_id_field = None
             dn_meta = frappe.get_meta("Delivery Note")
             for candidate in ("custom_remote_id", "remote_id"):
@@ -323,9 +314,6 @@ def sync_external_delivery_note_docs(source_doctype, names):
                     "'remote_id' field - cannot track sync identity."
                 )
 
-            # ------------------------------------------------
-            # Check existing by dynamic remote_id field
-            # ------------------------------------------------
             existing_dn = frappe.db.get_value(
                 "Delivery Note",
                 {remote_id_field: remote_id},
@@ -341,29 +329,20 @@ def sync_external_delivery_note_docs(source_doctype, names):
 
             dn = frappe.new_doc("Delivery Note")
 
-            # ------------------------------------------------
-            # SET NAME WITH COMPANY ABBR PREFIX
-            # ------------------------------------------------
             dn.set(remote_id_field, remote_id)
             dn.name = target_name
             dn.flags.name_set = True
 
-            # ------------------------------------------------
-            # FLAGS
-            # ------------------------------------------------
             dn.flags.ignore_permissions = True
-            dn.flags.ignore_mandatory = True
-            dn.flags.ignore_validate = True
-            dn.flags.ignore_validate_update_after_submit = True
-            dn.flags.ignore_links = True
             dn.flags.ignore_naming_series = True
-            frappe.flags.ignore_stock_validation = True
 
-            # ------------------------------------------------
-            # COPY MAIN FIELDS
-            # ------------------------------------------------
+            CALCULATED_FIELDS = {
+                "total", "base_total", "net_total", "base_net_total",
+                "grand_total", "base_grand_total", "rounded_total",
+                "base_rounded_total", "total_taxes_and_charges",
+                "base_total_taxes_and_charges", "outstanding_amount", "status",
+            }
             for field, value in ext_dn.as_dict().items():
-
                 if (
                     field not in SYSTEM_FIELDS
                     and field not in EXPLICITLY_HANDLED_HEADER_FIELDS
@@ -371,13 +350,8 @@ def sync_external_delivery_note_docs(source_doctype, names):
                 ):
                     dn.set(field, value)
 
-            # Resolve customer explicitly instead of copying it verbatim
-            # through the generic loop above.
             dn.customer = _resolve_customer(ext_dn.get("customer"), company_abbr)
 
-            # ------------------------------------------------
-            # HANDLE RETURN DELIVERY NOTE
-            # ------------------------------------------------
             if ext_dn.get("is_return"):
                 local_return_against = resolve_local_doc(
                     "Delivery Note", ext_dn.get("return_against"), company_abbr
@@ -387,45 +361,22 @@ def sync_external_delivery_note_docs(source_doctype, names):
                     dn.is_return = 1
                     dn.return_against = local_return_against
                 else:
-                    # If the original DN isn't present locally, fall back to
-                    # a normal DN rather than failing the whole sync.
                     dn.is_return = 0
                     dn.return_against = None
 
-            # ------------------------------------------------
-            # ITEMS
-            # ------------------------------------------------
             dn.set("items", [])
-
-            # Dedupe by source row identity before ever appending, instead
-            # of only cleaning up duplicates after insert.
             deduped_items = _dedupe_source_items(ext_dn.items)
 
             for row in deduped_items:
-
                 item_row = {}
 
                 for field, value in row.as_dict().items():
-
-                    if (
-                        field not in SYSTEM_FIELDS
-                        and field not in IGNORE_ITEM_FIELDS
-                    ):
+                    if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                         item_row[field] = value
 
-                # Resolve the Sales Order link (3-tier, company-abbr aware).
-                # Source-side names here already come out looking like real
-                # local names (e.g. "SAL-ORD-IMC-26-01315"), so this usually
-                # resolves on the raw-existence tier - but if the referenced
-                # Sales Order was never synced locally (or was cleaned up
-                # from the source before sync), this correctly resolves to
-                # None rather than failing the whole delivery note.
                 so_ref = row.get("against_sales_order") or row.get("sales_order")
                 local_so = resolve_local_doc("Sales Order", so_ref, company_abbr) if so_ref else None
 
-                # Map the exact Sales Order line using the source row's own
-                # remote `so_detail` id (mapped via custom_remote_id), falling
-                # back to (SO, item_code) only when that can't be resolved.
                 local_so_detail = get_child_detail(
                     "Sales Order Item",
                     local_so,
@@ -434,120 +385,66 @@ def sync_external_delivery_note_docs(source_doctype, names):
                     parenttype="Sales Order",
                 )
 
-                # If the Sales Order link itself wasn't resolvable but we still
-                # matched the exact SO line via its remote id, backfill the
-                # parent Sales Order from that line so the two stay consistent.
                 if not local_so and local_so_detail:
-                    local_so = frappe.db.get_value(
-                        "Sales Order Item", local_so_detail, "parent"
-                    )
+                    local_so = frappe.db.get_value("Sales Order Item", local_so_detail, "parent")
 
                 item_row["against_sales_order"] = local_so
                 item_row["so_detail"] = local_so_detail
 
-                # These raw source fields don't exist / aren't meaningful on
-                # a local Delivery Note Item - drop them now that
-                # against_sales_order / so_detail have been resolved above.
                 item_row.pop("sales_order", None)
                 item_row.pop("sales_order_item", None)
                 item_row.pop("prevdoc_doctype", None)
                 item_row.pop("prevdoc_docname", None)
 
-                # Map external row identity to custom_remote_id
                 if frappe.get_meta("Delivery Note Item").has_field("custom_remote_id"):
                     item_row["custom_remote_id"] = row.name
 
-                # Resolve a real per-company default warehouse.
                 if not item_row.get("warehouse"):
                     item_row["warehouse"] = _resolve_default_warehouse(ext_dn.company)
 
-                # Auto-register the item's UOM if missing - avoids
-                # "UOM X not found in Item Y".
                 if item_row.get("item_code") and item_row.get("uom"):
                     _ensure_item_uom(item_row["item_code"], item_row["uom"])
 
                 dn.append("items", item_row)
 
-            # ------------------------------------------------
-            # TAXES
-            # ------------------------------------------------
             if hasattr(ext_dn, "taxes"):
-
                 dn.set("taxes", [])
-
                 for row in ext_dn.taxes:
-
                     tax_row = {}
-
                     for field, value in row.as_dict().items():
-
                         if field not in SYSTEM_FIELDS:
                             tax_row[field] = value
-
                     dn.append("taxes", tax_row)
 
-            # ------------------------------------------------
-            # PURGE STALE / ORPHANED CHILD ROWS FOR THIS TARGET NAME
-            # ------------------------------------------------
-            # If a Delivery Note with this name was previously created and its
-            # parent row later removed, the child rows (items/taxes/...) can be
-            # left behind as orphans. Because the child tables are keyed only by
-            # (parent, parenttype), those orphans would stack on top of the rows
-            # we insert now and show up as duplicate items/taxes. Clear them
-            # first. Always parenttype-scoped so this can only ever touch LOCAL
-            # Delivery Note rows, never the shared External Delivery Note rows.
             _purge_orphan_local_dn_children(target_name)
 
-            # ------------------------------------------------
-            # INSERT (ORM — writes to the current transaction)
-            # ------------------------------------------------
-            dn.insert(
-                ignore_permissions=True,
-                ignore_links=True,
-                ignore_mandatory=True
-            )
+            dn.set_missing_values()
+            dn.calculate_taxes_and_totals()
+            
+            dn.insert(ignore_permissions=True)
 
-            # Safety net - should be a no-op now that items are deduped
-            # before appending, but kept in case anything slips through.
-            # Explicitly parenttype-scoped since the item table is shared
-            # with External Delivery Note.
             clean_duplicate_dn_items(dn.name)
-            # both wrote to the transaction; Frappe commits at request end.
 
-            # ------------------------------------------------
-            # NAMING SAFETY NET
-            # ------------------------------------------------
             if dn.name != target_name:
-
                 if not frappe.db.exists("Delivery Note", target_name):
-
                     old_name = dn.name
 
                     frappe.db.sql("""
-                        UPDATE `tabDelivery Note`
-                        SET name = %s
-                        WHERE name = %s
+                        UPDATE `tabDelivery Note` SET name = %s WHERE name = %s
                     """, (target_name, old_name))
 
-                    # `tabDelivery Note Item` is shared with External
-                    # Delivery Note - always scope by parenttype so this
-                    # can only ever touch this Delivery Note's own rows.
                     frappe.db.sql("""
-                        UPDATE `tabDelivery Note Item`
-                        SET parent = %s
+                        UPDATE `tabDelivery Note Item` SET parent = %s
                         WHERE parent = %s AND parenttype = %s
                     """, (target_name, old_name, LOCAL_ITEM_PARENTTYPE))
 
                     if frappe.db.exists("DocType", "Sales Taxes and Charges"):
                         frappe.db.sql("""
-                            UPDATE `tabSales Taxes and Charges`
-                            SET parent = %s
+                            UPDATE `tabSales Taxes and Charges` SET parent = %s
                             WHERE parent = %s AND parenttype = %s
                         """, (target_name, old_name, LOCAL_ITEM_PARENTTYPE))
 
-                    # the transaction; Frappe commits at request end.
                     dn.name = target_name
-
                 else:
                     frappe.log_error(
                         f"Delivery Note Sync: could not rename {dn.name} to "
@@ -559,11 +456,23 @@ def sync_external_delivery_note_docs(source_doctype, names):
             # DOCSTATUS SYNC (ORM submit / cancel)
             # ------------------------------------------------
             if ext_dn.docstatus == 1:
+                # BYPASS: Prevent Insufficient Stock errors during sync
+                _bypass_negative_stock_validation(dn)
+                
                 dn.submit()
+                
+                dn.reload()
+                _verify_and_log_gl_entries(dn, "Submitted")
 
             elif ext_dn.docstatus == 2:
+                # BYPASS: Prevent Insufficient Stock errors during sync
+                _bypass_negative_stock_validation(dn)
+                
                 dn.submit()
                 dn.cancel()
+                
+                dn.reload()
+                _verify_and_log_gl_entries(dn, "Cancelled")
 
             results.append({
                 "name": dn.name,
@@ -571,7 +480,6 @@ def sync_external_delivery_note_docs(source_doctype, names):
             })
 
         except Exception as e:
-
             error = frappe.get_traceback()
 
             frappe.log_error(

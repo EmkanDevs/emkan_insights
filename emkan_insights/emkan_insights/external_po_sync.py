@@ -557,10 +557,7 @@ def upsert_purchase_order(src, existing_name):
         doc.base_in_words = getattr(src, "base_in_words", "")
 
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
         doc.flags.ignore_pricing_rule = True
-        doc.flags.ignore_mandatory = True
 
         doc.set("items", [])
         doc.set("taxes", [])

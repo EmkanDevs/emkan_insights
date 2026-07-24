@@ -101,9 +101,6 @@ def sync_external_payment_request(source_doctype, external_name):
 
     # Flags
     pr.flags.ignore_permissions = True
-    pr.flags.ignore_mandatory = True
-    pr.flags.ignore_links = True
-    pr.flags.ignore_validate = True
     pr.flags.ignore_naming_series = True
 
     # Naming series
@@ -145,8 +142,6 @@ def sync_external_payment_request(source_doctype, external_name):
     # Insert
     pr.insert(
         ignore_permissions=True,
-        ignore_links=True,
-        ignore_mandatory=True
     )
 
     # Docstatus Sync

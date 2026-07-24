@@ -48,7 +48,6 @@ def sync_external_docs(source_doctype, names):
             # Ignore mandatory validations
             doc.insert(
                 ignore_permissions=True,
-                ignore_mandatory=True
             )
             
             results.append({

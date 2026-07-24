@@ -395,15 +395,10 @@ def sync_external_bom(external_name, company):
     bom_doc.name = target_name
 
     bom_doc.flags.ignore_permissions = True
-    bom_doc.flags.ignore_validate = True
-    bom_doc.flags.ignore_mandatory = True
-    bom_doc.flags.ignore_links = True
 
     try:
         bom_doc.insert(
             ignore_permissions=True,
-            ignore_links=True,
-            ignore_mandatory=True
         )
     except Exception:
         frappe.log_error(title=f"BOM Insert FAILED: {external_name}", message=frappe.get_traceback())

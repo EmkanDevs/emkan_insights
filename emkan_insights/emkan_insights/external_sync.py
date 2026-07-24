@@ -295,7 +295,6 @@ def sync_doc_by_key(
             key_field=key_field,
             title_field_source=title_field_source,
         )
-        tgt.flags.ignore_links = True
     elif target_doctype == "Contact":
         _apply_contact_sync_rules(tgt)
     elif target_doctype == "Territory":
@@ -318,17 +317,13 @@ def sync_doc_by_key(
 
     elif target_doctype == "Asset":
         _apply_asset_sync_rules(src=src, tgt=tgt, key_field=key_field)
-        tgt.flags.ignore_mandatory = True
-        tgt.flags.ignore_links = True
         tgt.docstatus = 0          # always insert as Draft first
         tgt.insert(ignore_permissions=True)
 
         original_docstatus = cint(src.get("docstatus"))
         if original_docstatus == 1:
-            tgt.flags.ignore_validate_update_after_submit = True
             tgt.submit()
         elif original_docstatus == 2:
-            tgt.flags.ignore_validate_update_after_submit = True
             tgt.submit()
             tgt.cancel()
 
@@ -386,30 +381,22 @@ def sync_doc_by_key(
     }
 
 def _apply_address_sync_rules(src, tgt):
-    tgt.flags.ignore_links = True
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_mandatory = True
+	pass
+
 
 def _apply_sales_person_sync_rules(tgt):
     # Sales Person "targets" child table links to Fiscal Year and Monthly
     # Distribution, which often don't exist locally for remote records.
     # We don't care about target/quota data for synced sales people, so
     # just drop those rows and bypass link validation as a safety net.
-    tgt.flags.ignore_links = True
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_mandatory = True
     tgt.set("targets", [])
 
 def _apply_asset_category_sync_rules(src, tgt):
-    tgt.flags.ignore_links = True
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_mandatory = True  
+	pass
+
 
 def _apply_contact_sync_rules(tgt):
     # Bypass strict validations
-    tgt.flags.ignore_links = True
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_mandatory = True
 
     # Remove problematic link fields
     tgt.lead = None
@@ -702,9 +689,6 @@ def _apply_account_sync_rules(src, tgt, key_field: str) -> None:
 
 def _apply_bank_account_sync_rules(src, tgt, key_field: str):
     # Add bypass flags
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_mandatory = True
-    tgt.flags.ignore_links = True
     
     if not tgt.get("account"):
         external_account = src.get("account")
@@ -1408,9 +1392,6 @@ def _apply_supplier_group_sync_rules(src, tgt, key_field: str, title_field_sourc
     Apply supplier group specific sync rules with loop prevention.
     """
     # Add flags to bypass validation during sync
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_links = True
-    tgt.flags.ignore_mandatory = True
     
     # ERPNext disallows leaf nodes that already have children.
     if _supplier_group_has_children(src=src, tgt=tgt, key_field=key_field, title_field_source=title_field_source):
@@ -1967,14 +1948,10 @@ def _sync_child_tables(src, tgt, target_meta):
 def _apply_purchase_invoice_sync_rules(src, tgt, key_field):
 
     tgt.flags.ignore_pricing_rule = True
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_validate_update_after_submit = True
 
 
 def _apply_payment_entry_sync_rules(src, tgt, key_field):
-
-    tgt.flags.ignore_validate = True
-    tgt.flags.ignore_links = True
+	pass
 
 
 def _sync_parent_external_account(external_name: str, key_field: str, company: str) -> None:
@@ -2032,7 +2009,6 @@ def _sync_parent_external_account(external_name: str, key_field: str, company: s
 
         _apply_account_sync_rules(src=src, tgt=tgt, key_field=key_field)
 
-        tgt.flags.ignore_mandatory = True
         tgt.flags.ignore_root_company_validation = True
         tgt.save(ignore_permissions=True)
 

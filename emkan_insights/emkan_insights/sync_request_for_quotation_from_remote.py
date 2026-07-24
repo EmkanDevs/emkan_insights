@@ -340,15 +340,10 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
                 doc.set(site_url_fieldname, site_url)
 
         # Flags
-        doc.flags.ignore_links = True
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_mandatory = True
-        doc.flags.ignore_validate = True
 
         doc.insert(
             ignore_permissions=True,
-            ignore_links=True,
-            ignore_mandatory=True
         )
 
         # Set deferred fields

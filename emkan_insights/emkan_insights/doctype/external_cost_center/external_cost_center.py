@@ -86,7 +86,6 @@ def add_external_cost_center(args=None):
 
     if cint(args.get("is_root")):
         external_cost_center.parent_cost_center = None
-        external_cost_center.flags.ignore_mandatory = True
 
     external_cost_center.insert()
 

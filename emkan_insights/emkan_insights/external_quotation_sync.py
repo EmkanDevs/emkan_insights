@@ -293,8 +293,6 @@ def upsert_quotation(src, target_name, existing_name=None):
     # FLAGS
     # --------------------------------------------------
     quotation.flags.ignore_permissions = True
-    quotation.flags.ignore_links = True
-    quotation.flags.ignore_mandatory = True
     quotation.flags.ignore_pricing_rule = True
 
     # set_missing_values() reads party_name immediately for Lead/Customer

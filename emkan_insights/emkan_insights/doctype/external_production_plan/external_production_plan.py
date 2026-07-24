@@ -186,12 +186,9 @@ def sync_external_production_plan_docs(source_doctype, names):
 
             # FLAGS
             pp.flags.ignore_permissions = True
-            pp.flags.ignore_validate = True
-            pp.flags.ignore_mandatory = True
-            pp.flags.ignore_links = True
 
             # INSERT
-            pp.insert(ignore_permissions=True, ignore_links=True, ignore_mandatory=True)
+            pp.insert(ignore_permissions=True)
 
             # FORCE COMPANY-PREFIXED REMOTE ID
             if pp.name != target_name:
@@ -222,9 +219,6 @@ def sync_external_production_plan_docs(source_doctype, names):
             # DOCSTATUS SYNC
             pp = frappe.get_doc("Production Plan", target_name)
             pp.flags.ignore_permissions = True
-            pp.flags.ignore_validate = True
-            pp.flags.ignore_mandatory = True
-            pp.flags.ignore_links = True
 
             if ext_pp.docstatus == 1:
                 pp.submit()
@@ -233,9 +227,6 @@ def sync_external_production_plan_docs(source_doctype, names):
                 pp.submit()
                 pp = frappe.get_doc("Production Plan", target_name)
                 pp.flags.ignore_permissions = True
-                pp.flags.ignore_validate = True
-                pp.flags.ignore_mandatory = True
-                pp.flags.ignore_links = True
                 pp.cancel()
 
             results.append({"name": target_name, "status": "synced"})

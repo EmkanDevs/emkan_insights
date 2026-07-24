@@ -26,8 +26,6 @@ def _get_table_fieldnames(meta):
 def _apply_sync_flags(doc):
     """Apply all necessary flags for sync operations"""
     doc.flags.ignore_permissions = True
-    doc.flags.ignore_mandatory = True
-    doc.flags.ignore_validate = True
     doc.flags.ignore_naming_series = True
     frappe.flags.ignore_stock_validation = True
 
@@ -533,8 +531,6 @@ def sync_external_purchase_receipt_docs(source_doctype, names):
             # -----------------------------
             pr.insert(
                 ignore_permissions=True,
-                ignore_links=True,
-                ignore_mandatory=True
             )
 
             clean_duplicate_pr_items(pr.name)

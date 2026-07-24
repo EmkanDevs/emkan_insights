@@ -486,9 +486,6 @@ def _do_sync_external_work_order(external_name, company):
     wo.name = target_name
 
     wo.flags.ignore_permissions = True
-    wo.flags.ignore_validate = True
-    wo.flags.ignore_mandatory = True
-    wo.flags.ignore_links = True
     wo.flags.ignore_naming_series = True
 
     # Temporarily clear BOM No to prevent ERPNext's before_validate hook 
@@ -499,8 +496,6 @@ def _do_sync_external_work_order(external_name, company):
     try:
         wo.insert(
             ignore_permissions=True,
-            ignore_links=True,
-            ignore_mandatory=True
         )
     except Exception:
         frappe.log_error(title=f"Work Order Insert FAILED: {external_name}", message=frappe.get_traceback())
@@ -543,9 +538,6 @@ def _sync_docstatus(target_name, external):
 
     wo = frappe.get_doc("Work Order", target_name)
     wo.flags.ignore_permissions = True
-    wo.flags.ignore_validate = True
-    wo.flags.ignore_mandatory = True
-    wo.flags.ignore_links = True
     wo.flags.ignore_naming_series = True
     wo.flags.name_set = True
 
@@ -564,9 +556,6 @@ def _sync_docstatus(target_name, external):
                 _dedupe_work_order_children(target_name)
                 wo = frappe.get_doc("Work Order", target_name)
                 wo.flags.ignore_permissions = True
-                wo.flags.ignore_validate = True
-                wo.flags.ignore_mandatory = True
-                wo.flags.ignore_links = True
                 wo.flags.ignore_naming_series = True
                 wo.flags.name_set = True
             if wo.docstatus == 1:

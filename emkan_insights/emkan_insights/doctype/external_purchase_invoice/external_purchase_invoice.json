@@ -29,6 +29,7 @@
   "update_billed_amount_in_purchase_receipt",
   "apply_tds",
   "tax_withholding_category",
+  "is_synced",
   "amended_from",
   "supplier_invoice_details",
   "bill_no",
@@ -1665,6 +1666,12 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_synced",
+   "fieldtype": "Check",
+   "label": "Is Synced"
   }
  ],
  "grid_page_length": 50,
@@ -1672,7 +1679,7 @@
  "idx": 204,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-13 13:24:50.098781",
+ "modified": "2026-07-23 08:59:32.866109",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Purchase Invoice",

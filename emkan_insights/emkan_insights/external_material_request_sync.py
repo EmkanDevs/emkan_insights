@@ -129,8 +129,6 @@ def _auto_create_item(ext_item):
     new_item.stock_uom = ext_item.stock_uom or "Nos"
     new_item.is_stock_item = 1
     new_item.description = ext_item.description or ""
-    new_item.flags.ignore_mandatory = True
-    new_item.flags.ignore_links = True
 
     try:
         new_item.insert()
@@ -431,8 +429,6 @@ def sync_external_material_request(external_name, company):
                 "custom_remote_id": item_data["remote_row_id"],
             })
 
-        mr.flags.ignore_links = True
-        mr.flags.ignore_mandatory = True
         mr.db_insert()
 
         for item in mr.items:
@@ -441,8 +437,6 @@ def sync_external_material_request(external_name, company):
             item.parentfield = "items"
             if not item.name:
                 item.name = frappe.generate_hash("", 10)
-            item.flags.ignore_links = True
-            item.flags.ignore_mandatory = True
             item.db_insert()
 
         remote_status = frappe.utils.cint(external.docstatus)

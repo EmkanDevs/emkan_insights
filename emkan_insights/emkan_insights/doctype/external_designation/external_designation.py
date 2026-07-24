@@ -60,9 +60,6 @@ def upsert_designation(src, existing_name):
         doc = frappe.get_doc("Designation", existing_name)
         
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         doc.designation_name = designation_name
         doc.description = description
@@ -94,9 +91,6 @@ def upsert_designation(src, existing_name):
         doc.update(update_dict)
 
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         doc.save()  # ORM save — writes to the transaction, no explicit commit needed
         final_name = doc.name

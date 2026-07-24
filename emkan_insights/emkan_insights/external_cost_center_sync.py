@@ -22,55 +22,55 @@ def create_cost_center_from_external(external_name):
     external = frappe.get_doc("External Cost Center", external_name)
 
     company = external.company
+    company_abbr = frappe.get_cached_value("Company", company, "abbr") or ""
 
-    # Use external document name as the Cost Center name
-    cc_name = external.name.replace(f" - {frappe.get_cached_value('Company', company, 'abbr')}", "")
+    # The ID we want the local Cost Center to have — must equal the
+    # External Cost Center's name so references across doctypes stay consistent.
+    target_name = external.name
+
+    # Derive the display name (cost_center_name) by stripping the company
+    # abbreviation suffix that ERPNext appends.  ERPNext's own naming rule
+    # re-appends it, so we store only the bare label in cost_center_name.
+    if company_abbr and target_name.endswith(f" - {company_abbr}"):
+        cc_name = target_name[: -(len(company_abbr) + 3)]  # strip " - <abbr>"
+    else:
+        cc_name = target_name
 
     # -----------------------
     # Check if already exists
     # -----------------------
+    # Fast path: look up by exact name (matches External Cost Center ID)
+    if frappe.db.exists("Cost Center", target_name):
+        return target_name
+
+    # Legacy fallback: document may have been created before this fix with a
+    # different auto-generated name — look it up by display name + company.
     existing = frappe.db.get_value(
         "Cost Center",
-        {
-            "cost_center_name": cc_name,
-            "company": company
-        },
-        "name"
+        {"cost_center_name": cc_name, "company": company},
+        "name",
     )
-
     if existing:
         return existing
-
-    parent_cc = None
 
     # -----------------------
     # Handle Parent
     # -----------------------
-    if external.parent_cost_center:
+    parent_cc = None
 
+    if external.parent_cost_center:
         parent_external = frappe.get_doc(
             "External Cost Center",
-            external.parent_cost_center
+            external.parent_cost_center,
         )
 
-        parent_cc_name = parent_external.name.replace(
-            f" - {frappe.get_cached_value('Company', company, 'abbr')}",
-            ""
-        )
+        parent_target_name = parent_external.name
 
-        parent_cc = frappe.db.get_value(
-            "Cost Center",
-            {
-                "cost_center_name": parent_cc_name,
-                "company": company
-            },
-            "name"
-        )
-
-        if not parent_cc:
-            parent_cc = create_cost_center_from_external(
-                external.parent_cost_center
-            )
+        # Ensure the parent is created first (recursive, handles arbitrary depth)
+        if not frappe.db.exists("Cost Center", parent_target_name):
+            parent_cc = create_cost_center_from_external(external.parent_cost_center)
+        else:
+            parent_cc = parent_target_name
 
     # -----------------------
     # Create Cost Center
@@ -81,11 +81,15 @@ def create_cost_center_from_external(external_name):
         "company": company,
         "parent_cost_center": parent_cc,
         "is_group": external.is_group,
-        "disabled": external.disabled
+        "disabled": external.disabled,
     })
 
-    doc.flags.ignore_validate = True
-    doc.flags.ignore_mandatory = True
+    # Force the document's primary key (name) to match the External Cost Center
+    # ID exactly.  Without this, ERPNext's autoname rule generates the name as
+    # "{cost_center_name} - {company_abbr}", which differs from the remote ID
+    # when the remote already carries the suffix or uses a different format.
+    doc.name = target_name
+    doc.flags.name_set = True      # tells Frappe not to auto-generate the name
     doc.insert(ignore_permissions=True)
 
     return doc.name

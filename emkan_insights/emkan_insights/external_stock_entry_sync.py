@@ -156,9 +156,6 @@ def _safe_cancel_doc(doc, log_prefix=""):
     # First, try normal cancel
     try:
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
-        doc.flags.ignore_links = True
         doc.cancel()  # ORM cancel writes to DB
 
         _log(f"{log_prefix} cancelled normally", "")
@@ -533,9 +530,6 @@ def _sync_existing_docstatus(existing_name, external):
     try:
         se = frappe.get_doc("Stock Entry", existing_name)
         se.flags.ignore_permissions = True
-        se.flags.ignore_validate = True
-        se.flags.ignore_mandatory = True
-        se.flags.ignore_links = True
 
         if target_docstatus == 2:
             # External is cancelled - we need to cancel local too
@@ -863,9 +857,6 @@ def sync_external_stock_entry(external_name, company):
         # Submit the Stock Entry
         try:
             se.flags.ignore_permissions = True
-            se.flags.ignore_validate = True
-            se.flags.ignore_mandatory = True
-            se.flags.ignore_links = True
             se.submit()  # ORM submit writes to DB
             _safe_dedupe(se.name)
             _log(f"Stock Entry {se.name} submitted successfully", "")
@@ -894,9 +885,6 @@ def sync_external_stock_entry(external_name, company):
         # Handle cancelled external Stock Entry
         try:
             se.flags.ignore_permissions = True
-            se.flags.ignore_validate = True
-            se.flags.ignore_mandatory = True
-            se.flags.ignore_links = True
 
             # Submit first (required before cancel)
             se.submit()  # ORM submit writes to DB

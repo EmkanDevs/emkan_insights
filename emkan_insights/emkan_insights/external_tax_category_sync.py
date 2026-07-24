@@ -95,8 +95,6 @@ def upsert_tax_category(src, existing_name=None):
         doc.source_site = src.source_site
 
     doc.flags.ignore_permissions = True
-    doc.flags.ignore_links = True
-    doc.flags.ignore_mandatory = True
 
     if existing_name:
         doc.save()

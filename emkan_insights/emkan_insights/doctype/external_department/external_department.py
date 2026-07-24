@@ -98,9 +98,6 @@ def upsert_department(src, existing_name):
         doc = frappe.get_doc("Department", existing_name)
         
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         doc.department_name = department_name
         doc.parent_department = parent_department
@@ -140,9 +137,6 @@ def upsert_department(src, existing_name):
         doc.update(update_dict)
 
         doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_links = True
-        doc.flags.ignore_mandatory = True
 
         doc.save()  # ORM save — writes to the transaction, no explicit commit needed
         final_name = doc.name
