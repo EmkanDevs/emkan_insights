@@ -1,9 +1,10 @@
 import json
 import frappe
 from frappe import _
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_item_tax_templates(names):
     """
     Sync External Item Tax Template -> Item Tax Template
@@ -18,6 +19,7 @@ def sync_item_tax_templates(names):
     for name in names:
         try:
             external = frappe.get_doc("External Item Tax Template", name)
+            sync_started_at = external.modified
 
             # Find existing document
             existing = frappe.db.get_value(
@@ -72,6 +74,12 @@ def sync_item_tax_templates(names):
                 )
 
             synced.append(doc.name)
+
+            external.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
 
         except Exception:
             frappe.db.rollback()

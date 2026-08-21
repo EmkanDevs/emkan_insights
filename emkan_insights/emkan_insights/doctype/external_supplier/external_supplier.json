@@ -22,6 +22,7 @@
   "cr_number",
   "is_transporter",
   "image",
+  "last_synced_on",
   "defaults_section",
   "default_currency",
   "default_bank_account",
@@ -499,6 +500,11 @@
    "fieldname": "is_mapped",
    "fieldtype": "Check",
    "label": "Is Mapped"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-user",
@@ -511,7 +517,7 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-04-24 09:05:51.630771",
+ "modified": "2026-07-29 12:45:18.569685",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Supplier",

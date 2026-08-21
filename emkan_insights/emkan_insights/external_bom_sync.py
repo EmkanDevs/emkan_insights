@@ -18,6 +18,9 @@ IGNORE_ITEM_FIELDS = {
     "prevdoc_docname", "so_detail", "against_sales_order"
 }
 
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
+
 # Parent-level links on BOM
 BOM_PARENT_LINKS = {
     "project": "Project",
@@ -418,11 +421,55 @@ def sync_external_bom(external_name, company):
 
 
 # ==========================================================
-# ENTRY POINT
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
 def sync_external_bom_docs(source_doctype=None, names=None):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"bom_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_bom_sync._sync_external_bom_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_external_bom_docs_job(source_doctype=None, names=None):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -434,8 +481,16 @@ def sync_external_bom_docs(source_doctype=None, names=None):
     for name in names:
         try:
             external_doc = frappe.get_doc(source_doctype or "External BOM", name)
+            sync_started_at = external_doc.modified
+
             result = sync_external_bom(name, external_doc.company)
             results.append(result)
+
+            external_doc.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
 
         except Exception as e:
             frappe.log_error(

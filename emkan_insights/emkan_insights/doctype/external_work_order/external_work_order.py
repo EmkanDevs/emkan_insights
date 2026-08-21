@@ -2,7 +2,7 @@ import frappe
 from frappe.model.document import Document
 import json
 from frappe.utils import cint, flt
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalWorkOrder(Document):
     pass
@@ -19,18 +19,30 @@ IGNORE_ITEM_FIELDS = {
     "prevdoc_docname", "so_detail", "against_sales_order"
 }
 
+# ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
+CHUNK_SIZE = 300
+
 # Parent-level links on Work Order
+# ⭐ FIX: custom_c_production_plan removed — this field is intentionally not synced
+# (its target DocType "C Production Plan" doesn't exist in this instance and was
+# crashing sync; per decision, this field is skipped entirely rather than mapped).
 WORK_ORDER_PARENT_LINKS = {
-    "custom_c_production_plan": "Production Plan",
     "sales_order": "Sales Order",
     "bom_no": "BOM",
     "production_plan": "Production Plan",
     "project": "Project",
+    "custom_c_production_plan": "Production Plan",
 }
 
+# ⭐ FIX: bom_no removed from this set. It previously only went through the naive
+# _prefix_reference() string concat (no frappe.db.exists check), which produced
+# a plausible-looking but unverified name. Any tiny mismatch (spacing, casing,
+# BOM renamed since sync) silently wrote a bad bom_no with no error, because we
+# also bypass mandatory validation on insert (see below). bom_no now resolves
+# the same verified way as sales_order/production_plan/project, with the
+# company-prefixed form only tried inside _resolve_link_with_abbr, not blindly
+# trusted as the final answer.
 COMPANY_PREFIXED_PARENT_FIELDS = {
-    "custom_c_production_plan",
-    "bom_no",
     "sales_order",
 }
 
@@ -123,6 +135,21 @@ def _resolve_link_with_abbr(doctype, remote_name, company_abbr=None):
     if not remote_name:
         return None
 
+    # ⭐ FIX: guard against a linked doctype that doesn't exist in this instance
+    # (e.g. WORK_ORDER_PARENT_LINKS mapping custom_c_production_plan -> "C Production
+    # Plan", which isn't a real DocType here). frappe.get_meta() throws DoesNotExistError
+    # for an unknown doctype, which previously crashed the whole sync instead of just
+    # skipping this one unresolved field.
+    if not frappe.db.exists("DocType", doctype):
+        frappe.log_error(
+            title=f"Work Order Sync: unknown linked DocType '{doctype}'",
+            message=f"Tried to resolve '{remote_name}' against DocType '{doctype}', "
+                    f"which does not exist in this instance. Check the doctype mapping "
+                    f"(e.g. WORK_ORDER_PARENT_LINKS / WORK_ORDER_ITEM_LINKS / "
+                    f"WORK_ORDER_OPERATION_LINKS) for a stale or incorrect doctype name."
+        )
+        return None
+
     if company_abbr and remote_name.startswith(f"{company_abbr}-"):
         if frappe.db.exists(doctype, remote_name):
             return remote_name
@@ -166,28 +193,70 @@ def _resolve_item_code(item_code):
     return item_code
 
 
+# ==========================================================
+# ⭐ FIX: Cancelled-link guard
+# ==========================================================
+def _is_cancelled(doctype, docname):
+    """Return True if docname exists for doctype and is cancelled (docstatus 2)."""
+    if not docname:
+        return False
+    if not frappe.db.exists(doctype, docname):
+        return False
+    return cint(frappe.db.get_value(doctype, docname, "docstatus")) == 2
+
+
+def _drop_if_cancelled(doctype, docname, context_label):
+    """Return docname unless it's cancelled, in which case log and return None.
+    Prevents CancelledLinkError when a resolved/prefixed local reference has since
+    been cancelled (e.g. a Production Plan, BOM, or Sales Order)."""
+    if docname and _is_cancelled(doctype, docname):
+        frappe.log_error(
+            title=f"Work Order Sync: dropped link to cancelled {doctype}",
+            message=f"{doctype} {docname} is cancelled locally — link removed from {context_label}."
+        )
+        return None
+    return docname
+
+
 def _apply_parent_link_mapping(wo_doc, external, company_abbr):
     for fieldname, linked_doctype in WORK_ORDER_PARENT_LINKS.items():
         if not _doctype_has_field("Work Order", fieldname):
             continue
 
         raw_value = getattr(external, fieldname, None)
+
+        # ⭐ FIX: diagnostic log when the source field itself is empty, specifically
+        # for bom_no, since a missing source value is the most common reason
+        # bom_no ends up unset on the local Work Order (and it looks identical
+        # to a resolution failure unless you know to check this).
         if not raw_value:
+            if fieldname == "bom_no":
+                frappe.log_error(
+                    title=f"Work Order Sync: source bom_no empty: {external.name}",
+                    message=(
+                        f"External Work Order '{external.name}' has no value in its 'bom_no' field "
+                        f"(field exists: {_doctype_has_field('External Work Order', 'bom_no')}). "
+                        f"No BOM will be set on the local Work Order unless the source field is populated "
+                        f"or the field name on External Work Order differs from 'bom_no'."
+                    )
+                )
             continue
 
         if fieldname in COMPANY_PREFIXED_PARENT_FIELDS:
-            wo_doc.set(fieldname, _prefix_reference(company_abbr, raw_value))
-            continue
-
-        resolved = _resolve_link_with_abbr(linked_doctype, raw_value, company_abbr)
-        if resolved:
-            wo_doc.set(fieldname, resolved)
+            resolved = _prefix_reference(company_abbr, raw_value)
         else:
-            wo_doc.set(fieldname, None)
-            frappe.log_error(
-                title=f"Work Order parent link unresolved: {external.name}",
-                message=f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
-            )
+            resolved = _resolve_link_with_abbr(linked_doctype, raw_value, company_abbr)
+            if not resolved:
+                frappe.log_error(
+                    title=f"Work Order parent link unresolved: {external.name}",
+                    message=f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+                )
+
+        # ⭐ FIX: guard against linking to a cancelled document (e.g. cancelled
+        # Production Plan / BOM / Sales Order), which previously crashed wo.insert()
+        resolved = _drop_if_cancelled(linked_doctype, resolved, f"Work Order {external.name} field '{fieldname}'")
+
+        wo_doc.set(fieldname, resolved)
 
 
 def _apply_required_item_link_mapping(item_row, company_abbr, external_name=None):
@@ -198,6 +267,8 @@ def _apply_required_item_link_mapping(item_row, company_abbr, external_name=None
 
         resolved = _resolve_link_with_abbr(linked_doctype, raw_value, company_abbr)
         if resolved:
+            # ⭐ FIX: guard child-table BOM/Sales Order links against cancellation too
+            resolved = _drop_if_cancelled(linked_doctype, resolved, f"Work Order {external_name or 'Unknown'} required_items row")
             item_row[fieldname] = resolved
         else:
             item_row[fieldname] = None
@@ -215,6 +286,8 @@ def _apply_operation_link_mapping(op_row, company_abbr, external_name=None):
 
         resolved = _resolve_link_with_abbr(linked_doctype, raw_value, company_abbr)
         if resolved:
+            # ⭐ FIX: guard operation-level BOM links against cancellation too
+            resolved = _drop_if_cancelled(linked_doctype, resolved, f"Work Order {external_name or 'Unknown'} operations row")
             op_row[fieldname] = resolved
         else:
             op_row[fieldname] = None
@@ -245,6 +318,37 @@ def _resolve_sales_order_item(item_row):
         item_row["sales_order_item"] = so_item_name
 
 
+# ⭐ FIX: amended_from was being copied verbatim from the external doc (old,
+# un-prefixed naming), which no longer matches local Work Order names once a
+# company prefix is applied — causing "Could not find Amended From: <name>".
+# Resolve it the same way other links are resolved instead of a blind copy.
+def _apply_amended_from(wo_doc, external, company_abbr):
+    if not _doctype_has_field("Work Order", "amended_from"):
+        return
+
+    raw_value = external.get("amended_from")
+    if not raw_value:
+        wo_doc.amended_from = None
+        return
+
+    resolved = _resolve_link_with_abbr("Work Order", raw_value, company_abbr)
+    if not resolved:
+        # Fall back to plain prefixing in case the original hasn't synced under
+        # a remote_id/custom_remote_id match yet, but still verify it exists.
+        candidate = _prefix_reference(company_abbr, raw_value)
+        if candidate and frappe.db.exists("Work Order", candidate):
+            resolved = candidate
+
+    if not resolved:
+        frappe.log_error(
+            title=f"Work Order amended_from unresolved: {external.name}",
+            message=f"Incoming: {raw_value}\nAbbr: {company_abbr}\n"
+                    f"The Work Order this was amended from may not have been synced yet."
+        )
+
+    wo_doc.amended_from = resolved
+
+
 def _write_back_external_link(external_name, target_name):
     meta = frappe.get_meta("External Work Order")
     for fieldname in EXTERNAL_LINK_BACK_FIELDS:
@@ -252,6 +356,12 @@ def _write_back_external_link(external_name, target_name):
             frappe.db.set_value("External Work Order", external_name, fieldname, target_name, update_modified=False)
             return fieldname
     return None
+
+
+# ⭐ NEW: mark the External Work Order's is_synced checkbox once sync succeeds
+def _mark_external_synced(external_name):
+    if _doctype_has_field("External Work Order", "is_synced"):
+        frappe.db.set_value("External Work Order", external_name, "is_synced", 1, update_modified=False)
 
 
 def _make_required_item_fingerprint(item_row):
@@ -439,6 +549,7 @@ def _do_sync_external_work_order(external_name, company):
         _write_back_external_link(external_name, target_name)
         result = _sync_docstatus(target_name, external)
         result["status"] = "exists"
+        _mark_external_synced(external_name)  # ⭐ NEW
         return result
 
     wo = frappe.new_doc("Work Order")
@@ -454,13 +565,18 @@ def _do_sync_external_work_order(external_name, company):
     for field, value in source_data.items():
         if field in SYSTEM_FIELDS:
             continue
-        if field in ("required_items", "operations", "scrap_items", "remote_id", "production_item", "item_code"):
+        # ⭐ FIX: custom_c_production_plan intentionally excluded from sync entirely
+        if field in ("required_items", "operations", "scrap_items", "remote_id", "production_item", "item_code", "amended_from", "custom_c_production_plan"):
             continue
 
         if _doctype_has_field("Work Order", field):
             wo.set(field, value)
 
     wo.company = company
+
+    # ⭐ FIX: resolve amended_from against local company-prefixed naming instead
+    # of copying the raw remote value verbatim
+    _apply_amended_from(wo, external, company_abbr)
 
     # Resolve the main Work Order Item (ERPNext uses 'production_item')
     raw_item = getattr(external, "production_item", None) or getattr(external, "item_code", None)
@@ -469,11 +585,13 @@ def _do_sync_external_work_order(external_name, company):
 
     if wo.production_item and not wo.get("item_name"):
         wo.item_name = frappe.db.get_value("Item", wo.production_item, "item_name")
-        
+
     if wo.production_item and not wo.get("stock_uom"):
         wo.stock_uom = frappe.db.get_value("Item", wo.production_item, "stock_uom")
 
-    # Resolve parent links
+    # Resolve parent links (this is where bom_no gets set/overwritten with the
+    # verified local name — see _apply_parent_link_mapping and
+    # COMPANY_PREFIXED_PARENT_FIELDS above)
     _apply_parent_link_mapping(wo, external, company_abbr)
 
     # Child Tables
@@ -488,10 +606,17 @@ def _do_sync_external_work_order(external_name, company):
     wo.flags.ignore_permissions = True
     wo.flags.ignore_naming_series = True
 
-    # Temporarily clear BOM No to prevent ERPNext's before_validate hook 
-    # from auto-appending BOM items and causing duplicates
+    # Temporarily clear BOM No to prevent ERPNext's before_validate hook
+    # from auto-appending BOM items and causing duplicates.
+    # ⭐ FIX: bom_no is a mandatory field on Work Order, so blanking it makes
+    # _validate_mandatory() raise MandatoryError before we get a chance to
+    # restore it post-insert. Since the real value (if any) is restored
+    # immediately after insert below, bypass mandatory-field validation for
+    # this insert call only — every other mandatory field was already
+    # populated earlier in this function.
     original_bom_no = wo.bom_no
     wo.bom_no = None
+    wo.flags.ignore_mandatory = True
 
     try:
         wo.insert(
@@ -504,6 +629,15 @@ def _do_sync_external_work_order(external_name, company):
     # Restore BOM No immediately after insert
     if original_bom_no:
         frappe.db.set_value("Work Order", target_name, "bom_no", original_bom_no, update_modified=False)
+    else:
+        # ⭐ FIX: surface the fact that this Work Order was created with no BOM,
+        # since it will now silently sit without one (previous behaviour was
+        # identical here, this just makes it visible instead of silent).
+        frappe.log_error(
+            title=f"Work Order Sync: created without bom_no: {target_name}",
+            message=f"External Work Order '{external_name}' produced no resolvable bom_no; "
+                    f"local Work Order '{target_name}' was created without a BOM."
+        )
 
     # Defensive: kill any duplicates that may have been appended by an update-on-insert or hook
     _dedupe_work_order_children(target_name)
@@ -515,6 +649,7 @@ def _do_sync_external_work_order(external_name, company):
 
     result = _sync_docstatus(target_name, external)
     result["status"] = "synced"
+    _mark_external_synced(external_name)  # ⭐ NEW
     return result
 
 
@@ -602,11 +737,61 @@ def _sync_docstatus(target_name, external):
 
 
 # ==========================================================
-# ENTRY POINT
+# ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_work_order_docs(source_doctype=None, names=None):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order. This guarantees
+    # the same record can never end up in two different chunks, which is the
+    # only scenario that could cause a duplicate Work Order to be created
+    # when chunks run in parallel on different workers.
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk instead
+    # of a single job handling all records serially. Each job gets a
+    # unique job_name so chunks can be tracked/deduped in the RQ job list.
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"wo_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.doctype.external_work_order.external_work_order._sync_external_work_order_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER (processes whatever chunk it receives)
+# ==========================================================
+
+def _sync_external_work_order_docs_job(source_doctype=None, names=None):
     if isinstance(names, str):
         names = json.loads(names)
 

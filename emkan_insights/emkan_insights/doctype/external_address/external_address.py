@@ -4,7 +4,7 @@
 import frappe
 import json
 from frappe.model.document import Document
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalAddress(Document):
 	pass
@@ -84,6 +84,7 @@ def _safe_dedupe(parent_name, parenttype):
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_records(names):
 	if isinstance(names, str):
 		names = json.loads(names)

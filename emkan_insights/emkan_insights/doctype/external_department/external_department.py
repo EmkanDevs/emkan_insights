@@ -3,7 +3,7 @@
 
 # import frappe
 from frappe.model.document import Document
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalDepartment(Document):
     pass
@@ -160,6 +160,7 @@ def upsert_department(src, existing_name):
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_department_docs(source_doctype: str, names):
     """
     Whitelisted entry point to queue department sync.

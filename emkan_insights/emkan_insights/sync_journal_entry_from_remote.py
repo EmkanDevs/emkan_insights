@@ -79,7 +79,7 @@ def _prepare_journal_entry_for_external_sync(item, company_abbr):
 # REMOTE FETCHING
 # ---------------------------------------------------------------------------
 
-def _fetch_remote_names(base_url, headers):
+def _fetch_remote_names(base_url, headers, filters):
     """
     Cheap listing pass: pull only `name` from the remote Journal Entry list.
 
@@ -95,7 +95,7 @@ def _fetch_remote_names(base_url, headers):
     while True:
         params = {
             "fields": json.dumps(["name"]),
-            "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+            "filters": json.dumps(filters),
             "limit_page_length": limit,
             "limit_start": start,
             "order_by": "posting_date asc, name asc",
@@ -229,17 +229,35 @@ def sync_journal_entries_from_remote(
             "Content-Type": "application/json",
         }
 
+        fetch_started_at = frappe.utils.now()
+
+        previous_last_sync = frappe.db.get_value(
+            "External Site Configuration CT",
+            child_docname,
+            "last_sync"
+        )
+
+        filters = [
+            ["docstatus", "in", [0, 1, 2]]
+        ]
+        # if previous_last_sync:
+        #     filters.append([
+        #         "modified",
+        #         ">",
+        #         frappe.utils.get_datetime_str(previous_last_sync)
+        #     ])
+
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
                 _("Local DocType {0} is not installed on this site. "
                   "Run bench migrate and reload.").format(LOCAL_DT)
             )
 
-        names = _fetch_remote_names(base_url, headers)
+        names = _fetch_remote_names(base_url, headers, filters)
 
         if not names:
             _release_sync_lock(child_docname)
-            last_sync = frappe.utils.now()
+            last_sync = fetch_started_at
             frappe.db.set_value(
                 "External Site Configuration CT", child_docname, "last_sync", last_sync
             )
@@ -273,6 +291,7 @@ def sync_journal_entries_from_remote(
                 child_docname=child_docname,
                 remote_names=chunk,
                 is_last_chunk=(idx == len(chunks) - 1),
+                fetch_started_at=fetch_started_at,
             )
 
         return {
@@ -295,7 +314,8 @@ def sync_journal_entries_from_remote(
 @frappe.whitelist()
 def process_journal_entry_chunk(
     site_url, api_key, api_secret, company, company_abbr,
-    configuration_name, child_docname, remote_names, is_last_chunk=False
+    configuration_name, child_docname, remote_names, is_last_chunk=False,
+    fetch_started_at=None
 ):
     """
     Background worker for a single fixed-size chunk of Journal Entry names.
@@ -361,7 +381,7 @@ def process_journal_entry_chunk(
 
     finally:
         if is_last_chunk:
-            last_sync = frappe.utils.now()
+            last_sync = fetch_started_at or frappe.utils.now()
             frappe.db.set_value(
                 "External Site Configuration CT", child_docname, "last_sync", last_sync
             )

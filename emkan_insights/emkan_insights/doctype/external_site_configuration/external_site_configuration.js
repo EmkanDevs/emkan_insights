@@ -375,6 +375,7 @@ function get_mapping() {
         "Project" : "External Project",
         "Request for Quotation": "External Request for Quotation",
         "Supplier Quotation": "External Supplier Quotation",
+        "Item Price" : "External Item Price",
         "Purchase Receipt": "External Purchase Receipt",
         "Quotation": "External Quotation",
         "Delivery Note": "External Delivery Note",

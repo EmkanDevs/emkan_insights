@@ -20,6 +20,7 @@
   "amended_from",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "warehouse_section",
   "scan_barcode",
   "last_scanned_warehouse",
@@ -374,13 +375,18 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-ticket",
  "idx": 70,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-01 13:30:06.804942",
+ "modified": "2026-07-29 12:56:28.260819",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Material Request",

@@ -4,13 +4,14 @@
 import frappe
 import json
 from frappe.model.document import Document
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalModeofPayment(Document):
     pass
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_docs(source_doctype, names):
     """Sync External Mode of Payment to Mode of Payment master."""
     if isinstance(names, str):

@@ -13,6 +13,7 @@
   "disabled",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "applicable_modules_section",
   "selling",
   "buying",
@@ -84,12 +85,17 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "icon-legal",
  "idx": 1,
  "links": [],
- "modified": "2026-03-05 08:34:58.966404",
+ "modified": "2026-07-29 12:45:43.822186",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Terms and Conditions",

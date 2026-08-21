@@ -12,6 +12,7 @@
   "is_signed",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "cb_party",
   "party_name",
   "party_user",
@@ -266,12 +267,17 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "grid_page_length": 50,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-18 12:48:30.109738",
+ "modified": "2026-07-29 12:42:17.732931",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Contract",

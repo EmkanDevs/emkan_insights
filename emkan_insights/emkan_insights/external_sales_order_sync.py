@@ -1,6 +1,8 @@
 import frappe
 import json
 from frappe.utils import cint, flt
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -9,6 +11,9 @@ SYSTEM_FIELDS = {
 }
 
 DEFAULT_WAREHOUSE = "Stores - IMC"
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 
 def _resolve_quotation(remote_qtn_name, company_abbr=None):
@@ -115,80 +120,87 @@ def _log(title, message):
 
 
 def _set_docstatus_sql(doctype, docname, docstatus, status):
-    """Force docstatus on parent + child tables (Stock Entry sync pattern)."""
-    frappe.db.sql("""
-        UPDATE `tab{doctype}`
-        SET docstatus = %s,
-            status = %s,
-            modified = NOW(),
-            modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-        WHERE name = %s
-    """.format(doctype=doctype), (docstatus, status, docname))
+    """
+    INTENTIONALLY DISABLED: Force-setting docstatus via raw SQL bypasses all
+    ERPNext submit/cancel hooks. This leaves GL Entries, linked document
+    statuses, and reserved quantities in an inconsistent state.
 
-    meta = frappe.get_meta(doctype)
-    for df in meta.get_table_fields():
-        child_doctype = df.options
-        if frappe.db.exists("DocType", child_doctype):
-            frappe.db.sql("""
-                UPDATE `tab{child_doctype}`
-                SET docstatus = %s,
-                    modified = NOW(),
-                    modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-                WHERE parent = %s AND parenttype = %s
-            """.format(child_doctype=child_doctype), (docstatus, docname, doctype))
-
-    frappe.clear_document_cache(doctype, docname)
+    This stub is kept so any remaining call sites surface a clear error
+    instead of silently corrupting data. Use the ORM submit()/cancel() path.
+    """
+    raise frappe.ValidationError(
+        f"_set_docstatus_sql('{doctype}', '{docname}', {docstatus}) is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks."
+    )
 
 
 def _force_cancel_doc(doctype, docname):
-    """Force cancel via SQL when normal cancel() fails (same as Stock Entry sync)."""
-    _set_docstatus_sql(doctype, docname, 2, "Cancelled")
+    """
+    INTENTIONALLY DISABLED. See _set_docstatus_sql for rationale.
+    """
+    raise frappe.ValidationError(
+        f"_force_cancel_doc('{doctype}', '{docname}') is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks."
+    )
 
 
 def _force_submit_doc(doctype, docname):
-    """Force submit via SQL when validate/on_submit blocks (e.g. Quotation qty limit)."""
-    _set_docstatus_sql(doctype, docname, 1, "To Deliver and Bill")
+    """
+    INTENTIONALLY DISABLED. See _set_docstatus_sql for rationale.
+    """
+    raise frappe.ValidationError(
+        f"_force_submit_doc('{doctype}', '{docname}') is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks."
+    )
 
 
 def _safe_cancel_doc(doc, log_prefix=""):
-    """Cancel with force-cancel fallback (same as Stock Entry sync)."""
+    """
+    Cancel a document using the ORM (doc.cancel()), which correctly runs all
+    ERPNext lifecycle hooks. If ORM cancel fails, the exception is logged as
+    CRITICAL and re-raised. Raw SQL force-cancel is NOT used as a fallback.
+    """
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()
+        doc.cancel()  # ORM cancel — runs all lifecycle hooks
         return True
-    except Exception as normal_cancel_err:
-        _log(f"{log_prefix} normal cancel failed, attempting force cancel",
-             f"Error: {str(normal_cancel_err)}")
-        try:
-            _force_cancel_doc(doc.doctype, doc.name)
-            return True
-        except Exception as force_cancel_err:
-            _log(f"{log_prefix} force cancel also failed",
-                 f"Normal: {str(normal_cancel_err)}\nForce: {str(force_cancel_err)}")
-            raise
+    except Exception as cancel_err:
+        frappe.log_error(
+            title=f"CRITICAL: {log_prefix} ORM cancel failed — manual intervention required",
+            message=(
+                f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The document has NOT been cancelled. Investigate why cancel() failed "
+                f"and cancel the document manually via ERPNext."
+            )
+        )
+        raise
 
 
 def _safe_submit_doc(doc, log_prefix=""):
-    """Submit with force-submit fallback when Quotation over-limit etc. blocks."""
+    """
+    Submit a document using the ORM (doc.submit()), which correctly runs all
+    ERPNext lifecycle hooks. If ORM submit fails, the exception is logged as
+    CRITICAL and re-raised. Raw SQL force-submit is NOT used as a fallback.
+    """
     try:
         doc.flags.ignore_permissions = True
-        doc.submit()
+        doc.submit()  # ORM submit — runs all lifecycle hooks
         return True
     except Exception as submit_err:
-        # submit() may have already written docstatus=1 before on_submit threw
+        # submit() may have already written docstatus=1 before on_submit threw.
+        # If so, treat as succeeded (same guard as before).
         current = cint(frappe.db.get_value(doc.doctype, doc.name, "docstatus"))
         if current == 1:
             return True
 
-        _log(f"{log_prefix} normal submit failed, attempting force submit",
-             f"Error: {str(submit_err)}")
-        try:
-            _force_submit_doc(doc.doctype, doc.name)
-            return True
-        except Exception as force_submit_err:
-            _log(f"{log_prefix} force submit also failed",
-                 f"Normal: {str(submit_err)}\nForce: {str(force_submit_err)}")
-            raise
+        frappe.log_error(
+            title=f"CRITICAL: {log_prefix} ORM submit failed — manual intervention required",
+            message=(
+                f"Error: {str(submit_err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The document has NOT been submitted. Investigate why submit() failed."
+            )
+        )
+        raise
 
 
 def _sync_existing_docstatus(existing_name, external):
@@ -254,17 +266,70 @@ def _sync_existing_docstatus(existing_name, external):
         return {"name": existing_name, "status": "exists", "error": str(trans_err)}
 
 
-@frappe.whitelist()
-def sync_external_sales_order_docs(source_doctype, names):
+# ==========================================================
+# WHITELIST ENTRY POINT (CHUNKED)
+# ==========================================================
 
+@frappe.whitelist()
+@filter_kwargs
+def sync_external_sales_order_docs(source_doctype, names):
     if isinstance(names, str):
         names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"so_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_sales_order_sync._sync_sales_order_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_sales_order_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
 
     results = []
 
     for name in names:
         try:
-            ext_so = frappe.get_doc(source_doctype, name)
+            with sync_record_guard(source_doctype, name):
+                ext_so = frappe.get_doc(source_doctype, name)
+            sync_started_at = ext_so.modified
             remote_id = ext_so.name
 
             # ------------------------------------------------
@@ -285,7 +350,13 @@ def sync_external_sales_order_docs(source_doctype, names):
 
             if existing_so:
                 # Same as Stock Entry: still sync docstatus on re-sync
-                results.append(_sync_existing_docstatus(existing_so, ext_so))
+                existing_result = _sync_existing_docstatus(existing_so, ext_so)
+                results.append(existing_result)
+                ext_so.db_set(
+                    "last_synced_on",
+                    sync_started_at,
+                    update_modified=False
+                )
                 continue
 
             so = frappe.new_doc("Sales Order")
@@ -548,23 +619,20 @@ def sync_external_sales_order_docs(source_doctype, names):
                         "items_count": actual_item_count,
                     })
                 except Exception as cancel_err:
-                    _log(f"Sales Order {target_name} CANCEL FAILED",
-                         frappe.get_traceback())
-                    try:
-                        _force_cancel_doc("Sales Order", target_name)
-                        results.append({
-                            "name": target_name,
-                            "status": "synced",
-                            "docstatus": 2,
-                            "items_count": actual_item_count,
-                        })
-                    except Exception:
-                        results.append({
-                            "name": target_name,
-                            "status": "synced_submitted",
-                            "error": f"Cancel failed: {str(cancel_err)}",
-                            "items_count": actual_item_count,
-                        })
+                    # ORM submit/cancel failed. Do NOT fall back to raw SQL.
+                    # Leave the SO at its current docstatus; _sync_existing_docstatus
+                    # will retry on the next sync run.
+                    _log(
+                        f"Sales Order {target_name} CANCEL FAILED — CRITICAL",
+                        f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The SO may be stuck at docstatus=1. Cancel manually via ERPNext."
+                    )
+                    results.append({
+                        "name": target_name,
+                        "status": "synced_submitted",
+                        "error": f"Cancel failed: {str(cancel_err)}",
+                        "items_count": actual_item_count,
+                    })
             else:
                 results.append({
                     "name": target_name,
@@ -572,6 +640,12 @@ def sync_external_sales_order_docs(source_doctype, names):
                     "docstatus": 0,
                     "items_count": actual_item_count,
                 })
+
+            ext_so.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
 
         except Exception as e:
             frappe.db.rollback()

@@ -12,7 +12,8 @@
   "uom_name",
   "must_be_whole_number",
   "remote_id",
-  "source_site"
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -47,12 +48,17 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-compass",
  "idx": 1,
  "links": [],
- "modified": "2026-05-08 09:32:39.618187",
+ "modified": "2026-07-29 12:36:32.812968",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Uom",

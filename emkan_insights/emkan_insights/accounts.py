@@ -95,7 +95,19 @@ def sync_account_docs(source_doctype: str, names, company: str):
         names = json.loads(names)
 
     for name in names:
-        sync_external_account(name, company)
+        try:
+            external = frappe.get_doc(source_doctype, name)
+            sync_started_at = external.modified
+
+            result = sync_external_account(name, company)
+
+            external.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"Account Sync Failed: {name}")
 
     return "Success"
 

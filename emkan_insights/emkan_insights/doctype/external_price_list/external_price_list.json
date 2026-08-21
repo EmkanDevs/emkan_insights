@@ -19,7 +19,8 @@
   "column_break_3",
   "countries",
   "remote_id",
-  "source_site"
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -91,13 +92,18 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-tags",
  "idx": 1,
  "links": [],
  "max_attachments": 1,
- "modified": "2026-02-09 10:17:30.083964",
+ "modified": "2026-07-29 12:48:51.728075",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Price List",

@@ -3,7 +3,7 @@
 
 # import frappe
 from frappe.model.document import Document
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalDesignation(Document):
     pass
@@ -112,6 +112,7 @@ def upsert_designation(src, existing_name):
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_designation_docs(source_doctype: str, names):
     """
     Whitelisted entry point to queue designation sync.

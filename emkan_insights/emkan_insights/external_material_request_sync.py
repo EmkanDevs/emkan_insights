@@ -1,56 +1,143 @@
 import frappe
 import json
+from frappe.utils import cint
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+
+VALID_MATERIAL_REQUEST_STATUSES = {
+    "Draft",
+    "Submitted",
+    "Stopped",
+    "Cancelled",
+    "Pending",
+    "Partially Ordered",
+    "Ordered",
+    "Issued",
+    "Transferred",
+    "Received",
+}
+
+
+TARGET_SYNC_LOCK_TTL = 7200
+TARGET_BATCH_SIZE = 500
+
+
+def _target_sync_lock_key(source_doctype):
+    return f"external_target_sync_lock:{source_doctype}"
+
+
+def _acquire_target_sync_lock(source_doctype):
+    return bool(
+        frappe.cache().redis.set(
+            _target_sync_lock_key(source_doctype),
+            "1",
+            nx=True,
+            ex=TARGET_SYNC_LOCK_TTL,
+        )
+    )
+
+
+def _release_target_sync_lock(source_doctype):
+    frappe.cache().redis.delete(_target_sync_lock_key(source_doctype))
+
+
+def _enqueue_material_request_target_batch(source_doctype, names, batch_index=0):
+    if batch_index * TARGET_BATCH_SIZE >= len(names):
+        return
+
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.external_material_request_sync.sync_bulk_material_requests",
+        queue="long",
+        names=names,
+        source_doctype=source_doctype,
+        batch_index=batch_index,
+        timeout=2000,
+        job_name=f"mr_sync_batch_{batch_index + 1}"
+    )
+
+
+def _get_safe_material_request_status(external):
+    status = (external.get("status") or "").strip()
+    if status in VALID_MATERIAL_REQUEST_STATUSES:
+        return status
+
+    docstatus = cint(external.get("docstatus"))
+    if docstatus == 1:
+        return "Submitted"
+    if docstatus == 2:
+        return "Cancelled"
+    return "Draft"
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_material_request_docs(source_doctype: str, names):
     if isinstance(names, str):
         names = json.loads(names)
 
-    names = list(dict.fromkeys(names))
-    chunk_size = 500
+    if not names:
+        names = frappe.db.sql(f"""
+            SELECT name
+            FROM `tab{source_doctype}`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
 
-    for i in range(0, len(names), chunk_size):
-        chunk = names[i:i + chunk_size]
-        frappe.enqueue(
-            "emkan_insights.emkan_insights.external_material_request_sync.sync_bulk_material_requests",
-            queue="long",
-            names=chunk,
-            timeout=2000,
-            job_name=f"mr_sync_batch_{i // chunk_size + 1}"
-        )
+    names = list(dict.fromkeys(names))
+    if not names:
+        return {"message": "No External Material Request records pending sync", "queued": 0, "batches": 0}
+
+    if not _acquire_target_sync_lock(source_doctype):
+        return {
+            "message": f"{source_doctype} target sync is already running",
+            "queued": 0,
+            "batches": 0
+        }
+
+    _enqueue_material_request_target_batch(source_doctype, names, batch_index=0)
 
     return {
-        "message": f"Sync Queued: {len(names)} records in {(len(names) + chunk_size - 1) // chunk_size} batches",
+        "message": f"Sync Queued: {len(names)} records in {(len(names) + TARGET_BATCH_SIZE - 1) // TARGET_BATCH_SIZE} sequential batches",
         "queued": len(names),
-        "batches": (len(names) + chunk_size - 1) // chunk_size
+        "batches": (len(names) + TARGET_BATCH_SIZE - 1) // TARGET_BATCH_SIZE
     }
 
 
-def sync_bulk_material_requests(names):
+def sync_bulk_material_requests(names, source_doctype="External Material Request", batch_index=0):
     """
-    Processed in background queue.
-    All database writes happen within a single transaction.
-    Frappe automatically commits the transaction when the background job finishes.
+    Processed as chained background batches so only one batch writes target
+    Material Requests at a time.
     """
+    batch_index = int(batch_index or 0)
+    chunk = names[batch_index * TARGET_BATCH_SIZE:(batch_index + 1) * TARGET_BATCH_SIZE]
     results = []
 
-    for name in names:
+    for name in chunk:
+        savepoint = f"mr_sync_{frappe.generate_hash(length=10)}"
         try:
-            external = frappe.get_doc("External Material Request", name)
+            with sync_record_guard("External Material Request", name):
+                frappe.db.savepoint(savepoint)
 
-            if not external.company:
-                results.append({
-                    "name": name,
-                    "action": "error",
-                    "error": f"Company missing in External Material Request: {name}"
-                })
-                continue
+                external = frappe.get_doc("External Material Request", name)
 
-            res = sync_external_material_request(name, external.company)
-            results.append(res)
+                if not external.company:
+                    results.append({
+                        "name": name,
+                        "action": "error",
+                        "error": f"Company missing in External Material Request: {name}"
+                    })
+                    continue
+
+                res = sync_external_material_request(name, external.company)
+                results.append(res)
+                frappe.db.commit()
 
         except Exception as e:
+            try:
+                frappe.db.rollback(save_point=savepoint)
+            except Exception:
+                frappe.db.rollback()
             frappe.log_error(frappe.get_traceback(), f"MR Sync Failed: {name}")
             results.append({
                 "name": name,
@@ -71,6 +158,12 @@ def sync_bulk_material_requests(names):
         title="Material Request Sync Batch Complete",
         message=f"Summary: {summary}\nDetails: {json.dumps(results, default=str, indent=2)}"
     )
+
+    next_batch_index = batch_index + 1
+    if next_batch_index * TARGET_BATCH_SIZE < len(names):
+        _enqueue_material_request_target_batch(source_doctype, names, next_batch_index)
+    else:
+        _release_target_sync_lock(source_doctype)
 
     return {"summary": summary, "results": results}
 
@@ -259,6 +352,8 @@ def _resolve_local_mr_target(external, company):
 
 def sync_external_material_request(external_name, company):
     external = frappe.get_doc("External Material Request", external_name)
+    sync_started_at = external.modified
+    safe_status = _get_safe_material_request_status(external)
 
     target_name = _resolve_local_mr_target(external, company)
     expected_name = _build_local_mr_name(company, external.name)
@@ -275,7 +370,7 @@ def sync_external_material_request(external_name, company):
             "company": company,
             "transaction_date": external.transaction_date,
             "schedule_date": external.schedule_date,
-            "status": external.status or "Draft",
+            "status": safe_status,
             "remote_id": external.name,
         }
         for field in ["buying_price_list", "letter_head", "set_warehouse",
@@ -384,16 +479,48 @@ def sync_external_material_request(external_name, company):
                 else:
                     frappe.db.delete("Material Request Item", r.name)
 
-        remote_status = frappe.utils.cint(external.docstatus)
-        if remote_status > 0:
-            frappe.db.set_value(
-                "Material Request", target_name,
-                "docstatus", remote_status, update_modified=False
-            )
+        remote_status = cint(external.docstatus)
+        if remote_status == 1:
+            try:
+                mr_doc = frappe.get_doc("Material Request", target_name)
+                mr_doc.flags.ignore_permissions = True
+                mr_doc.submit()  # ORM submit — runs all lifecycle hooks
+            except Exception as submit_err:
+                frappe.log_error(
+                    title=f"CRITICAL: MR {target_name} ORM submit failed — manual intervention required",
+                    message=(
+                        f"Error: {str(submit_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The Material Request has NOT been submitted. "
+                        f"Investigate why submit() failed and submit manually via ERPNext."
+                    )
+                )
+                raise
+        elif remote_status == 2:
+            try:
+                mr_doc = frappe.get_doc("Material Request", target_name)
+                mr_doc.flags.ignore_permissions = True
+                mr_doc.submit()  # Must submit first before cancel
+                mr_doc.reload()
+                mr_doc.cancel()  # ORM cancel — runs all lifecycle hooks
+            except Exception as lifecycle_err:
+                frappe.log_error(
+                    title=f"CRITICAL: MR {target_name} ORM submit/cancel failed — manual intervention required",
+                    message=(
+                        f"Error: {str(lifecycle_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The Material Request lifecycle could not complete. "
+                        f"Investigate and correct the document manually via ERPNext."
+                    )
+                )
+                raise
 
         frappe.db.set_value(
             "External Material Request", external.name,
             "remote_id", target_name
+        )
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
         )
 
         return {"name": target_name, "action": "updated", "skipped": skipped}
@@ -407,7 +534,7 @@ def sync_external_material_request(external_name, company):
         mr.company = company
         mr.transaction_date = external.transaction_date
         mr.schedule_date = external.schedule_date
-        mr.status = external.status or "Draft"
+        mr.status = safe_status
         mr.remote_id = external.name
 
         for field in ["buying_price_list", "letter_head", "set_warehouse",
@@ -429,26 +556,55 @@ def sync_external_material_request(external_name, company):
                 "custom_remote_id": item_data["remote_row_id"],
             })
 
-        mr.db_insert()
+        # ORM insert: runs validate/before_insert/after_insert hooks and
+        # cascades the already-appended child rows automatically.
+        # ignore_mandatory=True tolerates missing non-critical fields
+        # (e.g. items table validated after insert).
+        # flags.name_set=True (set above) preserves the custom name.
+        mr.insert(ignore_permissions=True, ignore_mandatory=True)
 
-        for item in mr.items:
-            item.parent = mr.name
-            item.parenttype = "Material Request"
-            item.parentfield = "items"
-            if not item.name:
-                item.name = frappe.generate_hash("", 10)
-            item.db_insert()
-
-        remote_status = frappe.utils.cint(external.docstatus)
-        if remote_status > 0:
-            frappe.db.set_value(
-                "Material Request", mr.name,
-                "docstatus", remote_status, update_modified=False
-            )
+        remote_status = cint(external.docstatus)
+        if remote_status == 1:
+            try:
+                mr_doc = frappe.get_doc("Material Request", mr.name)
+                mr_doc.flags.ignore_permissions = True
+                mr_doc.submit()  # ORM submit — runs all lifecycle hooks
+            except Exception as submit_err:
+                frappe.log_error(
+                    title=f"CRITICAL: MR {mr.name} ORM submit failed — manual intervention required",
+                    message=(
+                        f"Error: {str(submit_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The Material Request has NOT been submitted. "
+                        f"Investigate why submit() failed and submit manually via ERPNext."
+                    )
+                )
+                raise
+        elif remote_status == 2:
+            try:
+                mr_doc = frappe.get_doc("Material Request", mr.name)
+                mr_doc.flags.ignore_permissions = True
+                mr_doc.submit()  # Must submit first before cancel
+                mr_doc.reload()
+                mr_doc.cancel()  # ORM cancel — runs all lifecycle hooks
+            except Exception as lifecycle_err:
+                frappe.log_error(
+                    title=f"CRITICAL: MR {mr.name} ORM submit/cancel failed — manual intervention required",
+                    message=(
+                        f"Error: {str(lifecycle_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The Material Request lifecycle could not complete. "
+                        f"Investigate and correct the document manually via ERPNext."
+                    )
+                )
+                raise
 
         frappe.db.set_value(
             "External Material Request", external.name,
             "remote_id", mr.name
+        )
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
         )
 
         return {"name": mr.name, "action": "created", "skipped": skipped}

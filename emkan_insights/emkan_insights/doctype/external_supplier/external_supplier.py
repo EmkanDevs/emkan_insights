@@ -2,7 +2,9 @@
 # For license information, please see license.txt
 
 import frappe
+import json
 from frappe.model.document import Document
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 
 class ExternalSupplier(Document):
@@ -57,23 +59,26 @@ class ExternalSupplier(Document):
 from typing import List, Union
 
 
-@frappe.whitelist()
-def sync_external_suppliers(
-    external_suppliers: Union[str, List[str], None] = None,
-    names: Union[str, List[str], None] = None,
-    source_doctype: str | None = None,
-):
-    from emkan_insights.emkan_insights.external_sync import sync_external_docs
-    # Accept both payload formats:
-    # 1) external_suppliers=[...]
-    # 2) names=[...] (used by list actions)
-    supplier_names = external_suppliers or names
-    return sync_external_docs(source_doctype="External Supplier", names=supplier_names)
+# @frappe.whitelist()
+# def sync_external_suppliers(
+#     external_suppliers: Union[str, List[str], None] = None,
+#     names: Union[str, List[str], None] = None,
+#     source_doctype: str | None = None,
+# ):
+#     from emkan_insights.emkan_insights.external_sync import sync_external_docs
+#     # Accept both payload formats:
+#     # 1) external_suppliers=[...]
+#     # 2) names=[...] (used by list actions)
+#     supplier_names = external_suppliers or names
+#     return sync_external_docs(source_doctype="External Supplier", names=supplier_names)
 
 
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_records(names):
+    if isinstance(names, str):
+        names = json.loads(names)
     from emkan_insights.emkan_insights.external_sync import sync_external_docs
     return sync_external_docs(source_doctype="External Supplier", names=names)

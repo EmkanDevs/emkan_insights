@@ -24,6 +24,7 @@
   "to_date",
   "from_delivery_date",
   "to_delivery_date",
+  "last_synced_on",
   "sales_orders_detail",
   "get_sales_orders",
   "sales_orders",
@@ -447,13 +448,18 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-calendar",
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-10 14:28:57.720979",
+ "modified": "2026-07-29 13:10:15.826843",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Production Plan",

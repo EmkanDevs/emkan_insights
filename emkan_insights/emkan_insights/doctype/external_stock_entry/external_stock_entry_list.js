@@ -26,8 +26,7 @@ frappe.listview_settings['External Stock Entry'] = {
                             source_doctype: 'External Stock Entry',
                             names: names
                         },
-                        freeze: true,
-                        freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
+                       
                         callback(r) {
                             console.log("Callback received:", r);
                             if (r.exc) {

@@ -136,6 +136,7 @@ app_include_js = [
 override_doctype_class = {
 	"Contact": "emkan_insights.emkan_insights.override.contact.Contact",
     "Lead": "emkan_insights.emkan_insights.override.lead.Lead"
+
 }
 
 # Document Events
@@ -159,6 +160,20 @@ doc_events = {
 # ---------------
 
 # scheduler_events = {
+#     "cron": {
+#         # Phase 1 – fetch from remote site (enqueues background API calls)
+#         "0 * * * *": [
+#             "emkan_insights.emkan_insights.scheduler.fetch_scheduler"
+#         ],
+#         # Phase 2 – sync External Warehouse → Warehouse (runs after background
+#         # workers have finished writing the fetched data to the DB)
+#         "30 * * * *": [
+#             "emkan_insights.emkan_insights.scheduler.sync_external_docs_scheduler"
+#         ],
+#     }
+# }
+
+
 # 	"all": [
 # 		"emkan_insights.tasks.all"
 # 	],

@@ -3,8 +3,9 @@ import json
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 from contextlib import contextmanager
-
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from frappe import _
 class ExternalStockEntry(Document):
     pass
 
@@ -20,6 +21,44 @@ IGNORE_ITEM_FIELDS = {
     "prevdoc_docname", "so_detail", "against_sales_order",
     "last_scanned_warehouse",
 }
+
+# ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
+CHUNK_SIZE = 300
+TARGET_SYNC_LOCK_TTL = 7200
+
+
+def _target_sync_lock_key(source_doctype):
+    return f"external_target_sync_lock:{source_doctype}"
+
+
+def _acquire_target_sync_lock(source_doctype):
+    return bool(
+        frappe.cache().redis.set(
+            _target_sync_lock_key(source_doctype),
+            "1",
+            nx=True,
+            ex=TARGET_SYNC_LOCK_TTL,
+        )
+    )
+
+
+def _release_target_sync_lock(source_doctype):
+    frappe.cache().redis.delete(_target_sync_lock_key(source_doctype))
+
+
+def _enqueue_stock_entry_target_batch(source_doctype, names, batch_index=0):
+    if batch_index * CHUNK_SIZE >= len(names):
+        return
+
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.external_stock_entry_sync._sync_stock_entry_docs_job",
+        queue="long",
+        job_name=f"se_sync_chunk_{frappe.generate_hash(length=8)}_{batch_index}",
+        timeout=1000,
+        source_doctype=source_doctype,
+        names=names,
+        batch_index=batch_index,
+    )
 
 
 # ==========================================================
@@ -54,6 +93,7 @@ STOCK_ENTRY_PARENT_LINKS = {
     "project": "Project",
     "credit_note": "Stock Entry",
     "outgoing_stock_entry": "Stock Entry",
+    "amended_from": "Stock Entry",
     "stock_entry_type": "Stock Entry Type",
     "from_warehouse": "Warehouse",
     "to_warehouse": "Warehouse",
@@ -106,6 +146,22 @@ COMPANY_PREFIXED_ITEM_FIELDS = {
     "reference_purchase_receipt",
 }
 
+# Fields that, together, are used to detect *genuine* accidental duplicate
+# inserts (e.g. a retried sync run). Kept intentionally narrow+specific so
+# legitimately distinct rows are never collapsed. See _make_item_fingerprint().
+DEDUP_KEY_FIELDS = (
+    "item_code",
+    "s_warehouse",
+    "t_warehouse",
+    "qty",
+    "batch_no",
+    "serial_no",
+    "cost_center",
+    "expense_account",
+    "basic_rate",
+    "serial_and_batch_bundle",
+)
+
 
 # ==========================================================
 # FORCE CANCEL & SAFE CANCEL HELPERS
@@ -118,61 +174,48 @@ def _log(title, message):
 
 def _force_cancel_doc(doctype, docname):
     """
-    Force cancel a document by directly updating the database.
-    Use as fallback when normal cancel() fails due to linked docs or validations.
+    INTENTIONALLY DISABLED: Force-cancelling stock-affecting documents by raw
+    SQL is dangerous — it flips docstatus without reversing Stock Ledger Entries
+    or GL Entries, leaving phantom inventory and incorrect accounting balances.
+
+    If the ORM cancel() fails, the correct action is to log a CRITICAL error
+    and require manual intervention — not to silently corrupt stock data.
+
+    This function is kept as a named stub so call-site references surface
+    a clear ValidationError rather than a silent no-op.
     """
-    # Update main document
-    frappe.db.sql("""
-        UPDATE `tab{doctype}`
-        SET docstatus = 2, 
-            status = 'Cancelled', 
-            modified = NOW(), 
-            modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-        WHERE name = %s
-    """.format(doctype=doctype), docname)
-
-    # Update child tables
-    meta = frappe.get_meta(doctype)
-    for df in meta.get_table_fields():
-        child_doctype = df.options
-        if frappe.db.exists("DocType", child_doctype):
-            frappe.db.sql("""
-                UPDATE `tab{child_doctype}`
-                SET docstatus = 2, 
-                    modified = NOW(), 
-                    modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-                WHERE parent = %s AND parenttype = %s
-            """.format(child_doctype=child_doctype), (docname, doctype))
-
-    # Clear document cache
-    frappe.clear_document_cache(doctype, docname)
+    raise frappe.ValidationError(
+        f"Force-cancelling stock document '{doctype}' '{docname}' via raw SQL is "
+        f"not allowed: it bypasses Stock Ledger Entry and GL Entry reversal, "
+        f"creating phantom inventory and accounting drift. "
+        f"Investigate why doc.cancel() failed and resolve manually."
+    )
 
 
 def _safe_cancel_doc(doc, log_prefix=""):
     """
-    Safely cancel a document with fallback to force cancel.
-    Returns True if successful, raises exception if both methods fail.
+    Cancel a document using the ORM (doc.cancel()), which correctly reverses
+    Stock Ledger Entries and GL Entries.
+
+    If the ORM cancel fails, the exception is logged as CRITICAL and re-raised.
+    Force-cancellation via raw SQL is intentionally NOT used as a fallback
+    because it leaves SLEs and GL Entries unreversed (phantom inventory /
+    accounting drift).
     """
-    # First, try normal cancel
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()  # ORM cancel writes to DB
-
+        doc.cancel()  # ORM cancel — reverses SLE + GL Entries
         _log(f"{log_prefix} cancelled normally", "")
         return True
-    except Exception as normal_cancel_err:
-        _log(f"{log_prefix} normal cancel failed, attempting force cancel",
-             f"Error: {str(normal_cancel_err)}")
-
-        # Fallback: Force cancel via SQL
-        try:
-            _force_cancel_doc(doc.doctype, doc.name)
-            _log(f"{log_prefix} force cancelled successfully", "")
-            return True
-        except Exception as force_cancel_err:
-            _log(f"{log_prefix} force cancel also failed",
-                 f"Normal: {str(normal_cancel_err)}\nForce: {str(force_cancel_err)}")
-            raise
+    except Exception as cancel_err:
+        _log(
+            f"CRITICAL: {log_prefix} ORM cancel failed — manual intervention required",
+            f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+            f"The document has NOT been force-cancelled. Its Stock Ledger Entries "
+            f"and GL Entries remain active. Investigate why cancel() failed and "
+            f"cancel the document manually via ERPNext to ensure ledger integrity."
+        )
+        raise
 
 
 # ==========================================================
@@ -325,8 +368,27 @@ def _resolve_material_request(remote_mr_name, company_abbr=None):
 
 
 def _remap_material_request_links(stock_entry_name, external, company_abbr):
+    """
+    Resolve and write local Material Request links on Stock Entry child rows.
 
+    IMPORTANT: This function may only modify child rows when the parent Stock
+    Entry is still a Draft (docstatus == 0).  For Submitted or Cancelled
+    documents it logs a warning and returns without touching any data — direct
+    modification of submitted/cancelled child rows bypasses the ERPNext
+    accounting cycle and must never be done here.
+    """
     if not stock_entry_name or not external:
+        return
+
+    # Guard: only operate on Draft Stock Entries.
+    local_docstatus = frappe.db.get_value("Stock Entry", stock_entry_name, "docstatus")
+    if cint(local_docstatus) != 0:
+        _log(
+            f"Stock Entry {stock_entry_name} MR remap skipped — not a Draft",
+            f"docstatus={local_docstatus}. Material Request links can only be "
+            f"repaired while the document is in Draft state. Submit or Cancelled "
+            f"documents must not be modified directly.",
+        )
         return
 
     external_by_item = {}
@@ -475,41 +537,39 @@ def _make_item_fingerprint(item_row):
     )
 
 
-def _deduplicate_child_table(parent_name, child_table, key_fields):
-    """Remove duplicate child rows based on key fields."""
-    rows = frappe.get_all(
-        child_table,
-        filters={"parent": parent_name},
-        fields=["name", "creation"] + list(key_fields),
-        order_by="creation asc"
-    )
-
-    seen = set()
-    to_delete = []
-
-    for row in rows:
-        key = tuple(str(row.get(f) or "").strip() for f in key_fields)
-        if key in seen:
-            to_delete.append(row.name)
-        else:
-            seen.add(key)
-
-    for name in to_delete:
-        frappe.db.sql(f"DELETE FROM `tab{child_table}` WHERE name = %s", (name,))
+# _deduplicate_child_table() and _safe_dedupe() have been removed.
+# Deduplication is now performed BEFORE ORM insert via _make_item_fingerprint()
+# inside _build_child_rows(). Post-insert child-table deletion via raw SQL is
+# intentionally not done — it would bypass ERPNext's child-row bookkeeping.
 
 
-def _safe_dedupe(parent_name):
-    """Safely deduplicate Stock Entry child tables."""
-    try:
-        _deduplicate_child_table(
-            parent_name,
-            "Stock Entry Detail",
-            ("item_code", "s_warehouse", "t_warehouse", "qty", "batch_no", "serial_no")
+def _repair_parent_links(existing_name, external, company_abbr):
+    """Rewrite remote parent link values on an existing draft Stock Entry."""
+    updates = {}
+
+    for fieldname, linked_doctype in STOCK_ENTRY_PARENT_LINKS.items():
+        if not _doctype_has_field("Stock Entry", fieldname):
+            continue
+
+        raw_value = getattr(external, fieldname, None)
+        if not raw_value:
+            updates[fieldname] = None
+            continue
+
+        if fieldname in COMPANY_PREFIXED_PARENT_FIELDS:
+            updates[fieldname] = _prefix_reference(company_abbr, raw_value)
+            continue
+
+        updates[fieldname] = _resolve_link_with_prefix(
+            linked_doctype, raw_value, company_abbr
         )
-    except Exception:
-        _log(
-            title=f"Stock Entry dedupe failed for {parent_name}",
-            message=frappe.get_traceback(),
+
+    if updates:
+        frappe.db.set_value(
+            "Stock Entry",
+            existing_name,
+            _filter_valid_fields("Stock Entry", updates),
+            update_modified=False,
         )
 
 
@@ -517,9 +577,13 @@ def _safe_dedupe(parent_name):
 # HANDLE EXISTING DOC STATUS SYNC
 # ==========================================================
 
-def _sync_existing_docstatus(existing_name, external):
+def _sync_existing_docstatus(existing_name, external, company_abbr=None):
     """
     Handle docstatus sync for already-existing Stock Entry documents.
+
+    Cancel path strictly uses ORM doc.cancel() to ensure Stock Ledger Entries
+    and GL Entries are properly reversed. Force-cancellation via raw SQL is
+    intentionally not used — see _safe_cancel_doc() for rationale.
     """
     local_docstatus = frappe.db.get_value("Stock Entry", existing_name, "docstatus")
     target_docstatus = cint(external.docstatus)
@@ -528,43 +592,69 @@ def _sync_existing_docstatus(existing_name, external):
         return {"name": existing_name, "status": "exists"}
 
     try:
+        if cint(local_docstatus) == 0 and company_abbr:
+            _repair_parent_links(existing_name, external, company_abbr)
+            frappe.clear_document_cache("Stock Entry", existing_name)
+
         se = frappe.get_doc("Stock Entry", existing_name)
         se.flags.ignore_permissions = True
 
         if target_docstatus == 2:
-            # External is cancelled - we need to cancel local too
+            # External is cancelled — drive the local doc to cancelled too.
             if local_docstatus == 0:
-                # Draft locally -> submit first, then cancel
-                se.submit()  # ORM submit writes to DB
-                se = frappe.get_doc("Stock Entry", existing_name)
+                # Draft locally → must submit first so ERPNext can cancel normally
+                # (cancel() requires docstatus=1). If submit fails we log the
+                # error and return — the doc stays as a draft flagged for review.
+                # We do NOT force-cancel from Draft: a draft with no SLE/GL
+                # entries yet can simply be deleted manually if not needed.
+                try:
+                    se.submit()  # ORM submit — creates SLE + GL entries
+                    se = frappe.get_doc("Stock Entry", existing_name)
+                except Exception as submit_err:
+                    _log(
+                        f"CRITICAL: Stock Entry {existing_name} submit-before-cancel failed "
+                        f"— document left in Draft for manual review",
+                        f"Error: {str(submit_err)}\n\n{frappe.get_traceback()}\n\n"
+                        f"The document has NOT been cancelled. Resolve the submit "
+                        f"failure manually, then cancel via ERPNext."
+                    )
+                    return {
+                        "name": existing_name,
+                        "status": "exists",
+                        "warning": "submit-before-cancel failed; left in Draft — manual intervention required",
+                        "error": str(submit_err),
+                    }
 
-            # Now cancel (whether it was 0 or 1 before)
+            # Now cancel via ORM — this reverses SLE + GL entries correctly.
+            # _safe_cancel_doc() will raise if cancel() fails; the exception
+            # propagates to savepoint_context which rolls back the transaction.
             _safe_cancel_doc(se, log_prefix=f"Stock Entry {existing_name}")
-            _safe_dedupe(se.name)
 
             # Verify
-            final_docstatus = frappe.db.get_value("Stock Entry", se.name, "docstatus")
+            final_docstatus = frappe.db.get_value("Stock Entry", existing_name, "docstatus")
             if final_docstatus == 2:
-                return {"name": se.name, "status": "docstatus_synced", "docstatus": 2}
+                return {"name": existing_name, "status": "docstatus_synced", "docstatus": 2}
             else:
-                _log(f"Stock Entry {se.name} existing doc cancel verification failed",
-                     f"Expected docstatus=2, got {final_docstatus}")
-                return {"name": se.name, "status": "exists", "warning": "cancel verification failed"}
+                _log(
+                    f"Stock Entry {existing_name} cancel verification failed",
+                    f"Expected docstatus=2, got {final_docstatus}"
+                )
+                return {"name": existing_name, "status": "exists", "warning": "cancel verification failed"}
 
         elif target_docstatus == 1 and local_docstatus == 0:
             se.submit()  # ORM submit writes to DB
-            _safe_dedupe(se.name)
             return {"name": se.name, "status": "docstatus_synced", "docstatus": 1}
 
         else:
-            _log(f"Stock Entry {existing_name} unhandled docstatus transition",
-                f"local={local_docstatus}, external={target_docstatus}")
+            _log(
+                f"Stock Entry {existing_name} unhandled docstatus transition",
+                f"local={local_docstatus}, external={target_docstatus}"
+            )
             return {"name": existing_name, "status": "exists", "warning": "unhandled transition"}
 
     except Exception as trans_err:
         _log(f"Stock Entry {existing_name} docstatus transition failed", frappe.get_traceback())
         return {"name": existing_name, "status": "exists", "error": str(trans_err)}
-
 
 # ==========================================================
 # BUILD HEADER VALUES FOR DIRECT SQL INSERT
@@ -685,97 +775,168 @@ def _build_additional_cost_rows(external):
 
 
 # ==========================================================
-# DIRECT SQL INSERT HELPERS (NO COMMIT)
+# ORM-BASED INSERT HELPER (NO COMMIT)
 # ==========================================================
 
 def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows):
     """
-    Insert Stock Entry and child tables directly via SQL.
+    Insert Stock Entry and child tables via the Frappe ORM (frappe.new_doc /
+    doc.insert()) instead of raw SQL INSERT statements.
+
+    This ensures the Stock Entry controller's full lifecycle runs on insert:
+      - validate() / set_stock_entry_type()
+      - calculate_rate_and_amount() (stock_qty, basic_amount, etc.)
+      - conversion_factor → stock_qty derivation
+      - warehouse / work-order / BOM validations
+
+    Rate preservation strategy:
+      1. Snapshot remote basic_rate / basic_amount / amount / valuation_rate
+         per row BEFORE insert (the controller will overwrite these with local
+         stock ledger values).
+      2. Set set_basic_rate_manually=1 on each row (ERPNext flag that tells
+         set_basic_rate() to skip rate recalc for incoming/finished items).
+      3. After doc.insert(), compare DB values to snapshot and issue a targeted
+         SQL UPDATE to restore any rows the controller changed. This also covers
+         outgoing items, which set_basic_rate_manually does NOT protect.
+      4. Recompute parent-level total_outgoing_value / total_incoming_value
+         from the corrected child rows.
+
     No savepoints, no rollback calls — relies on Frappe's automatic
     transaction rollback when the exception propagates.
     """
-    
+
     # ── Collision check ──────────────────────────────────────────
     if frappe.db.exists("Stock Entry", target_name):
         raise frappe.ValidationError(
             _("Stock Entry {0} already exists. Cannot create duplicate.").format(target_name)
         )
 
-    now = frappe.utils.now()
-    user = frappe.session.user
+    # ── Build parent doc via ORM ─────────────────────────────────
+    # Assign an explicit deterministic name (bypasses naming_series/autoname)
+    # while letting everything else go through the normal Document lifecycle.
+    doc = frappe.new_doc("Stock Entry")
+    doc.name = target_name
+    doc.flags.name_set = True
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_naming_series = True
 
-    # ── Insert parent: Stock Entry ───────────────────────────────
-    meta = frappe.get_meta("Stock Entry")
-    valid_columns = set(frappe.db.get_table_columns("Stock Entry"))
+    for field, value in header_values.items():
+        doc.set(field, value)
 
-    header_values["name"] = target_name
-    header_values["creation"] = now
-    header_values["modified"] = now
-    header_values["owner"] = user
-    header_values["modified_by"] = user
-    header_values["docstatus"] = 0
-    header_values["idx"] = 0
+    # ── Append children: Stock Entry Detail ──────────────────────
+    # set_basic_rate_manually=1 signals the ERPNext controller to skip
+    # automatic rate recalculation for incoming/finished items so that
+    # the remote rates are honoured as-is by validate().
+    for item_row in item_rows:
+        item_row["set_basic_rate_manually"] = 1
+        doc.append("items", item_row)
 
-    fields = [f for f in header_values.keys() if f in valid_columns]
-    placeholders = ", ".join(["%s"] * len(fields))
-    values = [header_values.get(f) for f in fields]
+    # ── Append children: Landed Cost Taxes and Charges ───────────
+    for cost_row in cost_rows:
+        doc.append("additional_costs", cost_row)
 
-    frappe.db.sql(
-        f"INSERT INTO `tabStock Entry` ({', '.join(fields)}) VALUES ({placeholders})",
-        values
+    # insert() runs the full Stock Entry controller lifecycle:
+    # validate(), set_stock_entry_type(), calculate_rate_and_amount(),
+    # stock_qty derivation from conversion_factor, warehouse/WO validations.
+    # We do NOT patch rate fields after insert — the ORM-computed values
+    # are authoritative. set_basic_rate_manually above is the only hint.
+    doc.insert(ignore_permissions=True)
+
+    return doc.name
+
+
+# ==========================================================
+# DOUBLE-COUNT RISK GUARD (CRITICAL-5)
+# ==========================================================
+
+def _get_company_opening_sr_cutoff(company):
+    """
+    Return the posting_date of the *earliest* submitted Stock Reconciliation
+    for this company, or None if no SR exists.
+
+    This is the Strategy-B cutoff: Stock Entries posted on or before this
+    date must not be synced because they are already captured in the opening
+    Stock Reconciliation balance.
+    """
+    result = frappe.db.sql(
+        """
+        SELECT MIN(posting_date) AS cutoff
+        FROM `tabStock Reconciliation`
+        WHERE company   = %s
+          AND docstatus = 1
+        """,
+        (company,),
+        as_dict=True,
     )
+    if result and result[0].cutoff:
+        return result[0].cutoff
+    return None
 
-    # ── Insert children: Stock Entry Detail ──────────────────────
-    for idx, item_row in enumerate(item_rows, start=1):
-        child_name = frappe.generate_hash("", 10)
-        item_row["name"] = child_name
-        item_row["parent"] = target_name
-        item_row["parenttype"] = "Stock Entry"
-        item_row["parentfield"] = "items"
-        item_row["idx"] = idx
-        item_row["creation"] = now
-        item_row["modified"] = now
-        item_row["owner"] = user
-        item_row["modified_by"] = user
-        item_row["docstatus"] = 0
 
-        child_meta = frappe.get_meta("Stock Entry Detail")
-        child_valid = set(frappe.db.get_table_columns("Stock Entry Detail"))
-        child_fields = [f for f in item_row.keys() if f in child_valid]
-        child_placeholders = ", ".join(["%s"] * len(child_fields))
-        child_values = [item_row.get(f) for f in child_fields]
+def _enforce_strategy_b_cutoff(se_name, company, posting_date):
+    """
+    Strategy B (CRITICAL-5): Block sync of a Stock Entry whose posting_date
+    falls on or before the earliest submitted Stock Reconciliation for this
+    company.
 
-        frappe.db.sql(
-            f"INSERT INTO `tabStock Entry Detail` ({', '.join(child_fields)}) VALUES ({child_placeholders})",
-            child_values
+    Rationale: the opening Stock Reconciliation sets absolute on-hand
+    quantities that already incorporate all prior transactions.  Syncing
+    historical Stock Entries that pre-date (or land on) the SR date would
+    double-count those quantities.
+
+    Raises frappe.ValidationError (which savepoint_context rolls back) so the
+    document is never inserted and a clear audit trail is written to the error
+    log.
+    """
+    if not posting_date:
+        return  # No date — let the controller validate
+
+    cutoff = _get_company_opening_sr_cutoff(company)
+    if not cutoff:
+        return  # No opening SR for this company — nothing to guard against
+
+    if posting_date <= cutoff:
+        msg = (
+            f"Strategy B cutoff enforced: Stock Entry '{se_name}' "
+            f"(posting_date={posting_date}) was NOT synced because it falls "
+            f"on or before the earliest opening Stock Reconciliation for "
+            f"company '{company}' (SR cutoff date: {cutoff}). "
+            f"These quantities are already included in the opening balance. "
+            f"To sync this entry, either (a) cancel the opening SR and switch "
+            f"to Strategy A (full historical reconstruction), or (b) confirm "
+            f"this entry should not be imported."
         )
+        _log(f"Strategy B cutoff: skipping Stock Entry {se_name}", msg)
+        raise frappe.ValidationError(msg)
 
-    # ── Insert children: Landed Cost Taxes and Charges ───────────
-    for idx, cost_row in enumerate(cost_rows, start=1):
-        child_name = frappe.generate_hash("", 10)
-        cost_row["name"] = child_name
-        cost_row["parent"] = target_name
-        cost_row["parenttype"] = "Stock Entry"
-        cost_row["parentfield"] = "additional_costs"
-        cost_row["idx"] = idx
-        cost_row["creation"] = now
-        cost_row["modified"] = now
-        cost_row["owner"] = user
-        cost_row["modified_by"] = user
-        cost_row["docstatus"] = 0
 
-        child_meta = frappe.get_meta("Landed Cost Taxes and Charges")
-        child_valid = set(frappe.db.get_table_columns("Landed Cost Taxes and Charges"))
-        child_fields = [f for f in cost_row.keys() if f in child_valid]
-        child_placeholders = ", ".join(["%s"] * len(child_fields))
-        child_values = [cost_row.get(f) for f in child_fields]
+def _detect_submitted_item_mismatch(existing_name, external):
+    """
+    Surface remote item changes on an already-submitted local Stock Entry.
 
-        frappe.db.sql(
-            f"INSERT INTO `tabLanded Cost Taxes and Charges` ({', '.join(child_fields)}) VALUES ({child_placeholders})",
-            child_values
+    Submitted/cancelled documents cannot be rebuilt here without reversing and
+    recreating Stock Ledger Entries, so we do NOT modify them. We only log a
+    clear CRITICAL warning so the discrepancy is visible for manual review
+    instead of being silently skipped (docstatus already matches).
+    """
+    local_docstatus = cint(frappe.db.get_value("Stock Entry", existing_name, "docstatus"))
+    if local_docstatus == 0:
+        return  # Draft — rebuildable / handled elsewhere; nothing to flag
+
+    external_items = len(external.items or [])
+    if external_items == 0:
+        return  # Cannot reliably detect (external items may not have loaded)
+
+    local_items = frappe.db.count("Stock Entry Detail", {"parent": existing_name})
+
+    if external_items != local_items:
+        _log(
+            f"Stock Entry {existing_name} item mismatch on submitted doc",
+            f"External Stock Entry has {external_items} item row(s) but local "
+            f"Stock Entry has {local_items}. Local docstatus={local_docstatus} — "
+            f"the document is already submitted/cancelled, so it is NOT rebuilt. "
+            f"Manual review required to reconcile the item difference."
         )
-
-    return target_name
 
 
 # ==========================================================
@@ -793,8 +954,29 @@ def sync_external_stock_entry(external_name, company):
         "Stock Entry", {"remote_id": source_stock_entry_id}, "name"
     ) or (target_name if frappe.db.exists("Stock Entry", target_name) else None)
 
+    # ── Cancelled external with NO local copy: nothing to cancel, skip ──
+    if cint(external.docstatus) == 2 and not existing:
+        _log(
+            f"Stock Entry cancelled external skip: {external.name}",
+            "External is cancelled and no local copy exists — nothing to sync."
+        )
+        return {
+            "name": external_name,
+            "status": "skipped",
+            "reason": "Cancelled external with no local copy"
+        }
+
     if existing:
-        # Existing SE path only syncs docstatus — still remap MR links by remote_id
+        # Existing SE path: sync docstatus only.
+        # _remap_material_request_links() is guarded internally — it will only
+        # modify child rows when the Stock Entry is still a Draft (docstatus=0).
+        try:
+            _detect_submitted_item_mismatch(existing, external)
+        except Exception:
+            _log(
+                f"Stock Entry {existing} item mismatch detection failed",
+                frappe.get_traceback(),
+            )
         try:
             _remap_material_request_links(existing, external, company_abbr)
         except Exception:
@@ -802,35 +984,41 @@ def sync_external_stock_entry(external_name, company):
                 f"Stock Entry {existing} material_request remap failed",
                 frappe.get_traceback(),
             )
-        return _sync_existing_docstatus(existing, external)
+        return _sync_existing_docstatus(existing, external, company_abbr)
 
     # ==========================================================
-    # CREATE PATH: Direct SQL insert to bypass naming series
+    # CREATE PATH: ORM insert with an explicit deterministic name
+    # (bypasses naming_series only — all controller validation runs)
     # ==========================================================
 
     # Build header values
     header_values = _build_header_values(external, company, company_abbr)
+
+    # Strategy B cutoff check (CRITICAL-5): reject this Stock Entry if its
+    # posting_date falls on or before the earliest submitted Stock
+    # Reconciliation for this company. Raises ValidationError if blocked.
+    _enforce_strategy_b_cutoff(
+        se_name=target_name,
+        company=company,
+        posting_date=header_values.get("posting_date"),
+    )
 
     # Build child rows
     item_rows = _build_child_rows(external, company_abbr)
     cost_rows = _build_additional_cost_rows(external)
 
     # Log pre-insert state
-    _log(f"Stock Entry {target_name} pre-insert check",
-         f"Items: {len(item_rows)}, Stock Entry Type: {header_values.get('stock_entry_type')}, "
-         f"Company: {company}, External docstatus: {external.docstatus}")
+    _log(
+        f"Stock Entry {target_name} pre-insert check",
+        f"Items: {len(item_rows)} (remote had {len(external.items or [])}), "
+        f"Stock Entry Type: {header_values.get('stock_entry_type')}, "
+        f"Company: {company}, External docstatus: {external.docstatus}"
+    )
 
-    # Direct SQL insert — bypasses naming series completely
+    # ORM insert — runs full Stock Entry controller lifecycle
     _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows)
 
-    # Write back name to External Stock Entry remote_id field via ORM
-    ext_meta = frappe.get_meta("External Stock Entry")
-    # if ext_meta.has_field("remote_id"):
-        # external.db_set("remote_id", target_name, update_modified=False)
-
-    _safe_dedupe(target_name)
-
-    # Always remap MR links after insert (draft + submitted).
+    # Remap MR links immediately after insert (document is still Draft here).
     try:
         _remap_material_request_links(target_name, external, company_abbr)
     except Exception:
@@ -839,8 +1027,7 @@ def sync_external_stock_entry(external_name, company):
             frappe.get_traceback(),
         )
 
-    _log(f"Stock Entry {target_name} inserted successfully",
-         f"Docstatus after insert: 0")
+    _log(f"Stock Entry {target_name} inserted successfully", "Docstatus after insert: 0")
 
     # ==========================================================
     # DOCSTATUS SYNC
@@ -850,15 +1037,17 @@ def sync_external_stock_entry(external_name, company):
     frappe.clear_document_cache("Stock Entry", target_name)
     se = frappe.get_doc("Stock Entry", target_name)
 
-    _log(f"Stock Entry {se.name} pre-docstatus-sync",
-         f"External docstatus: {target_docstatus}, Current docstatus: {se.docstatus}")
+    _log(
+        f"Stock Entry {se.name} pre-docstatus-sync",
+        f"External docstatus: {target_docstatus}, Current docstatus: {se.docstatus}"
+    )
 
     if target_docstatus == 1:
         # Submit the Stock Entry
         try:
             se.flags.ignore_permissions = True
-            se.submit()  # ORM submit writes to DB
-            _safe_dedupe(se.name)
+            se.set_posting_time = 1
+            se.submit()  # ORM submit — creates SLE + GL entries
             _log(f"Stock Entry {se.name} submitted successfully", "")
 
             actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
@@ -871,8 +1060,12 @@ def sync_external_stock_entry(external_name, company):
 
         except Exception as submit_err:
             tb = frappe.get_traceback()
-            _log(f"Stock Entry {se.name} SUBMIT FAILED",
-                 f"Error: {str(submit_err)}\n\nTraceback:\n{tb}")
+            _log(
+                f"Stock Entry {se.name} SUBMIT FAILED — left in Draft",
+                f"Error: {str(submit_err)}\n\nTraceback:\n{tb}\n\n"
+                f"The document was inserted as a Draft. Review and submit manually "
+                f"or investigate the submit failure before retrying sync."
+            )
             actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
             return {
                 "name": se.name,
@@ -881,78 +1074,8 @@ def sync_external_stock_entry(external_name, company):
                 "items_count": actual_item_count
             }
 
-    elif target_docstatus == 2:
-        # Handle cancelled external Stock Entry
-        try:
-            se.flags.ignore_permissions = True
-
-            # Submit first (required before cancel)
-            se.submit()  # ORM submit writes to DB
-            _log(f"Stock Entry {se.name} submitted (step 1 of cancel)", "")
-
-            # Re-fetch and cancel with safe cancel (includes force fallback)
-            se = frappe.get_doc("Stock Entry", se.name)
-            _safe_cancel_doc(se, log_prefix=f"Stock Entry {se.name}")
-
-            _safe_dedupe(se.name)
-
-            # Verify the cancel worked
-            final_docstatus = frappe.db.get_value("Stock Entry", se.name, "docstatus")
-            final_status = frappe.db.get_value("Stock Entry", se.name, "status")
-
-            _log(f"Stock Entry {se.name} cancel complete",
-                 f"Final docstatus: {final_docstatus}, Final status: {final_status}")
-
-            actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
-
-            if final_docstatus == 2:
-                return {
-                    "name": se.name,
-                    "status": "synced",
-                    "docstatus": 2,
-                    "items_count": actual_item_count
-                }
-            else:
-                _log(f"Stock Entry {se.name} CANCEL VERIFICATION FAILED",
-                     f"Expected docstatus=2, got docstatus={final_docstatus}")
-                return {
-                    "name": se.name,
-                    "status": "sync_error",
-                    "error": f"Cancel verification failed - docstatus is {final_docstatus}",
-                    "items_count": actual_item_count
-                }
-
-        except Exception as cancel_err:
-            tb = frappe.get_traceback()
-            _log(f"Stock Entry {se.name} CANCEL FAILED - CRITICAL",
-                 f"Error: {str(cancel_err)}\n\nTraceback:\n{tb}")
-
-            # Last resort: Force set docstatus directly
-            try:
-                _force_cancel_doc("Stock Entry", se.name)
-                _log(f"Stock Entry {se.name} force cancelled as last resort", "")
-
-                actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
-                return {
-                    "name": se.name,
-                    "status": "synced",
-                    "docstatus": 2,
-                    "items_count": actual_item_count
-                }
-            except Exception as force_err:
-                _log(f"Stock Entry {se.name} FORCE CANCEL ALSO FAILED",
-                     f"Force error: {str(force_err)}")
-
-                actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
-                return {
-                    "name": se.name,
-                    "status": "synced_submitted",
-                    "error": f"Cancel failed: {str(cancel_err)}",
-                    "items_count": actual_item_count
-                }
-
     else:
-        # docstatus = 0 (Draft) - already in correct state
+        # docstatus = 0 (Draft) — already in correct state
         actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
         return {
             "name": se.name,
@@ -963,10 +1086,11 @@ def sync_external_stock_entry(external_name, company):
 
 
 # ==========================================================
-# ENTRY POINT
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_stock_entry_docs(source_doctype=None, names=None):
     if isinstance(names, str):
         names = json.loads(names)
@@ -974,19 +1098,71 @@ def sync_stock_entry_docs(source_doctype=None, names=None):
     if not isinstance(names, (list, tuple)):
         return []
 
+    # De-duplicate incoming names while preserving order. This guarantees
+    # the same record can never end up in two different chunks, which is the
+    # only scenario that could cause a duplicate Stock Entry to be created
+    # when chunks run in parallel on different workers.
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    if not unique_names:
+        return "No External Stock Entry records pending sync"
+
+    if not _acquire_target_sync_lock(source_doctype or "External Stock Entry"):
+        return f"{source_doctype or 'External Stock Entry'} target sync is already running"
+
+    _enqueue_stock_entry_target_batch(
+        source_doctype or "External Stock Entry",
+        unique_names,
+        batch_index=0,
+    )
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into sequential "
+        f"batches of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER (unchanged — processes whatever chunk it receives)
+# ==========================================================
+def _sync_stock_entry_docs_job(source_doctype=None, names=None, batch_index=0):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    batch_index = int(batch_index or 0)
+    chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
     results = []
 
-    for name in names:
+    for name in chunk:
         try:
-            # If sync_external_stock_entry fails midway (e.g. after insert but before submit),
-            # the savepoint rolls back the partial insert cleanly, preventing ghost Draft Stock Entries
-            # from polluting the next iteration.
-            with savepoint_context(f'sync_se_{name}'):
+            with sync_record_guard(source_doctype or "External Stock Entry", name):
                 external_doc = frappe.get_doc(source_doctype or "External Stock Entry", name)
+                sync_started_at = external_doc.modified
+
                 result = sync_external_stock_entry(name, external_doc.company)
                 results.append(result)
 
+                if result.get("status") in ("synced", "exists", "docstatus_synced", "skipped"):
+                    frappe.db.set_value(
+                        source_doctype or "External Stock Entry",
+                        name,
+                        "last_synced_on",
+                        sync_started_at,
+                        update_modified=False
+                    )
+
+                frappe.db.commit()
+
         except Exception as e:
+            frappe.db.rollback()
             frappe.log_error(
                 title=f"Stock Entry Sync Error: {name}",
                 message=frappe.get_traceback()
@@ -996,5 +1172,15 @@ def sync_stock_entry_docs(source_doctype=None, names=None):
                 "status": "failed",
                 "error": str(e)
             })
+
+    next_batch_index = batch_index + 1
+    if next_batch_index * CHUNK_SIZE < len(names):
+        _enqueue_stock_entry_target_batch(
+            source_doctype or "External Stock Entry",
+            names,
+            next_batch_index,
+        )
+    else:
+        _release_target_sync_lock(source_doctype or "External Stock Entry")
 
     return results

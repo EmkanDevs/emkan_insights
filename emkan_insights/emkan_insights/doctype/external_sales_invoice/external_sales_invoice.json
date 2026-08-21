@@ -21,6 +21,7 @@
   "due_date",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "column_break_14",
   "is_pos",
   "pos_profile",
@@ -2199,6 +2200,11 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "grid_page_length": 50,
@@ -2212,7 +2218,7 @@
    "link_fieldname": "consolidated_invoice"
   }
  ],
- "modified": "2026-03-12 08:44:48.659593",
+ "modified": "2026-07-29 13:07:49.758755",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Invoice",

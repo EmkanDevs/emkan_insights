@@ -8,6 +8,7 @@ import json
 from urllib.parse import quote
 from frappe import _
 from urllib.parse import quote
+from frappe.utils import get_datetime_str
 
 
 class ExternalSiteConfiguration(Document):
@@ -228,6 +229,57 @@ def _sort_by_hierarchy(data, parent_field):
     return sorted(data, key=lambda x: depths.get(x.get('name'), 0))
 
 
+def _sort_warehouses_by_hierarchy(data):
+    """
+    Two-pass sort for Warehouses — mirrors _sort_accounts_by_reference_order.
+
+    PASS 1 — ALL is_group=1 warehouses sorted by depth (shallowest first).
+             Guarantees every group parent exists before any of its children.
+
+    PASS 2 — ALL is_group=0 (leaf) warehouses sorted by depth.
+             By this point every possible parent group is already saved,
+             so no leaf can ever have a missing parent.
+
+    Depth is calculated only within the current chunk; if a parent is NOT in
+    this chunk it is treated as depth 0 (will be stub-created if missing).
+    """
+    id_map = {d.get('name'): d for d in data if d.get('name')}
+    depths = {}
+
+    def get_depth(item_id, visited=None):
+        if item_id in depths:
+            return depths[item_id]
+        if visited is None:
+            visited = set()
+        if item_id in visited:
+            depths[item_id] = 0
+            return 0
+        visited.add(item_id)
+        item = id_map.get(item_id)
+        if not item:
+            depths[item_id] = 0
+            return 0
+        parent_id = item.get('parent_warehouse')
+        if not parent_id:
+            depths[item_id] = 0
+            return 0
+        depth = get_depth(parent_id, visited) + 1
+        depths[item_id] = depth
+        return depth
+
+    for item in data:
+        if item.get('name'):
+            get_depth(item['name'])
+
+    groups = [d for d in data if frappe.utils.cint(d.get("is_group")) == 1]
+    leaves = [d for d in data if frappe.utils.cint(d.get("is_group")) != 1]
+
+    groups_sorted = sorted(groups, key=lambda x: (depths.get(x.get('name'), 0), x.get('name') or ""))
+    leaves_sorted = sorted(leaves, key=lambda x: (depths.get(x.get('name'), 0), x.get('name') or ""))
+
+    return groups_sorted + leaves_sorted
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TREE / PARENT HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -403,20 +455,34 @@ def _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id):
         if 'accounts' in item and 'accounts' in local_fields:
             doc.set('accounts', item.get('accounts') or [])
 
+    if local_dt == "External Warehouse":
+        parent_remote = item.get("parent_warehouse")
+        if parent_remote:
+            parent_name = (
+                frappe.db.get_value(local_dt, {"remote_id": parent_remote}, "name")
+                or frappe.db.get_value(local_dt, {"name": parent_remote}, "name")
+            )
+            if not parent_name:
+                parent_name = _ensure_tree_parent(
+                    local_dt, "parent_warehouse", "warehouse_name", parent_remote, company
+                )
+            if parent_name:
+                doc.parent_warehouse = parent_name
+
     if local_dt == "External Asset":
         if company and 'company' in local_fields and not doc.get('company'):
             doc.company = company
 
-    if local_dt == "External Material Request":
-        for row in doc.get("items"):
-            if not row.warehouse:
-                row.warehouse = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
+    # if local_dt == "External Material Request":
+    #     for row in doc.get("items"):
+    #         if not row.warehouse:
+    #             row.warehouse = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
     if local_dt == "External Purchase Receipt":
-        default_wh = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
+        # default_wh = frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
 
-        for row in doc.get("items"):
-            if not row.warehouse:
-                row.warehouse = default_wh
+        # for row in doc.get("items"):
+        #     if not row.warehouse:
+        #         row.warehouse = default_wh
 
         if not doc.get("company") and company:
             doc.company = company
@@ -633,22 +699,8 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         or _get_legacy_unprefixed_external_doc(local_dt, local_fields, original_remote_id, company)
     )
 
-    # Purge parent + child rows tied to this remote id before rebuilding.
-    # We purge child rows keyed on BOTH the looked-up parent name AND the
-    # deterministic doc name (remote_id). This clears any ORPHAN child rows
-    # left behind by a previous interrupted sync (parent row gone but its
-    # child rows survived), which is what caused duplicate item/tax rows to
-    # accumulate one copy per fetch.
-    purge_parent_names = {n for n in (existing_name, remote_id) if n}
-    for df in frappe.get_meta(local_dt).get_table_fields():
-        for parent_name in purge_parent_names:
-            frappe.db.delete(df.options, {
-                "parent": parent_name,
-                "parenttype": local_dt
-            })
-    if existing_name:
-        # Delete the parent document itself
-        frappe.db.delete(local_dt, existing_name)
+    # Purge moved inside the savepoint block below so deadlocks on the
+    # DELETE roll back cleanly instead of crashing before save even starts.
 
     # Always create as a brand new document
     doc = frappe.new_doc(local_dt)
@@ -658,9 +710,32 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     doc.flags.name_set = True
 
     # ── Map fields ──
+    # Pre-build a set of Attach / Attach Image fieldnames so we can skip
+    # remote private-file paths that don't exist on this server.
+    _attach_fieldnames = {
+        df.fieldname
+        for df in frappe.get_meta(local_dt).fields
+        if df.fieldtype in ("Attach", "Attach Image")
+    }
+
     for field, value in item.items():
         if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus'] and field not in deferred_fields:
             if value is not None:
+                # Skip attachment fields that reference a remote private/local
+                # file path.  Frappe's before_insert tries to open the file on
+                # disk, which raises FileNotFoundError because the file only
+                # exists on the remote server.  External URLs (http/https) are
+                # fine and are left untouched.
+                if (
+                    field in _attach_fieldnames
+                    and isinstance(value, str)
+                    and (
+                        value.startswith("/private/files/")
+                        or value.startswith("/files/")
+                    )
+                ):
+                    continue
+
                 if isinstance(value, list):
                     cleaned_rows = _prepare_child_rows_for_sync(doc, field, value)
                     for row_data in cleaned_rows:
@@ -686,15 +761,31 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
 
     # ─────────────────────────────────────────────────────────────────
     # SAVE — using a DB savepoint so any failed attempt (link errors,
-    # duplicate conflicts, etc.) can be fully rolled back before we
-    # either retry the lookup path or give up. This prevents partial
-    # child-table inserts that previously caused duplicate item/tax
-    # rows when a save failed midway and was retried on the same doc.
+    # duplicate conflicts, deadlocks, etc.) can be fully rolled back
+    # before we either retry the lookup path or give up. This prevents
+    # partial child-table inserts that previously caused duplicate rows.
+    # The purge of existing rows is included INSIDE the savepoint so a
+    # deadlock on the DELETE is also rolled back cleanly.
     # ─────────────────────────────────────────────────────────────────
     savepoint = f"sync_{local_dt.replace(' ', '_')}_{frappe.generate_hash(length=8)}"
 
     try:
         frappe.db.savepoint(savepoint)
+
+        # Purge existing parent + child rows inside the savepoint so any
+        # deadlock on the DELETE rolls back to here rather than leaving
+        # partial state. Parallel chunk workers deleting the same rows
+        # (full re-sync) trigger InnoDB deadlocks; catching them here lets
+        # _run_sync_loop's retry pass re-attempt after other workers finish.
+        purge_parent_names = {n for n in (existing_name, remote_id) if n}
+        for df in frappe.get_meta(local_dt).get_table_fields():
+            for parent_name in purge_parent_names:
+                frappe.db.delete(df.options, {
+                    "parent": parent_name,
+                    "parenttype": local_dt
+                })
+        if existing_name:
+            frappe.db.delete(local_dt, existing_name)
 
         # Bypass link validation up front (covers child-table links too,
         # which doc.flags.ignore_links alone does not reliably cover).
@@ -735,7 +826,27 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         return True
 
     except Exception as e:
-        frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
+        # Harden the savepoint rollback: a deadlock forces InnoDB to roll
+        # back the entire transaction, destroying all savepoints. If that
+        # happens, fall back to a full rollback so the connection stays
+        # usable. Without this, the failed ROLLBACK TO SAVEPOINT call
+        # would itself raise and crash the whole chunk.
+        try:
+            frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
+        except Exception:
+            try:
+                frappe.db.rollback()
+            except Exception:
+                pass
+
+        # Deadlock: InnoDB already rolled us back. Return False so the
+        # per-chunk retry loop re-attempts this record after other workers
+        # have released their locks. Do NOT re-raise — that would crash
+        # the entire chunk and lose all items processed after this one.
+        if isinstance(e, frappe.QueryDeadlockError):
+            errors.append({"remote_id": remote_id, "error": f"Deadlock (will retry): {str(e)}"})
+            return False
+
         errors.append({"remote_id": remote_id, "error": str(e)})
         return False
 # ─────────────────────────────────────────────────────────────────────────────
@@ -892,173 +1003,411 @@ def _build_company_prefixed_remote_id(company_abbr, remote_id):
 
     return f"{company_abbr}-{remote_id}"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GENERIC CHUNK-BASED SYNC  (DEFAULT_FETCHER path)
+# Mirrors the MR / JE / RFQ chunk pattern so every doctype is handled with
+# bounded per-job timeouts regardless of total remote record count.
+# ─────────────────────────────────────────────────────────────────────────────
+
+GENERIC_CHUNK_SIZE = 300
+GENERIC_FETCH_WORKERS = 8
+
+
+def _generic_progress_key(child_docname):
+    return f"generic_sync_progress:{child_docname}"
+
+
+def _init_generic_progress(child_docname, total_chunks):
+    frappe.cache().set_value(_generic_progress_key(child_docname), json.dumps({
+        "total_chunks": total_chunks,
+        "completed_chunks": 0,
+        "count": 0,
+        "not_saved_count": 0,
+        "errors": [],
+    }))
+
+
+def _update_generic_progress(child_docname, count_delta, not_saved_delta, chunk_errors):
+    key = _generic_progress_key(child_docname)
+    raw = frappe.cache().get_value(key)
+    state = json.loads(raw) if raw else {
+        "total_chunks": 0, "completed_chunks": 0, "count": 0,
+        "not_saved_count": 0, "errors": [],
+    }
+    state["completed_chunks"] += 1
+    state["count"] += count_delta
+    state["not_saved_count"] += not_saved_delta
+    state["errors"].extend(chunk_errors)
+    frappe.cache().set_value(key, json.dumps(state))
+    return state
+
+
+def _get_generic_progress_state(child_docname):
+    raw = frappe.cache().get_value(_generic_progress_key(child_docname))
+    if raw:
+        return json.loads(raw)
+    return {"total_chunks": 0, "completed_chunks": 0, "count": 0, "not_saved_count": 0, "errors": []}
+
+
+def _fetch_remote_names_generic(base_url, headers, remote_dt, filters):
+    """
+    Cheap listing pass: fetches only `name` fields so we can plan chunks
+    before doing any per-record HTTP work.
+    """
+    encoded_dt = quote(str(remote_dt), safe="")
+    url = f"{base_url}/api/resource/{encoded_dt}"
+    names = []
+    limit = 1000
+    start = 0
+
+    while True:
+        params = {
+            "fields": json.dumps(["name"]),
+            "filters": json.dumps(filters),
+            "limit_page_length": limit,
+            "limit_start": start,
+        }
+        response = requests.get(url, headers=headers, params=params, timeout=60)
+        response.raise_for_status()
+        page = response.json().get("data", [])
+        if not page:
+            break
+        names.extend(row["name"] for row in page if row.get("name"))
+        if len(page) < limit:
+            break
+        start += limit
+
+    return names
+
+
+def _fetch_generic_docs_threaded(base_url, headers, remote_dt, names):
+    """
+    Threaded per-record GET for a chunk of names.
+    8 concurrent connections are used so chunk HTTP time stays bounded.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    docs = []
+
+    def _fetch_one(name):
+        encoded_dt = quote(str(remote_dt), safe="")
+        encoded_name = quote(str(name), safe="")
+        url = f"{base_url}/api/resource/{encoded_dt}/{encoded_name}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            return resp.json().get("data") or {"name": name}
+        except Exception as e:
+            frappe.logger("external_sync").warning(
+                "Failed to fetch full doc for %s/%s: %s", remote_dt, name, str(e)
+            )
+            return {"name": name}
+
+    with ThreadPoolExecutor(max_workers=GENERIC_FETCH_WORKERS) as pool:
+        futures = {pool.submit(_fetch_one, name): name for name in names}
+        for future in as_completed(futures):
+            docs.append(future.result())
+
+    return docs
+
+
+# doctype_map shared between orchestrator and worker (kept as a module-level
+# constant so it's defined exactly once and both functions reference the same
+# source of truth).
+_GENERIC_DOCTYPE_MAP = {
+    "Account": "External Account",
+    "Address": "External Address",
+    "Asset": "External Asset",
+    "Asset Category": "External Asset Category",
+    "Bank": "External Bank",
+    "Bank Account": "External Bank Account",
+    "Contact": "External Contact",
+    "Contract": "External Contract",
+    "Cost Center": "External Cost Center",
+    "Customer": "External Customer",
+    "Customer Group": "External Customer Group",
+    "Item": "External Item",
+    "Item Group": "External Item Group",
+    "Item Tax Template": "External Item Tax Template",
+    "Location": "External Location",
+    "Manufacturer": "External Manufacturer",
+    "Price List": "External Price List",
+    "Project Type": "External Project Type",
+    "Supplier": "External Supplier",
+    "BOM": "External BOM",
+    "Production Plan": "External Production Plan",
+    "Work Order": "External Work Order",
+    "Tax Category": "External Tax Category",
+    "Supplier Group": "External Supplier Group",
+    "Territory": "External Territory",
+    "UOM": "External Uom",
+    "Warehouse": "External Warehouse",
+    "Purchase Invoice": "External Purchase Invoice",
+    "Payment Entry": "External Payment Entry",
+    "Purchase Order": "External Purchase Order",
+    "Sales Order": "External Sales Order",
+    "Stock Entry": "External Stock Entry",
+    "Stock Reconciliation": "External Stock Reconciliation",
+    "Project": "External Project",
+    "Request for Quotation": "External Request for Quotation",
+    "Supplier Quotation": "External Supplier Quotation",
+    "Employee": "External Employee",
+    "Item Price": "External Item Price",
+    "Department": "External Department",
+    "Designation": "External Designation",
+    "Purchase Receipt": "External Purchase Receipt",
+    "Quotation": "External Quotation",
+    "Delivery Note": "External Delivery Note",
+    "Sales Invoice": "External Sales Invoice",
+    "Sales Taxes and Charges Template": "External Sales Taxes and Charges Template",
+    "Purchase Taxes and Charges Template": "External Purchase Taxes and Charges Template",
+    "Letter Head": "External Letter Head",
+    "Expense Claim": "External Expense Claim",
+    "Payment Terms Template": "External Payment Terms Template",
+    "Sales Person": "External Sales Person",
+    "Terms and Conditions": "External Terms and Conditions",
+    "Journal Entry": "External Journal Entry",
+    "Material Request": "External Material Request",
+    "Prospect": "External Prospect",
+    "Sales Stage": "External Sales Stage",
+    "Payment Term": "External Payment Term",
+    "Mode of Payment": "External Mode of Payment",
+    "Lead Source": "External Lead Source",
+    "Email Template": "External Email Template",
+    "Lead": "External Lead",
+    "Opportunity": "External Opportunity",
+    "Vehicle": "External Vehicle",
+    "Batch Plant": "External Batch Plant",
+    "Payment Request": "External Payment Request",
+}
+
 
 @frappe.whitelist()
 def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
-    frappe.logger("external_sync").info("Starting sync for %s with company %s", ref_doctype, company)
+    """
+    Orchestrator (fast entry point).
 
-    base_url = (site_url or "").rstrip('/')
-    headers = {
-        'Authorization': f'token {api_key}:{api_secret}',
-        'Content-Type': 'application/json'
-    }
+    1. Resolves remote_dt → local_dt via _GENERIC_DOCTYPE_MAP.
+    2. Fetches only `name` fields from remote (cheap listing pass) with the
+       incremental last_sync filter when available.
+    3. Splits names into GENERIC_CHUNK_SIZE = 300 chunks.
+    4. Enqueues one process_generic_chunk background job per chunk.
+    5. Returns immediately — no record-level processing happens here.
 
-    doctype_map = {
-        "Account": "External Account",
-        "Address": "External Address",
-        "Asset": "External Asset",
-        "Asset Category": "External Asset Category",
-        "Bank": "External Bank",
-        "Bank Account": "External Bank Account",
-        "Contact": "External Contact",
-        "Contract": "External Contract",
-        "Cost Center": "External Cost Center",
-        "Customer": "External Customer",
-        "Customer Group": "External Customer Group",
-        "Item": "External Item",
-        "Item Group": "External Item Group",
-        "Item Tax Template" : "External Item Tax Template",
-        "Location": "External Location",
-        "Manufacturer": "External Manufacturer",
-        "Price List": "External Price List",
-        "Project Type": "External Project Type",
-        "Supplier": "External Supplier",
-        "BOM":"External BOM",
-        "Production Plan":"External Production Plan",
-        "Work Order":"External Work Order",
-        "Tax Category":"External Tax Category",
-        "Supplier Group": "External Supplier Group",
-        "Territory": "External Territory",
-        "UOM": "External Uom",
-        "Warehouse": "External Warehouse",
-        "Purchase Invoice": "External Purchase Invoice",
-        "Payment Entry": "External Payment Entry",
-        "Purchase Order": "External Purchase Order",
-        "Sales Order": "External Sales Order",
-        "Stock Entry": "External Stock Entry",
-        "Stock Reconciliation": "External Stock Reconciliation",
-        "Project": "External Project",
-        "Request for Quotation": "External Request for Quotation",
-        "Supplier Quotation": "External Supplier Quotation",
-        "Employee":"External Employee",
-        "Department":"External Department",
-        "Designation":"External Designation",
-        "Purchase Receipt": "External Purchase Receipt",
-        "Quotation": "External Quotation",
-        "Delivery Note": "External Delivery Note",
-        "Sales Invoice": "External Sales Invoice",
-        "Sales Taxes and Charges Template": "External Sales Taxes and Charges Template",
-        "Purchase Taxes and Charges Template": "External Purchase Taxes and Charges Template",
-        "Letter Head": "External Letter Head",
-        "Expense Claim": "External Expense Claim",
-        "Payment Terms Template": "External Payment Terms Template",
-        "Sales Person": "External Sales Person",
-        "Terms and Conditions": "External Terms and Conditions",
-        "Journal Entry": "External Journal Entry",
-        "Material Request": "External Material Request",
-        "Prospect": "External Prospect",
-        "Sales Stage": "External Sales Stage",
-        "Payment Term": "External Payment Term",
-        "Mode of Payment": "External Mode of Payment",
-        "Lead Source": "External Lead Source",
-        "Email Template": "External Email Template",
-        "Lead" : "External Lead",
-        "Opportunity" : "External Opportunity",
-        "Vehicle": "External Vehicle",
-        "Batch Plant": "External Batch Plant",
-        "Payment Request" : "External Payment Request",
-    }
-
-    reverse_doctype_map = {local: remote for remote, local in doctype_map.items()}
-    remote_dt = reverse_doctype_map.get(ref_doctype, ref_doctype)
-    local_dt = doctype_map.get(remote_dt)
-
-    if not local_dt:
-        frappe.log_error(title="Sync Data Error", message=f"Doctype mapping not found for: {ref_doctype}")
-        frappe.throw(_("Mapping for {0} not found").format(ref_doctype))
-
-    if not frappe.db.exists("DocType", local_dt):
-        frappe.throw(
-            _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
-            .format(local_dt)
-        )
-
-    remote_url = f"{base_url}/api/resource/{remote_dt}"
-    data = []
-    limit = 1000
-    start = 0
-    try:
-        while True:
-            params = {
-                "fields": json.dumps(["*"]),
-                "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),   # ← add this
-                "limit_page_length": limit,
-                "limit_start": start
-            }
-            response = requests.get(remote_url, headers=headers, params=params, timeout=120)
-            response.raise_for_status()
-            page = response.json().get('data', [])
-            frappe.logger("external_sync").info(
-                    "RAW PAGE for %s: %d records, statuses=%s",
-                    remote_dt, len(page),
-                    [ (r.get("name"), r.get("docstatus"), r.get("status")) for r in page if frappe.utils.cint(r.get("docstatus")) == 2 ]
-                )
-            if not page:
-                break
-            data.extend(page)
-            if len(page) < limit:
-                break
-            start += limit
-    except Exception as e:
-        frappe.throw(_("Sync failed: {0}").format(str(e)))
-
-    # frappe.logger("external_sync").info(f"STEP 1: {remote_dt} initial fetch found {len(data)} records")
-
-
-    if remote_dt in [
-        "Asset Category", "Purchase Invoice", "Payment Entry", "Purchase Order",
-        "Stock Entry", "Stock Reconciliation", "Purchase Receipt", "Request for Quotation", "Supplier Quotation","Employee","Department","Designation",
-        "Quotation", "Delivery Note", "Sales Invoice", "Sales Taxes and Charges Template",
-        "Purchase Taxes and Charges Template", "Letter Head", "Expense Claim",
-        "Payment Terms Template", "Sales Person", "Terms and Conditions", "Sales Order","Vehicle","Batch Plant",
-        "Material Request", "Contact", "Address" , "Journal Entry","Item Group","Item","Account","Tax Category","BOM","Work Order","Production Plan","Item Tax Template"
-    ] and data:
-        data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
-
-    local_meta = frappe.get_meta(local_dt)
-    local_fields = [df.fieldname for df in local_meta.fields]
-
-    if local_dt == "External Account":
-        data = _sort_accounts_by_reference_order(data)
-    elif local_dt == "External Cost Center":
-        data = _sort_by_hierarchy(data, "parent_cost_center")
-    elif local_dt == "External Item Group":
-        data = _sort_by_hierarchy(data, "parent_item_group")
-
-    count, errors, not_saved = _run_sync_loop(
-        data, local_dt, local_fields, company, configuration_name,site_url
+    The sync lock is acquired here and released by the last chunk worker.
+    """
+    frappe.logger("external_sync").info(
+        "Generic chunk-sync orchestrator: %s (company=%s)", ref_doctype, company
     )
 
-    # ✅ Retry pass — catches any edge cases left from first run
-    if not_saved:
-        retry_count, retry_errors, not_saved = _run_sync_loop(
-            not_saved, local_dt, local_fields, company, configuration_name,site_url
+    if not _acquire_sync_lock(child_docname):
+        frappe.throw(_("A sync is already running for this row. Please wait for it to finish."))
+
+    try:
+        remote_dt = ref_doctype
+        local_dt = _GENERIC_DOCTYPE_MAP.get(remote_dt)
+
+        if not local_dt:
+            frappe.log_error(
+                title="Sync Data Error",
+                message=f"Doctype mapping not found for: {ref_doctype}"
+            )
+            frappe.throw(_("Mapping for {0} not found").format(ref_doctype))
+
+        if not frappe.db.exists("DocType", local_dt):
+            frappe.throw(
+                _("Local DocType {0} is not installed. Run bench migrate and reload.")
+                .format(local_dt)
+            )
+
+        base_url = (site_url or "").rstrip("/")
+        headers = {
+            "Authorization": f"token {api_key}:{api_secret}",
+            "Content-Type": "application/json",
+        }
+        fetch_started_at = frappe.utils.now()
+
+        previous_last_sync = frappe.db.get_value(
+            "External Site Configuration CT", child_docname, "last_sync"
         )
-        count += retry_count
-        errors.extend(retry_errors)
 
-    last_sync = frappe.utils.now()
-    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+        # Tree/master doctypes (Item Group, UOM, Warehouse, etc.) have no
+        # docstatus column.  Filtering on it causes the remote Frappe REST API
+        # to silently return an empty list — the job registers but fetches
+        # nothing and produces no error.  Only add the docstatus filter for
+        # submittable doctypes.
+        _NON_SUBMITTABLE_REMOTE_DOCTYPES = {
+            "Item Group", "Item Tax Template", "UOM", "Territory",
+            "Warehouse", "Cost Center", "Price List", "Tax Category",
+            "Supplier Group", "Customer Group", "Sales Stage",
+            "Lead Source", "Project Type", "Payment Term",
+            "Mode of Payment", "Designation", "Department",
+            "Manufacturer", "Location", "Batch Plant",
+            "Sales Taxes and Charges Template",
+            "Purchase Taxes and Charges Template",
+        }
+        filters = []
+        if remote_dt not in _NON_SUBMITTABLE_REMOTE_DOCTYPES:
+            filters.append(["docstatus", "in", [0, 1, 2]])
+        # if previous_last_sync:
+        #     # filters.append([
+        #     #     "modified", ">", frappe.utils.get_datetime_str(previous_last_sync)
+        #     # ])
 
-    return {
-        "count": count,
-        "fatal_error": len(not_saved) > 0 and len(errors) == 0,
-        "fetched_total": len(data),
-        "not_saved_count": len(not_saved),
-        "last_sync": last_sync,
-        "errors": errors,
-        "missing_parent_accounts": not_saved,
+        names = _fetch_remote_names_generic(base_url, headers, remote_dt, filters)
+
+        if not names:
+            _release_sync_lock(child_docname)
+            frappe.db.set_value(
+                "External Site Configuration CT", child_docname, "last_sync", fetch_started_at
+            )
+            return {
+                "count": 0, "fetched_total": 0, "not_saved_count": 0,
+                "last_sync": fetch_started_at, "errors": [],
+            }
+
+        chunks = [names[i:i + GENERIC_CHUNK_SIZE] for i in range(0, len(names), GENERIC_CHUNK_SIZE)]
+        _init_generic_progress(child_docname, len(chunks))
+
+        for idx, chunk in enumerate(chunks):
+            frappe.enqueue(
+                "emkan_insights.emkan_insights.doctype.external_site_configuration"
+                ".external_site_configuration.process_generic_chunk",
+                queue="long",
+                timeout=900,
+                job_name=f"generic_sync_chunk_{child_docname}_{idx}",
+                site_url=site_url,
+                api_key=api_key,
+                api_secret=api_secret,
+                company=company,
+                configuration_name=configuration_name,
+                child_docname=child_docname,
+                ref_doctype=ref_doctype,
+                local_dt=local_dt,
+                remote_dt=remote_dt,
+                remote_names=chunk,
+                is_last_chunk=(idx == len(chunks) - 1),
+                fetch_started_at=fetch_started_at,
+            )
+
+        return (
+            f"Queued {len(chunks)} chunk(s) covering {len(names)} {ref_doctype} records"
+        )
+
+    except Exception:
+        _release_sync_lock(child_docname)
+        raise
+
+
+@frappe.whitelist()
+def process_generic_chunk(
+    site_url, api_key, api_secret, company, configuration_name,
+    child_docname, ref_doctype, local_dt, remote_dt,
+    remote_names, is_last_chunk=False, fetch_started_at=None,
+):
+    """
+    Background worker for a single chunk of generic-path doctype records.
+
+    Steps:
+      1. Fetch full docs (with child tables) for this chunk — threaded.
+      2. Apply hierarchy sorting for Account / Cost Center / Item Group.
+      3. Save to local External doctype via _run_sync_loop.
+      4. Retry pass for transient failures (deadlocks, etc.).
+      5. Update Redis progress.
+      6. If last chunk: write last_sync, release sync lock, publish realtime.
+    """
+    base_url = (site_url or "").rstrip("/")
+    headers = {
+        "Authorization": f"token {api_key}:{api_secret}",
+        "Content-Type": "application/json",
     }
+    state = None
+
+    try:
+        # Phase 1 — fetch full docs for this chunk (threaded HTTP)
+        docs = _fetch_generic_docs_threaded(base_url, headers, remote_dt, remote_names)
+
+        # Phase 2 — hierarchy sort (must happen per-chunk for tree doctypes;
+        # stub-parent creation in _process_item handles cross-chunk ordering)
+        if local_dt == "External Account":
+            docs = _sort_accounts_by_reference_order(docs)
+        elif local_dt == "External Cost Center":
+            docs = _sort_by_hierarchy(docs, "parent_cost_center")
+        elif local_dt == "External Item Group":
+            docs = _sort_by_hierarchy(docs, "parent_item_group")
+        elif local_dt == "External Warehouse":
+            docs = _sort_warehouses_by_hierarchy(docs)
+
+        # Phase 3 — save
+        local_meta = frappe.get_meta(local_dt)
+        local_fields = [df.fieldname for df in local_meta.fields]
+
+        count, errors, not_saved = _run_sync_loop(
+            docs, local_dt, local_fields, company, configuration_name, site_url
+        )
+
+        # Phase 4 — retry pass for transient failures
+        if not_saved:
+            retry_count, retry_errors, not_saved = _run_sync_loop(
+                not_saved, local_dt, local_fields, company, configuration_name, site_url
+            )
+            count += retry_count
+            errors.extend(retry_errors)
+
+        state = _update_generic_progress(child_docname, count, len(not_saved), errors)
+
+    except Exception:
+        error_message = frappe.get_traceback()
+        frappe.logger("external_sync").error(
+            "Generic chunk failed for %s/%s: %s", ref_doctype, child_docname, error_message
+        )
+        state = _update_generic_progress(
+            child_docname, 0, len(remote_names),
+            [{"remote_id": None, "error": f"Chunk failed: {error_message}"}],
+        )
+        raise
+
+    finally:
+        if is_last_chunk:
+            if state is None:
+                state = _get_generic_progress_state(child_docname)
+
+            has_failures = (state or {}).get("not_saved_count", 0) > 0
+
+            if has_failures:
+                # ⚠️  Some records failed to save even after the retry pass.
+                # Do NOT advance last_sync — leaving it unchanged forces the next
+                # sync to do a full re-fetch, giving those records another attempt.
+                # (Advancing last_sync here would permanently hide them from
+                # incremental syncs because their `modified` timestamp on the
+                # remote is older than fetch_started_at.)
+                frappe.logger("external_sync").warning(
+                    "Not advancing last_sync for %s/%s — %d record(s) failed to save.",
+                    ref_doctype, child_docname, has_failures,
+                )
+                last_sync = frappe.db.get_value(
+                    "External Site Configuration CT", child_docname, "last_sync"
+                )
+            else:
+                last_sync = fetch_started_at or frappe.utils.now()
+                frappe.db.set_value(
+                    "External Site Configuration CT", child_docname, "last_sync", last_sync
+                )
+
+            _release_sync_lock(child_docname)
+            frappe.publish_realtime(
+                "generic_sync_complete",
+                {
+                    "child_docname": child_docname,
+                    "ref_doctype": ref_doctype,
+                    "count": state.get("count"),
+                    "not_saved_count": state.get("not_saved_count"),
+                    "errors": state.get("errors"),
+                    "last_sync": last_sync,
+                },
+            )
+
+
 
 
 

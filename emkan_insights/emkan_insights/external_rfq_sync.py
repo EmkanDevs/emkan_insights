@@ -1,12 +1,17 @@
 import frappe
 import json
 from frappe.utils import flt
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
     "docstatus", "idx", "doctype", "__last_sync_on",
     "parent", "parentfield", "parenttype"
 }
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 
 def _log(title, message):
@@ -19,7 +24,7 @@ def _log(title, message):
 # ---------------------------------------------------------------------------
 
 # frappe.db.rollback() anymore. They operate inside whatever transaction the
-# caller (sync_rfq_docs) has open. Only the top-level loop in sync_rfq_docs
+# caller (sync_rfq_docs) has open. Only the top-level loop in _sync_rfq_docs_job
 # decides when a unit of work is "done" and safe to persist. This keeps each
 # RFQ's sync atomic: either everything for that RFQ lands, or none of it does.
 # ---------------------------------------------------------------------------
@@ -27,71 +32,43 @@ def _log(title, message):
 
 def _force_cancel_doc(doctype, docname):
     """
-    Force cancel a document by directly updating the database.
-    Use as fallback when normal cancel() fails due to linked docs or validations.
+    INTENTIONALLY DISABLED: Force-setting docstatus via raw SQL bypasses all
+    ERPNext submit/cancel hooks, leaving GL Entries, Stock Ledger Entries, and
+    linked document statuses in an inconsistent state.
 
-    Does NOT commit - caller controls the transaction boundary.
+    This stub is kept so any remaining call sites surface a clear error instead
+    of silently corrupting data. Use _safe_cancel_doc() (ORM cancel) instead.
     """
-    frappe.db.sql(
-        """
-        UPDATE `tab{doctype}`
-        SET docstatus = 2,
-            status = 'Cancelled',
-            modified = NOW(),
-            modified_by = %s
-        WHERE name = %s
-        """.format(doctype=doctype),
-        (frappe.session.user, docname),
+    raise frappe.ValidationError(
+        f"_force_cancel_doc('{doctype}', '{docname}') is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks. "
+        f"Use the ORM cancel() path."
     )
-
-    meta = frappe.get_meta(doctype)
-    for df in meta.get_table_fields():
-        child_doctype = df.options
-        if frappe.db.exists("DocType", child_doctype):
-            frappe.db.sql(
-                """
-                UPDATE `tab{child_doctype}`
-                SET docstatus = 2,
-                    modified = NOW(),
-                    modified_by = %s
-                WHERE parent = %s AND parenttype = %s
-                """.format(child_doctype=child_doctype),
-                (frappe.session.user, docname, doctype),
-            )
-
-    frappe.clear_document_cache(doctype, docname)
 
 
 def _safe_cancel_doc(doc, log_prefix=""):
     """
-    Safely cancel a document with fallback to force cancel.
-    Returns True if successful, raises exception if both methods fail.
+    Cancel a document using the ORM (doc.cancel()), which correctly runs all
+    ERPNext lifecycle hooks (GL reversal, status updates, etc.).
 
-    Does NOT commit - caller controls the transaction boundary. Uses a
-    savepoint so a failed normal-cancel attempt doesn't leave half-applied
-    changes before we fall back to the raw SQL force-cancel.
+    If ORM cancel fails, the exception is logged as CRITICAL and re-raised.
+    Raw SQL force-cancel is intentionally NOT used as a fallback — it would
+    leave the ledger in an inconsistent state.
     """
-    savepoint = f"cancel_{frappe.generate_hash(length=8)}"
-    frappe.db.savepoint(savepoint)
-
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()
-        _log(f"{log_prefix} cancelled normally", "")
+        doc.cancel()  # ORM cancel — runs all lifecycle hooks
         return True
-    except Exception as normal_cancel_err:
-        frappe.db.rollback(save_point=savepoint)
-        _log(f"{log_prefix} normal cancel failed, attempting force cancel",
-             f"Error: {str(normal_cancel_err)}")
-
-        try:
-            _force_cancel_doc(doc.doctype, doc.name)
-            _log(f"{log_prefix} force cancelled successfully", "")
-            return True
-        except Exception as force_cancel_err:
-            _log(f"{log_prefix} force cancel also failed",
-                 f"Normal: {str(normal_cancel_err)}\nForce: {str(force_cancel_err)}")
-            raise
+    except Exception as cancel_err:
+        frappe.log_error(
+            title=f"CRITICAL: {log_prefix} ORM cancel failed — manual intervention required",
+            message=(
+                f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The document has NOT been cancelled. Investigate why cancel() failed "
+                f"and cancel the document manually via ERPNext."
+            )
+        )
+        raise
 
 
 def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
@@ -254,6 +231,7 @@ def _sync_single_rfq(name):
     _safe_dedupe(name, parenttype="External Request for Quotation")
     frappe.clear_document_cache("External Request for Quotation", name)
     external = frappe.get_doc("External Request for Quotation", name)
+    sync_started_at = external.modified
 
     if not external.company:
         frappe.throw(f"Company missing in External RFQ: {name}")
@@ -275,7 +253,15 @@ def _sync_single_rfq(name):
         existing = frappe.db.exists("Request for Quotation", target_name)
 
     if existing:
-        return _sync_existing_docstatus(existing, external)
+        result = _sync_existing_docstatus(existing, external)
+
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
+        )
+
+        return result
 
     # -------------------------------------------------
     # CREATE RFQ
@@ -492,7 +478,7 @@ def _sync_single_rfq(name):
         try:
             rfq.flags.ignore_permissions = True
 
-            # Submit first (required before cancel)
+            # Submit first (required before ORM cancel)
             rfq.submit()
             _log(f"RFQ {rfq.name} submitted (step 1 of cancel)", "")
 
@@ -501,10 +487,7 @@ def _sync_single_rfq(name):
             _safe_dedupe(rfq.name)
 
             final_docstatus = frappe.db.get_value("Request for Quotation", rfq.name, "docstatus")
-            final_status = frappe.db.get_value("Request for Quotation", rfq.name, "status")
-
-            _log(f"RFQ {rfq.name} cancel complete",
-                 f"Final docstatus: {final_docstatus}, Final status: {final_status}")
+            _log(f"RFQ {rfq.name} cancel complete", f"Final docstatus: {final_docstatus}")
 
             if final_docstatus == 2:
                 result = {"name": rfq.name, "status": "synced", "docstatus": 2}
@@ -518,22 +501,21 @@ def _sync_single_rfq(name):
                 }
 
         except Exception as cancel_err:
-            tb = frappe.get_traceback()
-            _log(f"RFQ {rfq.name} CANCEL FAILED - CRITICAL",
-                 f"Error: {str(cancel_err)}\n\nTraceback:\n{tb}")
-
-            try:
-                _force_cancel_doc("Request for Quotation", rfq.name)
-                _log(f"RFQ {rfq.name} force cancelled as last resort", "")
-                result = {"name": rfq.name, "status": "synced", "docstatus": 2}
-            except Exception as force_err:
-                _log(f"RFQ {rfq.name} FORCE CANCEL ALSO FAILED",
-                     f"Force error: {str(force_err)}")
-                result = {
-                    "name": rfq.name,
-                    "status": "synced_submitted",
-                    "error": f"Cancel failed: {str(cancel_err)}"
-                }
+            # ORM cancel failed. Do NOT fall back to raw SQL — that would bypass
+            # lifecycle hooks and leave data inconsistent. Leave the RFQ at
+            # docstatus=1 (Submitted); _sync_existing_docstatus will retry
+            # cancel on the next sync run.
+            _log(
+                f"RFQ {rfq.name} CANCEL FAILED — CRITICAL, manual intervention may be required",
+                f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The RFQ is stuck at docstatus=1. Cancel manually via ERPNext or "
+                f"investigate the validation error blocking cancel()."
+            )
+            result = {
+                "name": rfq.name,
+                "status": "synced_submitted",
+                "error": f"Cancel failed: {str(cancel_err)}"
+            }
             external.db_set("remote_id", rfq.name)
             return result
 
@@ -542,32 +524,89 @@ def _sync_single_rfq(name):
         result = {"name": rfq.name, "status": "synced", "docstatus": 0}
 
     external.db_set("remote_id", rfq.name)
+    external.db_set(
+        "last_synced_on",
+        sync_started_at,
+        update_modified=False
+    )
     return result
 
 
+# ==========================================================
+# WHITELIST ENTRY POINT (CHUNKED)
+# ==========================================================
+
 @frappe.whitelist()
+@filter_kwargs
 def sync_rfq_docs(source_doctype: str, names):
     if isinstance(names, str):
         names = json.loads(names)
 
+    # If no names passed, fetch unsynced
+    if not names:
+        names = frappe.db.sql(f"""
+            SELECT name
+            FROM `tab{source_doctype}`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_rfq_docs_job(names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
     results = []
 
     for name in names:
-        savepoint = f"rfq_sync_{frappe.generate_hash(length=10)}"
-        frappe.db.savepoint(savepoint)
-
         try:
-            result = _sync_single_rfq(name)
-            results.append(result)
-            # No explicit commit here. Frappe commits the whole request
-            # automatically once this whitelisted method returns without an
-            # uncaught exception. The savepoint below still protects the
-            # batch: if one record fails, only its own writes are rolled
-            # back before we move on - they just aren't durable until the
-            # very end, along with everything else in this request.
+            with sync_record_guard("External Request for Quotation", name):
+                result = _sync_single_rfq(name)
+                results.append(result)
 
         except Exception as e:
-            frappe.db.rollback(save_point=savepoint)
             error = frappe.get_traceback()
             _log(f"RFQ Sync Error: {name}", error)
             results.append({

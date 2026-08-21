@@ -14,6 +14,7 @@
   "warehouse_name",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "column_break_3",
   "is_group",
   "parent_warehouse",
@@ -57,8 +58,7 @@
    "label": "Warehouse Name",
    "oldfieldname": "warehouse_name",
    "oldfieldtype": "Data",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "bold": 1,
@@ -274,6 +274,11 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "grid_page_length": 50,
@@ -281,7 +286,7 @@
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-06-17 14:16:58.570118",
+ "modified": "2026-08-19 12:35:10.724114",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Warehouse",

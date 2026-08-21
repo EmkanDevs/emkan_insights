@@ -20,6 +20,7 @@
   "company",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "section_break_11",
   "party_type",
   "column_break_14",
@@ -225,6 +226,11 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "grid_page_length": 50,
@@ -270,7 +276,7 @@
    "link_fieldname": "default_bank_account"
   }
  ],
- "modified": "2026-03-16 11:51:52.455836",
+ "modified": "2026-07-29 12:40:11.821736",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Bank Account",

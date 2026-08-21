@@ -1,6 +1,11 @@
 import frappe
 import json
 from frappe.utils import flt, nowdate
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 
 # ==========================================================
@@ -8,41 +13,75 @@ from frappe.utils import flt, nowdate
 # ==========================================================
 def sync_docstatus(doc, target_status):
     """
-    Forcefully sets docstatus to match the source using direct DB writes.
+    Synchronise a Purchase Order's docstatus to match the source using the
+    ORM submit()/cancel() path, which correctly runs all ERPNext lifecycle
+    hooks (GL Entries, reserved quantities, linked document statuses, etc.).
 
-    Why not doc.submit() / doc.cancel()?
-    ERPNext's on_submit hook calls update_blanket_order() which does
-    frappe.get_doc("Blanket Order", ...) - if that Blanket Order doesn't
-    exist in the target company it raises DoesNotExistError and the whole
-    sync fails. Bypassing hooks entirely avoids this and any other
-    side-effect hooks (update_reserved_qty, update_status, etc.) that
-    are irrelevant for a mirror sync.
+    If ORM submit or cancel fails, the error is logged as CRITICAL and
+    re-raised so the caller's savepoint rolls back only this record.
+    Raw SQL docstatus flip is intentionally NOT used as a fallback.
     """
     target = int(target_status)
-    if doc.docstatus == target:
+    current = int(frappe.db.get_value(doc.doctype, doc.name, "docstatus") or 0)
+
+    if current == target:
         return
 
-    _force_docstatus_db(doc.name, doc.doctype, target)
-    doc.docstatus = target  # keep in-memory object consistent
+    try:
+        doc.flags.ignore_permissions = True
+
+        if target == 1:
+            if current == 0:
+                doc.submit()  # ORM submit — runs all lifecycle hooks
+            else:
+                frappe.log_error(
+                    title=f"PO {doc.name} unhandled docstatus transition: {current} → {target}",
+                    message="Only Draft→Submitted and Draft/Submitted→Cancelled are handled."
+                )
+
+        elif target == 2:
+            if current == 0:
+                doc.submit()  # Must submit first before cancel
+                doc.reload()
+            doc.cancel()  # ORM cancel — runs all lifecycle hooks
+
+        elif target == 0:
+            frappe.log_error(
+                title=f"PO {doc.name} cannot revert to Draft",
+                message=(
+                    f"ERPNext does not support reverting a submitted/cancelled document "
+                    f"to Draft via the ORM. Current docstatus: {current}. "
+                    f"This is a data inconsistency on the source system."
+                )
+            )
+
+    except Exception as err:
+        frappe.log_error(
+            title=f"CRITICAL: PO {doc.name} ORM lifecycle failed ({current} → {target}) — manual intervention required",
+            message=(
+                f"Error: {str(err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The Purchase Order is stuck at docstatus={current}. "
+                f"Investigate why submit()/cancel() failed and correct the document "
+                f"manually via ERPNext."
+            )
+        )
+        raise
 
 
 def _force_docstatus_db(name, doctype, target_docstatus):
     """
-    Directly updates docstatus on the parent doc and ALL child rows
-    without triggering any Frappe/ERPNext hooks.
-    """
-    frappe.db.set_value(doctype, name, "docstatus", target_docstatus, update_modified=False)
+    INTENTIONALLY DISABLED: Force-setting docstatus via raw SQL bypasses all
+    ERPNext submit/cancel hooks (GL Entries, reserved quantities, linked
+    document statuses, etc.).
 
-    child_meta = frappe.get_meta(doctype)
-    for df in child_meta.get_table_fields():
-        child_doctype = df.options
-        if frappe.db.table_exists(f"tab{child_doctype}"):
-            frappe.db.sql(
-                f"""UPDATE `tab{child_doctype}`
-                    SET docstatus = %s
-                    WHERE parent = %s AND parenttype = %s""",
-                (target_docstatus, name, doctype)
-            )
+    This stub is kept so any remaining call sites surface a clear error instead
+    of silently corrupting data. Use sync_docstatus() (ORM path) instead.
+    """
+    raise frappe.ValidationError(
+        f"_force_docstatus_db('{name}', '{doctype}', {target_docstatus}) is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks. "
+        f"Use the ORM submit()/cancel() path via sync_docstatus()."
+    )
 
 
 def resolve_account(account_head):
@@ -501,7 +540,13 @@ def upsert_purchase_order(src, existing_name):
 
     else:
         # ----------------------------------------------------------
-        # NEW: Use ORM normally
+        # NEW: Insert the parent PO via ORM so that validate,
+        # before_insert, and after_insert hooks run correctly.
+        # ignore_mandatory=True lets the insert succeed with an empty
+        # items table — children are added immediately after via the
+        # safe insertion helpers below.
+        # flags.name_set=True preserves the custom prefixed name and
+        # skips autoname().
         # ----------------------------------------------------------
         doc = frappe.new_doc("Purchase Order")
         doc.name = target_name
@@ -535,9 +580,9 @@ def upsert_purchase_order(src, existing_name):
                     break
 
         doc.total = flt(src.total)
-        doc.net_total = flt(src.net_total) or flt(src.total)
+        doc.net_total = flt(src.net_total) or flt(doc.total)
         doc.base_total = flt(src.base_total)
-        doc.base_net_total = flt(src.base_net_total) or flt(src.base_total)
+        doc.base_net_total = flt(doc.base_net_total) or flt(doc.base_total)
         doc.total_qty = flt(src.total_qty)
         doc.grand_total = flt(src.grand_total)
         doc.base_grand_total = flt(src.base_grand_total)
@@ -556,15 +601,10 @@ def upsert_purchase_order(src, existing_name):
         doc.in_words = getattr(src, "in_words", "")
         doc.base_in_words = getattr(src, "base_in_words", "")
 
-        doc.flags.ignore_permissions = True
-        doc.flags.ignore_pricing_rule = True
-
-        doc.set("items", [])
-        doc.set("taxes", [])
-        doc.set("payment_schedule", [])
-        doc.save()
+        doc.insert(ignore_permissions=True, ignore_mandatory=True)
 
         po_name = doc.name
+
 
     # ----------------------------------------------------------
     # Insert children
@@ -641,21 +681,63 @@ def upsert_purchase_order(src, existing_name):
 
 
 # ==========================================================
-# ENTRY POINTS
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_purchase_order_docs(source_doctype: str, names):
     if isinstance(names, str):
         names = json.loads(names)
-    frappe.enqueue(
-        "emkan_insights.emkan_insights.external_po_sync.sync_bulk_purchase_orders",
-        queue="long",
-        names=names,
-        timeout=2000
-    )
-    return "Sync Queued"
 
+    # If no names passed, fetch unsynced
+    if not names:
+        names = frappe.db.sql(f"""
+            SELECT name
+            FROM `tab{source_doctype}`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"po_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_po_sync.sync_bulk_purchase_orders",
+            queue="long",
+            job_name=job_name,
+            timeout=2000,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
 
 def sync_bulk_purchase_orders(names):
     """
@@ -666,38 +748,69 @@ def sync_bulk_purchase_orders(names):
     be cleanly discarded without losing the records already processed
     earlier in the same batch.
     """
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
     results = []
 
     for name in names:
-        savepoint = f"po_sync_{frappe.generate_hash(length=10)}"
-        frappe.db.savepoint(savepoint)
-
         try:
-            src = frappe.get_doc("External Purchase Order", name)
+            # Move savepoint INSIDE try: if a previous loop broke the transaction state,
+            # creating a savepoint outside would crash the whole batch silently.
+            savepoint = f"po_sync_{frappe.generate_hash(length=10)}"
 
-            company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
-            target_name = _build_target_name(company_abbr, src.remote_id or src.name)
-            existing = _find_existing_po(src.remote_id or src.name, target_name)
+            with sync_record_guard("External Purchase Order", name):
+                frappe.db.savepoint(savepoint)
 
-            doc = upsert_purchase_order(src, existing)
+                src = frappe.get_doc("External Purchase Order", name)
+                sync_started_at = src.modified
 
-            results.append({
-                "name": name,
-                "status": "success",
-                "po_name": doc.name,
-                "items": len(doc.items),
-                "taxes": len(doc.taxes),
-                "docstatus": doc.docstatus
-            })
+                company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
+                target_name = _build_target_name(company_abbr, src.remote_id or src.name)
+                existing = _find_existing_po(src.remote_id or src.name, target_name)
+
+                doc = upsert_purchase_order(src, existing)
+                src.db_set(
+                    "last_synced_on",
+                    sync_started_at,
+                    update_modified=False
+                )
+
+                results.append({
+                    "name": name,
+                    "status": "success",
+                    "po_name": doc.name,
+                    "items": len(doc.items),
+                    "taxes": len(doc.taxes),
+                    "docstatus": doc.docstatus
+                })
 
         except Exception as e:
-            frappe.db.rollback(save_point=savepoint)
+            # Safely rollback without crashing the loop if the transaction is broken
+            try:
+                frappe.db.rollback(save_point=savepoint)
+            except Exception:
+                frappe.db.rollback()
+                
             import traceback
+            error_trace = traceback.format_exc()
+            
             results.append({
                 "name": name,
                 "status": "failed",
                 "error": str(e),
-                "traceback": traceback.format_exc()
+                "traceback": error_trace
             })
+            
+            # CRITICAL FIX: Log the error to Frappe's Error Log so it is visible!
+            # Previously, errors were swallowed into the 'results' array which 
+            # is discarded by the background worker, making it look like "no error".
+            frappe.log_error(
+                title=f"External PO Sync Failed: {name}",
+                message=error_trace
+            )
 
     return results

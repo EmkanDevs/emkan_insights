@@ -37,7 +37,7 @@ def _prepare_stock_reconciliation_for_external_sync(item, company_abbr):
 	return item
 
 
-def _fetch_remote_names(base_url, headers, remote_dt):
+def _fetch_remote_names(base_url, headers, remote_dt, filters):
 	url = f"{base_url}/api/resource/{remote_dt}"
 	names = []
 	limit = 1000
@@ -46,7 +46,7 @@ def _fetch_remote_names(base_url, headers, remote_dt):
 	while True:
 		params = {
 			"fields": json.dumps(["name"]),
-			"filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+			"filters": json.dumps(filters),
 			"limit_page_length": limit,
 			"limit_start": start,
 		}
@@ -133,17 +133,35 @@ def sync_stock_reconciliations_from_remote(
 			"Content-Type": "application/json",
 		}
 
+		fetch_started_at = frappe.utils.now()
+
+		previous_last_sync = frappe.db.get_value(
+			"External Site Configuration CT",
+			child_docname,
+			"last_sync"
+		)
+
+		filters = [
+			["docstatus", "in", [0, 1, 2]]
+		]
+		# if previous_last_sync:
+		# 	filters.append([
+		# 		"modified",
+		# 		">",
+		# 		frappe.utils.get_datetime_str(previous_last_sync)
+		# 	])
+
 		if not frappe.db.exists("DocType", LOCAL_DT):
 			frappe.throw(
 				_("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
 				.format(LOCAL_DT)
 			)
 
-		names = _fetch_remote_names(base_url, headers, REMOTE_DT)
+		names = _fetch_remote_names(base_url, headers, REMOTE_DT, filters)
 
 		if not names:
 			_release_sync_lock(child_docname)
-			last_sync = frappe.utils.now()
+			last_sync = fetch_started_at
 			frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
 			return {
 				"count": 0,
@@ -172,6 +190,7 @@ def sync_stock_reconciliations_from_remote(
 				child_docname=child_docname,
 				remote_names=chunk,
 				is_last_chunk=(idx == len(chunks) - 1),
+				fetch_started_at=fetch_started_at,
 			)
 
 		return {
@@ -198,6 +217,7 @@ def process_stock_reconciliation_chunk(
 	child_docname,
 	remote_names,
 	is_last_chunk=False,
+	fetch_started_at=None,
 ):
 	base_url = (site_url or "").rstrip("/")
 	headers = {
@@ -228,7 +248,7 @@ def process_stock_reconciliation_chunk(
 
 	finally:
 		if is_last_chunk:
-			last_sync = frappe.utils.now()
+			last_sync = fetch_started_at or frappe.utils.now()
 			frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
 			_release_sync_lock(child_docname)
 			frappe.publish_realtime(

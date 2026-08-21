@@ -21,6 +21,7 @@
   "posting_date",
   "posting_time",
   "set_posting_time",
+  "is_synced",
   "column_break_12",
   "company",
   "apply_putaway_rule",
@@ -28,6 +29,7 @@
   "return_against",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "accounting_dimensions_section",
   "cost_center",
   "dimension_col_break",
@@ -1307,6 +1309,17 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_synced",
+   "fieldtype": "Check",
+   "label": "Is Synced"
   }
  ],
  "grid_page_length": 50,
@@ -1314,7 +1327,7 @@
  "idx": 261,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-09 14:20:29.737284",
+ "modified": "2026-08-03 09:07:33.329988",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Purchase Receipt",

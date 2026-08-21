@@ -13,7 +13,7 @@
   "basic_details_tab",
   "basic_information",
   "employee",
-    "remote_id",
+  "remote_id",
   "source_site",
   "naming_series",
   "first_name",
@@ -24,6 +24,7 @@
   "gender",
   "date_of_birth",
   "salutation",
+  "last_synced_on",
   "column_break1",
   "date_of_joining",
   "image",
@@ -136,12 +137,12 @@
    "print_hide": 1,
    "report_hide": 1
   },
-    {
+  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
    "label": "Remote ID"
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
@@ -829,6 +830,11 @@
    "fieldtype": "Data",
    "label": "IBAN",
    "options": "IBAN"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-user",
@@ -836,7 +842,7 @@
  "image_field": "image",
  "is_tree": 1,
  "links": [],
- "modified": "2025-08-29 11:52:12.819878",
+ "modified": "2026-07-29 12:48:19.783532",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Employee",

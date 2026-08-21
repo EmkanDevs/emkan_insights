@@ -55,10 +55,29 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
     limit = 1000
     start = 0
 
+    fetch_started_at = frappe.utils.now()
+
+    previous_last_sync = frappe.db.get_value(
+        "External Site Configuration CT",
+        child_docname,
+        "last_sync"
+    )
+
+    filters = [
+        ["docstatus", "in", [0, 1, 2]]
+    ]
+    if previous_last_sync:
+        filters.append([
+            "modified",
+            ">",
+            frappe.utils.get_datetime_str(previous_last_sync)
+        ])
+
     try:
         while True:
             params = {
                 "fields": json.dumps(["*"]),
+                "filters": json.dumps(filters),
                 "limit_page_length": limit,
                 "limit_start": start
             }
@@ -96,8 +115,9 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
         count += retry_count
         errors.extend(retry_errors)
 
-    last_sync = frappe.utils.now()
-    frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+    last_sync = fetch_started_at
+    if child_docname:
+        frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
 
     return {
         "count": count,

@@ -57,7 +57,7 @@ def _prepare_stock_entry_for_external_sync(item, company_abbr):
 
     return item
 
-def _fetch_remote_names(base_url, headers, remote_dt):
+def _fetch_remote_names(base_url, headers, remote_dt, filters):
     url = f"{base_url}/api/resource/{remote_dt}"
     names = []
     limit = 1000
@@ -66,7 +66,7 @@ def _fetch_remote_names(base_url, headers, remote_dt):
     while True:
         params = {
             "fields": json.dumps(["name"]),
-            "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+            "filters": json.dumps(filters),
             "limit_page_length": limit,
             "limit_start": start,
         }
@@ -136,6 +136,40 @@ def _update_progress(child_docname, count_delta, not_saved_delta, chunk_errors):
     state["errors"].extend(chunk_errors)
     frappe.cache().set_value(key, json.dumps(state))
     return state
+
+
+def _enqueue_stock_entry_chunk(
+    *,
+    site_url,
+    api_key,
+    api_secret,
+    company,
+    company_abbr,
+    configuration_name,
+    child_docname,
+    chunks,
+    chunk_index,
+    fetch_started_at,
+):
+    if chunk_index >= len(chunks):
+        return
+
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.sync_stock_entry_from_remote.process_stock_entry_chunk",
+        queue="long",
+        timeout=900,
+        job_name=f"se_sync_chunk_{child_docname}_{chunk_index}_{int(time.time())}",
+        site_url=site_url,
+        api_key=api_key,
+        api_secret=api_secret,
+        company=company,
+        company_abbr=company_abbr,
+        configuration_name=configuration_name,
+        child_docname=child_docname,
+        chunks=chunks,
+        chunk_index=chunk_index,
+        fetch_started_at=fetch_started_at,
+    )
 
 
 # @frappe.whitelist()
@@ -208,17 +242,35 @@ def sync_stock_entries_from_remote(site_url, api_key, api_secret, ref_doctype, c
             "Content-Type": "application/json",
         }
 
+        fetch_started_at = frappe.utils.now()
+
+        previous_last_sync = frappe.db.get_value(
+            "External Site Configuration CT",
+            child_docname,
+            "last_sync"
+        )
+
+        filters = [
+            ["docstatus", "in", [0, 1, 2]]
+        ]
+        # if previous_last_sync:
+        #     filters.append([
+        #         "modified",
+        #         ">",
+        #         frappe.utils.get_datetime_str(previous_last_sync)
+        #     ])
+
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
                 _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
                 .format(LOCAL_DT)
             )
 
-        names = _fetch_remote_names(base_url, headers, REMOTE_DT)
+        names = _fetch_remote_names(base_url, headers, REMOTE_DT, filters)
 
         if not names:
             _release_sync_lock(child_docname)
-            last_sync = frappe.utils.now()
+            last_sync = fetch_started_at
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
             return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
 
@@ -227,23 +279,18 @@ def sync_stock_entries_from_remote(site_url, api_key, api_secret, ref_doctype, c
 
         # SAFETY COMMIT: Ensure DB state is clean before dispatching background jobs
 
-        for idx, chunk in enumerate(chunks):
-            frappe.enqueue(
-                "emkan_insights.emkan_insights.sync_stock_entry_from_remote.process_stock_entry_chunk",
-                queue="long",
-                timeout=900,
-                # FIX: Add timestamp to prevent DuplicateEntryError on the RQ Job doc
-                job_name=f"se_sync_chunk_{child_docname}_{idx}_{int(time.time())}",
-                site_url=site_url,
-                api_key=api_key,
-                api_secret=api_secret,
-                company=company,
-                company_abbr=company_abbr,
-                configuration_name=configuration_name,
-                child_docname=child_docname,
-                remote_names=chunk,
-                is_last_chunk=(idx == len(chunks) - 1),
-            )
+        _enqueue_stock_entry_chunk(
+            site_url=site_url,
+            api_key=api_key,
+            api_secret=api_secret,
+            company=company,
+            company_abbr=company_abbr,
+            configuration_name=configuration_name,
+            child_docname=child_docname,
+            chunks=chunks,
+            chunk_index=0,
+            fetch_started_at=fetch_started_at,
+        )
 
         return {
             "status": "queued",
@@ -256,13 +303,29 @@ def sync_stock_entries_from_remote(site_url, api_key, api_secret, ref_doctype, c
 
 
 @frappe.whitelist()
-def process_stock_entry_chunk(site_url, api_key, api_secret, company, company_abbr, configuration_name, child_docname, remote_names, is_last_chunk=False):
+def process_stock_entry_chunk(
+    site_url,
+    api_key,
+    api_secret,
+    company,
+    company_abbr,
+    configuration_name,
+    child_docname,
+    remote_names=None,
+    is_last_chunk=False,
+    fetch_started_at=None,
+    chunks=None,
+    chunk_index=0,
+):
     base_url = (site_url or "").rstrip("/")
     headers = {
         "Authorization": f"token {api_key}:{api_secret}",
         "Content-Type": "application/json",
     }
     state = {}
+    chunks = chunks or [remote_names or []]
+    chunk_index = int(chunk_index or 0)
+    remote_names = chunks[chunk_index] if chunk_index < len(chunks) else []
 
     try:
         docs = _fetch_full_docs_threaded(base_url, headers, REMOTE_DT, remote_names)
@@ -285,8 +348,22 @@ def process_stock_entry_chunk(site_url, api_key, api_secret, company, company_ab
         state = _update_progress(child_docname, count, len(not_saved), errors)
 
     finally:
-        if is_last_chunk:
-            last_sync = frappe.utils.now()
+        next_chunk_index = chunk_index + 1
+        if next_chunk_index < len(chunks):
+            _enqueue_stock_entry_chunk(
+                site_url=site_url,
+                api_key=api_key,
+                api_secret=api_secret,
+                company=company,
+                company_abbr=company_abbr,
+                configuration_name=configuration_name,
+                child_docname=child_docname,
+                chunks=chunks,
+                chunk_index=next_chunk_index,
+                fetch_started_at=fetch_started_at,
+            )
+        else:
+            last_sync = fetch_started_at or frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
             _release_sync_lock(child_docname)
             frappe.publish_realtime(

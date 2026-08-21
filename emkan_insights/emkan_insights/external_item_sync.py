@@ -1,20 +1,57 @@
 import frappe
 import json
 from frappe.utils import cint, flt
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 
 # ==========================================================
-# ENTRY POINT
+# HELPERS
+# ==========================================================
+
+def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
+    """
+    Resolve a linked local document.
+    1. Prefixed local name: {company_abbr}-{remote_name}
+    2. remote_id / custom_remote_id lookup
+    3. Raw name existence check
+    """
+    if not remote_or_local_name or not frappe.db.exists("DocType", doctype):
+        return None
+
+    if company_abbr and not remote_or_local_name.startswith(f"{company_abbr}-"):
+        prefixed = f"{company_abbr}-{remote_or_local_name}"
+        if frappe.db.exists(doctype, prefixed):
+            return prefixed
+
+    meta = frappe.get_meta(doctype)
+    for remote_field in ("custom_remote_id", "remote_id"):
+        if meta.has_field(remote_field):
+            local_name = frappe.db.get_value(doctype, {remote_field: remote_or_local_name}, "name")
+            if local_name:
+                return local_name
+
+    if frappe.db.exists(doctype, remote_or_local_name):
+        return remote_or_local_name
+
+    return None
+
+
+# ==========================================================
+# ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_items(names=None):
-
     """
     Dedicated bulk sync for External Item -> Item
 
     Handles:
-    - batching
+    - de-duplication
+    - chunking
     - queueing
     - timeout prevention
     - large datasets
@@ -23,27 +60,49 @@ def sync_external_items(names=None):
     if isinstance(names, str):
         names = json.loads(names)
 
-    # If no names passed, sync everything
+    # If no names passed, sync everything unsynced
     if not names:
-        names = frappe.get_all(
-            "External Item",
-            pluck="name"
-        )
+        names = frappe.db.sql("""
+            SELECT name
+            FROM `tabExternal Item`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
 
-    batch_size = 200
+    if not isinstance(names, (list, tuple)):
+        return []
 
-    for i in range(0, len(names), batch_size):
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
 
-        batch = names[i:i + batch_size]
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
 
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"item_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
         frappe.enqueue(
             "emkan_insights.emkan_insights.external_item_sync.sync_item_batch",
             queue="long",
+            job_name=job_name,
             timeout=5000,
-            names=batch
+            names=chunk,
         )
+        queued_chunks += 1
 
-    return f"{len(names)} Items queued for sync"
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
 
 
 # ==========================================================
@@ -57,6 +116,12 @@ def sync_item_batch(names):
     All database writes (item.save()) happen within a single transaction.
     Frappe automatically commits the transaction when the background job finishes.
     """
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return {"success": 0, "failed": 0}
+
     success = 0
     failed = 0
 
@@ -91,6 +156,7 @@ def sync_item_batch(names):
 def sync_single_item(source_name):
 
     src = frappe.get_doc("External Item", source_name)
+    sync_started_at = src.modified
 
     target_name = src.remote_id
 
@@ -98,6 +164,12 @@ def sync_single_item(source_name):
 
     if target_name and frappe.db.exists("Item", target_name):
         existing = target_name
+
+    # ------------------------------------------------------
+    # Determine Company Abbr for prefixing linked docs
+    # ------------------------------------------------------
+    company = getattr(src, "company", None)
+    company_abbr = frappe.db.get_value("Company", company, "abbr") if company else ""
 
     # ------------------------------------------------------
     # LOAD / CREATE
@@ -184,13 +256,21 @@ def sync_single_item(source_name):
         "delivered_by_supplier": cint(getattr(src, "delivered_by_supplier_drop_ship", 0)),
         "customer": getattr(src, "customer", None),
 
-        "default_bom": getattr(src, "default_bom", None),
+        # "default_bom" removed from here to be resolved explicitly below
+
         "grant_commission": cint(getattr(src, "grant_commission", 1)),
 
         "variant_of": getattr(src, "variant_of", None),
         "variant_based_on": getattr(src, "variant_based_on", None),
 
     })
+
+    # ------------------------------------------------------
+    # RESOLVE DEFAULT BOM (Company Prefix Fix)
+    # ------------------------------------------------------
+    raw_bom = getattr(src, "default_bom", None)
+    if raw_bom:
+        item.default_bom = resolve_local_doc("BOM", raw_bom, company_abbr)
 
     # ------------------------------------------------------
     # HELPER: SYNC CHILD TABLES
@@ -323,5 +403,11 @@ def sync_single_item(source_name):
     item.flags.ignore_permissions = True
 
     item.save()
+
+    src.db_set(
+        "last_synced_on",
+        sync_started_at,
+        update_modified=False
+    )
 
     return item.name

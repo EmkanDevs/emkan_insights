@@ -10,7 +10,8 @@
   "source_name",
   "details",
   "remote_id",
-  "source_site"
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -35,10 +36,15 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "links": [],
- "modified": "2026-03-16 08:45:49.012495",
+ "modified": "2026-07-29 12:43:41.069378",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Lead Source",

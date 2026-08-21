@@ -11,6 +11,7 @@
   "asset_category_name",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "column_break_3",
   "depreciation_options",
   "enable_cwip_accounting",
@@ -78,15 +79,20 @@
    "fieldtype": "Data",
    "label": "Remote ID"
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "links": [],
- "modified": "2026-02-05 14:00:01.602762",
+ "modified": "2026-07-29 12:38:24.116718",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Asset Category",

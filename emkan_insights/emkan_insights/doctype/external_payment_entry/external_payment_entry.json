@@ -18,6 +18,7 @@
   "company",
   "mode_of_payment",
   "is_synced",
+  "last_synced_on",
   "party_section",
   "party_type",
   "party",
@@ -806,6 +807,11 @@
    "fieldname": "is_synced",
    "fieldtype": "Check",
    "label": "Is Synced"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "grid_page_length": 50,
@@ -820,7 +826,7 @@
    "table_fieldname": "payment_entries"
   }
  ],
- "modified": "2026-07-22 14:16:24.899969",
+ "modified": "2026-07-29 13:09:06.321505",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Payment Entry",

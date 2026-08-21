@@ -1,6 +1,8 @@
 import frappe
 import json
 from frappe.utils import flt
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import acquire_sync_lock, release_sync_lock
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -25,6 +27,39 @@ EXPLICITLY_HANDLED_HEADER_FIELDS = {
     "customer", "return_against"
 }
 
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
+
+
+def _sync_existing_docstatus(existing_name, ext_si):
+    local_docstatus = frappe.db.get_value("Sales Invoice", existing_name, "docstatus")
+    target_docstatus = int(ext_si.docstatus or 0)
+
+    if int(local_docstatus or 0) == target_docstatus:
+        return {"name": existing_name, "status": "exists", "docstatus": local_docstatus}
+
+    si = frappe.get_doc("Sales Invoice", existing_name)
+    si.flags.ignore_permissions = True
+
+    if target_docstatus == 1 and int(local_docstatus or 0) == 0:
+        si.submit()
+        return {"name": si.name, "status": "docstatus_synced", "docstatus": 1}
+
+    if target_docstatus == 2:
+        if int(local_docstatus or 0) == 0:
+            si.submit()
+            si = frappe.get_doc("Sales Invoice", existing_name)
+        si.cancel()
+        final_docstatus = frappe.db.get_value("Sales Invoice", existing_name, "docstatus")
+        return {"name": existing_name, "status": "docstatus_synced", "docstatus": final_docstatus}
+
+    return {
+        "name": existing_name,
+        "status": "exists",
+        "docstatus": local_docstatus,
+        "warning": "unhandled docstatus transition",
+    }
+
 
 # ==========================================================
 # DUPLICATE CLEANUP
@@ -44,6 +79,7 @@ def clean_duplicate_si_items(parent_name):
             AND IFNULL(t1.delivery_note, '') = IFNULL(t2.delivery_note, '')
             AND IFNULL(t1.sales_order, '') = IFNULL(t2.sales_order, '')
             AND IFNULL(t1.custom_remote_id, '') = IFNULL(t2.custom_remote_id, '')
+            AND IFNULL(t1.custom_remote_id, '') <> ''
     """, (parent_name,))
 
 
@@ -138,7 +174,7 @@ def _ensure_item_uom(item_code, uom):
     if not frappe.db.exists("UOM", uom):
         return
 
-    already_registered = frappe.db.exists("UOM Conversion Detail", {
+    already_registered = frappe.exists("UOM Conversion Detail", {
         "parent": item_code,
         "parenttype": "Item",
         "uom": uom
@@ -224,24 +260,78 @@ def _resolve_cost_center(cost_center, company, company_abbr, cc_cache):
 
 
 # ==========================================================
-# MAIN ENTRY POINT
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_sales_invoice_docs(source_doctype, names):
-
     if isinstance(names, str):
         names = json.loads(names)
 
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"si_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_si_sync._sync_sales_invoice_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=6000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_sales_invoice_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
     results = []
 
-    # Cache for cost center resolution — survives across all invoices
-    # in this batch so repeated cost centers don't hit the DB each time.
+    # Each background job gets its own cc_cache — perfectly safe since
+    # each job runs in its own worker process with its own DB connection.
     cc_cache = {}
 
     for name in names:
+        lock_name = None
+        savepoint = None
         try:
+            lock_name = acquire_sync_lock(source_doctype, name)
+            savepoint = frappe.scrub(f"sync_si_{name}")[:50]
+            frappe.db.savepoint(savepoint)
+
             ext_si = frappe.get_doc(source_doctype, name)
+            sync_started_at = ext_si.modified
             remote_id = ext_si.name
 
             # ------------------------------------------------
@@ -284,7 +374,14 @@ def sync_external_sales_invoice_docs(source_doctype, names):
             ) or (target_name if frappe.db.exists("Sales Invoice", target_name) else None)
 
             if existing_si:
-                results.append({"name": existing_si, "status": "exists"})
+                result = _sync_existing_docstatus(existing_si, ext_si)
+                if result.get("status") in ("exists", "docstatus_synced"):
+                    ext_si.db_set(
+                        "last_synced_on",
+                        sync_started_at,
+                        update_modified=False
+                    )
+                results.append(result)
                 continue
 
             si = frappe.new_doc("Sales Invoice")
@@ -619,7 +716,15 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 "status": "synced"
             })
 
+            ext_si.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
+
         except Exception as e:
+            if savepoint:
+                frappe.db.rollback(save_point=savepoint)
             error = frappe.get_traceback()
 
             frappe.log_error(
@@ -632,5 +737,7 @@ def sync_external_sales_invoice_docs(source_doctype, names):
                 "status": "failed",
                 "error": str(e)
             })
+        finally:
+            release_sync_lock(lock_name)
 
     return results

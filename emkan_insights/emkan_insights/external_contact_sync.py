@@ -6,15 +6,74 @@ SYSTEM_FIELDS = {
     "docstatus", "idx", "doctype", "__last_sync_on"
 }
 
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
+
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+
+
+# ==========================================================
+# WHITELIST ENTRY POINT (CHUNKED)
+# ==========================================================
+
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_contact_docs(source_doctype, names):
     if isinstance(names, str):
         names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"contact_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_contact_sync._sync_external_contact_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_external_contact_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
 
     results = []
     for name in names:
         try:
             ext_contact = frappe.get_doc(source_doctype, name)
+            sync_started_at = ext_contact.modified
 
             # Check if this remote ID already exists locally
             existing_contact = frappe.db.get_value("Contact", {"remote_id": ext_contact.name}, "name")
@@ -117,6 +176,12 @@ def sync_external_contact_docs(source_doctype, names):
             )
             
             results.append({"name": contact.name, "status": "synced"})
+
+            ext_contact.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
 
         except Exception as e:
             error_msg = f"Contact Sync Error for {name}: {str(e)}\n{frappe.get_traceback()}"

@@ -16,6 +16,7 @@
   "source_site",
   "column_break_1",
   "website",
+  "last_synced_on",
   "address_and_contact",
   "address_html",
   "column_break_13",
@@ -106,15 +107,20 @@
    "fieldtype": "Data",
    "label": "Remote ID"
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "links": [],
- "modified": "2026-02-05 14:45:16.676417",
+ "modified": "2026-07-29 12:39:26.397729",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Bank",

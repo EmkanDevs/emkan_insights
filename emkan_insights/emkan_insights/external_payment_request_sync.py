@@ -1,6 +1,7 @@
 import frappe
 import json
 from frappe.utils import flt, getdate
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -17,6 +18,9 @@ LINK_DOCTYPES = {
     "Purchase Invoice", "Purchase Order", "Purchase Receipt",
     "Sales Invoice", "Sales Order", "Payment Request"
 }
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 
 def resolve_local_reference(reference_doctype, reference_name, company_abbr=None):
@@ -48,24 +52,88 @@ def resolve_local_reference(reference_doctype, reference_name, company_abbr=None
     return None
 
 
+# ==========================================================
+# WHITELIST ENTRY POINT (CHUNKED)
+# ==========================================================
+
 @frappe.whitelist()
+@filter_kwargs
 def sync_payment_request_docs(source_doctype, names):
     if isinstance(names, str):
         names = json.loads(names)
 
-    names = names or []
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"prq_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_payment_request_sync._sync_payment_request_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_payment_request_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
     results = []
 
     for name in names:
         try:
+            external = frappe.get_doc(source_doctype, name)
+            sync_started_at = external.modified
+
             pr_name = sync_external_payment_request(source_doctype, name)
             results.append({"name": pr_name, "status": "success"})
+
+            external.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"Payment Request Sync Failed: {name}")
             results.append({"name": name, "status": "failed"})
 
     return results
 
+
+# ==========================================================
+# MAIN SYNC FUNCTION
+# ==========================================================
 
 def sync_external_payment_request(source_doctype, external_name):
     external = frappe.get_doc(source_doctype, external_name)

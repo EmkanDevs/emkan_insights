@@ -1,7 +1,8 @@
 import frappe
 import json
 from frappe.utils import flt
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
 # ==========================================================
 # CONSTANTS
@@ -18,6 +19,9 @@ EXPLICITLY_HANDLED_HEADER_FIELDS = {
 }
 
 LOCAL_PARENTTYPE = "Payment Entry"
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
 
 # Fields we deliberately DO NOT copy from the remote reference row.
 # payment_term: term-level outstanding is recomputed locally and has no
@@ -311,60 +315,47 @@ def _cancel_gl_entries_for_voucher(doctype, docname):
 
 def _force_cancel_pe(docname):
     """
-    Last-resort cancel when doc.cancel() itself keeps failing (the exact
-    condition that produced the Submitted-but-should-be-Cancelled bug).
-    Reverses GL first, then flips docstatus directly via SQL.
+    INTENTIONALLY DISABLED: Force-setting docstatus via raw SQL bypasses all
+    ERPNext lifecycle hooks. Even though GL reversal is attempted before the
+    SQL flip, the cancel() ORM path also handles Payment Entry References,
+    party ledger updates, and other side effects that raw SQL cannot replicate.
+
+    This stub is kept so any remaining call sites surface a clear error.
+    Use _safe_cancel_pe() (ORM cancel) instead.
     """
-    _cancel_gl_entries_for_voucher("Payment Entry", docname)
-
-    frappe.db.sql(
-        """
-        UPDATE `tabPayment Entry`
-        SET docstatus = 2, modified = NOW()
-        WHERE name = %s
-        """,
-        docname,
+    raise frappe.ValidationError(
+        f"_force_cancel_pe('{docname}') is not allowed: "
+        f"raw SQL docstatus changes bypass ERPNext lifecycle hooks. "
+        f"Use the ORM cancel() path."
     )
-
-    for child_dt in ("Payment Entry Reference", "Advance Taxes and Charges", "Payment Entry Deduction"):
-        if frappe.db.exists("DocType", child_dt):
-            frappe.db.sql(
-                f"""
-                UPDATE `tab{child_dt}`
-                SET docstatus = 2, modified = NOW()
-                WHERE parent = %s AND parenttype = %s
-                """,
-                (docname, LOCAL_PARENTTYPE),
-            )
-
-    frappe.clear_document_cache("Payment Entry", docname)
 
 
 def _safe_cancel_pe(doc):
     """
-    Cancel with a logged, retryable fallback instead of letting a single
-    cancel() failure leave the document permanently Submitted (the root
-    cause of the 3 mismatched vouchers found via the source/local CSV diff).
+    Cancel a Payment Entry using the ORM (doc.cancel()), which correctly runs
+    all ERPNext lifecycle hooks including GL Entry reversal and party ledger
+    updates.
+
+    If ORM cancel fails, the exception is logged as CRITICAL and re-raised.
+    Raw SQL force-cancel is intentionally NOT used as a fallback — it would
+    leave Payment Entry References, party outstandings, and other state
+    inconsistent even when GL entries are reversed first.
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()
-        _log(f"PE {doc.name} cancelled normally", "")
+        doc.cancel()  # ORM cancel — runs all lifecycle hooks
         return
-    except Exception as normal_err:
-        _log(
-            title=f"PE {doc.name} normal cancel failed, attempting force cancel",
-            message=str(normal_err),
-        )
-        try:
-            _force_cancel_pe(doc.name)
-            _log(f"PE {doc.name} force cancelled successfully", "")
-        except Exception as force_err:
-            _log(
-                title=f"PE {doc.name} force cancel ALSO failed",
-                message=f"Normal: {str(normal_err)}\nForce: {str(force_err)}\n\n{frappe.get_traceback()}",
+    except Exception as cancel_err:
+        frappe.log_error(
+            title=f"CRITICAL: PE {doc.name} ORM cancel failed — manual intervention required",
+            message=(
+                f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
+                f"The Payment Entry has NOT been cancelled. Its GL Entries and party "
+                f"ledger remain active. Investigate why cancel() failed and cancel the "
+                f"document manually via ERPNext to ensure ledger integrity."
             )
-            raise
+        )
+        raise
 
 
 # ==========================================================
@@ -464,21 +455,69 @@ def _sync_existing_docstatus(existing_name, src):
 
 
 # ==========================================================
-# ENTRY POINT
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_payment_entry_docs(source_doctype, names):
-
     if isinstance(names, str):
         names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"pe_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_payment_entry_sync._sync_payment_entry_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=6000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_payment_entry_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
 
     results = []
 
     for name in names:
         try:
-            result = sync_external_payment_entry(source_doctype, name)
-            results.append({"name": name, "status": "synced", "payment_entry": result})
+            with sync_record_guard(source_doctype, name):
+                result = sync_external_payment_entry(source_doctype, name)
+                results.append({"name": name, "status": "synced", "payment_entry": result})
 
         except Exception:
             error = frappe.get_traceback()
@@ -523,6 +562,7 @@ def sync_external_payment_entry(source_doctype, external_name):
             frappe.throw(f"{src.party_type} {src.party} not found locally. Sync master first.")
 
     local_paid_from = None
+
     if src.paid_from:
         local_paid_from = _resolve_account(src.paid_from, company_abbr)
         if not local_paid_from:
@@ -541,6 +581,7 @@ def sync_external_payment_entry(source_doctype, external_name):
     doc.remote_id = remote_id
     doc.name = target_name
     doc.flags.name_set = True
+    
 
     # ------------------------------------------------------
     # Copy Main Fields
@@ -554,6 +595,7 @@ def sync_external_payment_entry(source_doctype, external_name):
             doc.set(field, value)
 
     # Ensure company + remote_id + resolved accounts stick after generic copy
+    doc.book_advance_payments_in_separate_party_account = src.book_advance_payments_in_separate_party_account
     doc.company = company
     doc.remote_id = remote_id
     doc.paid_from = local_paid_from
@@ -572,6 +614,7 @@ def sync_external_payment_entry(source_doctype, external_name):
 
     for row in src.get("references") or []:
         ref_row = _build_reference_row(row, company_abbr, company, remote_id, target_name)
+        # frappe.throw(str(ref_row))
         if ref_row is not None:
             doc.append("references", ref_row)
 
@@ -721,22 +764,5 @@ def sync_external_payment_entry(source_doctype, external_name):
             # _sync_existing_docstatus will find it at local==1/target==2
             # and retry cancel via _safe_cancel_pe (including force-cancel fallback).
             return doc.name
-
-            # Mark external document as synced
-    result = sync_external_payment_entry(source_doctype, name)
-
-    frappe.db.set_value(
-        source_doctype,
-        name,
-        "is_synced",
-        1,
-        update_modified=False
-    )
-
-    results.append({
-        "name": name,
-        "status": "synced",
-        "payment_entry": result
-    })
 
     return doc.name

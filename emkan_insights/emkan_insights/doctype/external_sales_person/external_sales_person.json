@@ -23,6 +23,7 @@
   "lft",
   "rgt",
   "old_parent",
+  "last_synced_on",
   "target_details_section_break",
   "targets"
  ],
@@ -151,13 +152,18 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "icon-user",
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-03-05 08:36:43.231031",
+ "modified": "2026-07-29 12:55:36.618750",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Person",

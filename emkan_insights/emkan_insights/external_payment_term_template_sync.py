@@ -1,14 +1,25 @@
 import frappe
 import json
 from frappe.utils import flt, cint
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_payment_template_docs(source_doctype: str, names):
     if isinstance(names, str):
         names = json.loads(names)
 
     for name in names:
+        external = frappe.get_doc("External Payment Terms Template", name)
+        sync_started_at = external.modified
+
         sync_external_payment_template(name)
+
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
+        )
 
     return "Success"
 

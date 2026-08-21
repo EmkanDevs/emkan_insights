@@ -22,6 +22,7 @@
   "delivery_date",
   "remote_id",
   "site_url",
+  "last_synced_on",
   "column_break1",
   "po_no",
   "po_date",
@@ -1678,13 +1679,18 @@
    "fieldname": "site_url",
    "fieldtype": "Data",
    "label": "Site URL"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-file-text",
  "idx": 105,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-23 08:27:07.225354",
+ "modified": "2026-07-29 13:06:35.704039",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Order",

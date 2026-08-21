@@ -19,6 +19,7 @@
   "lft",
   "rgt",
   "old_parent",
+  "last_synced_on",
   "target_details_section_break",
   "targets"
  ],
@@ -131,13 +132,18 @@
    "oldfieldname": "target_details",
    "oldfieldtype": "Table",
    "options": "Target Detail"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-map-marker",
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-02-09 11:01:22.924010",
+ "modified": "2026-07-29 12:40:32.973430",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Territory",

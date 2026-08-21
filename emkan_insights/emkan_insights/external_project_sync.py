@@ -1,18 +1,27 @@
 import frappe
 import json
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_project_docs(source_doctype: str, names):
     if isinstance(names, str):
         names = json.loads(names)
 
     for name in names:
         external = frappe.get_doc("External Project", name)
+        sync_started_at = external.modified
 
         if not external.company:
             frappe.throw(f"Company missing in External Project: {name}")
 
         sync_external_project(name, external.company)
+
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
+        )
 
     return "Success"
 

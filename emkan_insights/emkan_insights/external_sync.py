@@ -9,6 +9,20 @@ SYSTEM_FIELDS = {
     "docstatus", "idx", "__last_sync_on"
 }
 
+
+def _safe_log_external_sync_error(message, *args):
+    try:
+        frappe.logger("external_sync").error(message, *args)
+    except Exception:
+        pass
+
+
+def _safe_log_error(message=None, title=None):
+    try:
+        frappe.log_error(message=message, title=title)
+    except Exception:
+        pass
+
 @frappe.whitelist()
 def sync_account_docs(source_doctype: str, names, company: str):
 
@@ -444,6 +458,13 @@ def sync_external_docs(
     title_field_source: str | None = None,
     mandatory_defaults: dict | None = None,
 ):
+    """
+    Thin HTTP entry-point — resolves metadata and enqueues the actual work as
+    a background job so the gunicorn worker is never held for longer than a
+    few milliseconds.  Returns immediately with a "Queued" message.
+
+    The heavy lifting is done by _sync_external_docs_worker (below).
+    """
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -457,22 +478,64 @@ def sync_external_docs(
 
     if not target_doctype:
         frappe.throw(f"Target doctype could not be determined for {source_doctype}")
-    
+
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.external_sync._sync_external_docs_worker",
+        queue="long",
+        timeout=900,
+        job_name=f"sync_external_docs_{source_doctype}",
+        source_doctype=source_doctype,
+        target_doctype=target_doctype,
+        names=names,
+        key_field=key_field,
+        title_field_source=title_field_source,
+        mandatory_defaults=mandatory_defaults,
+    )
+
+    return f"Queued sync of {len(names)} {source_doctype} record(s) to {target_doctype}"
+
+
+def _sync_external_docs_worker(
+    source_doctype: str,
+    target_doctype: str,
+    names: List[str],
+    key_field: str = "remote_id",
+    title_field_source: str | None = None,
+    mandatory_defaults: dict | None = None,
+):
+    """
+    Background worker — does the actual per-record sync loop.
+    Called exclusively via frappe.enqueue from sync_external_docs.
+    """
     # 🔥 Ensure Territory Root before syncing
     if target_doctype == "Territory":
         ensure_territory_root()
 
     results = []
+    errors = []
     for source_name in names:
-        res = sync_doc_by_key(
-            source_doctype=source_doctype,
-            source_name=source_name,
-            target_doctype=target_doctype,
-            key_field=key_field,
-            title_field_source=title_field_source,
-            mandatory_defaults=mandatory_defaults,
+        try:
+            res = sync_doc_by_key(
+                source_doctype=source_doctype,
+                source_name=source_name,
+                target_doctype=target_doctype,
+                key_field=key_field,
+                title_field_source=title_field_source,
+                mandatory_defaults=mandatory_defaults,
+            )
+            results.append(res["name"])
+        except Exception as e:
+            errors.append({"name": source_name, "error": str(e)})
+            _safe_log_external_sync_error(
+                "sync_external_docs failed for %s/%s: %s",
+                source_doctype, source_name, frappe.get_traceback(),
+            )
+
+    if errors:
+        _safe_log_error(
+            title=f"Sync errors: {source_doctype} → {target_doctype}",
+            message="\n".join(f"{e['name']}: {e['error']}" for e in errors),
         )
-        results.append(res["name"])
 
     return results
 
@@ -1233,6 +1296,8 @@ def _resolve_target_asset_category_from_external(external_asset_category: str, k
 
 
 def _apply_item_group_sync_rules(src, tgt, key_field: str, title_field_source: str | None) -> None:
+    _sanitize_item_group_default_accounts(src, tgt)
+
     # Avoid nested-set reparenting issues on existing nodes; keep current tree
     # stable and only set parent when creating a new Item Group.
 
@@ -1291,6 +1356,68 @@ def _apply_item_group_sync_rules(src, tgt, key_field: str, title_field_source: s
             return
 
     tgt.parent_item_group = parent_name
+
+
+def _sanitize_item_group_default_accounts(src, tgt) -> None:
+    if not tgt.get("item_group_defaults"):
+        return
+
+    company = _get_source_configuration_company(src) or _get_single_child_value(
+        tgt.get("item_group_defaults"), "company"
+    )
+    if not company:
+        return
+
+    valid_rows = []
+    skipped = []
+    for row in tgt.get("item_group_defaults"):
+        expense_account = row.get("expense_account")
+        if expense_account and not _account_belongs_to_company(expense_account, company):
+            skipped.append(
+                f"{tgt.name or src.name}: dropped Item Default expense account "
+                f"{expense_account} for company {company}"
+            )
+            continue
+        valid_rows.append(row)
+
+    if len(valid_rows) == len(tgt.get("item_group_defaults")):
+        return
+
+    tgt.set("item_group_defaults", [])
+    for row in valid_rows:
+        row_data = row.as_dict() if hasattr(row, "as_dict") else dict(row)
+        tgt.append(
+            "item_group_defaults",
+            {key: value for key, value in row_data.items() if key not in SYSTEM_FIELDS},
+        )
+
+    for message in skipped:
+        _safe_log_error(message=message, title="External Item Group Sync Warning")
+
+
+def _get_source_configuration_company(src) -> str | None:
+    source_site = src.get("source_site")
+    if not source_site:
+        return None
+
+    return frappe.db.get_value("External Site Configuration", source_site, "company")
+
+
+def _get_single_child_value(rows, fieldname: str):
+    values = {row.get(fieldname) for row in rows if row.get(fieldname)}
+    return values.pop() if len(values) == 1 else None
+
+
+def _account_belongs_to_company(account: str, company: str) -> bool:
+    return bool(
+        frappe.db.exists(
+            "Account",
+            {
+                "name": account,
+                "company": company,
+            },
+        )
+    )
 
 def _resolve_target_item_group_from_external(
     external_item_group_name: str, key_field: str, title_field_source: str | None

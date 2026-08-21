@@ -9,8 +9,9 @@
  "field_order": [
   "title",
   "disabled",
-    "remote_id",
-  "source_site"
+  "remote_id",
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -28,7 +29,7 @@
    "fieldtype": "Check",
    "label": "Disabled"
   },
-    {
+  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
    "label": "Remote ID"
@@ -37,11 +38,16 @@
    "fieldname": "source_site",
    "fieldtype": "Data",
    "label": "Source Site"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2022-01-18 21:13:41.161017",
+ "modified": "2026-07-29 13:07:26.689031",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Tax Category",
@@ -83,6 +89,7 @@
   }
  ],
  "quick_entry": 1,
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

@@ -1,6 +1,6 @@
 import frappe
 import json
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -27,16 +27,76 @@ ADDRESS_FIELDS_TO_VALIDATE = {"customer_address", "shipping_address_name"}
 CONTACT_FIELDS_TO_VALIDATE = {"contact_person"}
 SOFT_VALIDATED_HEADER_FIELDS = ADDRESS_FIELDS_TO_VALIDATE | CONTACT_FIELDS_TO_VALIDATE
 
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
+
 
 # ==========================================================
-# ENTRY POINT
+# WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_quotation_docs(source_doctype, names):
-
     if isinstance(names, str):
         names = json.loads(names)
+
+    # If no names passed, fetch unsynced
+    if not names:
+        names = frappe.db.sql(f"""
+            SELECT name
+            FROM `tab{source_doctype}`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"quot_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_quotation_sync._sync_quotation_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_quotation_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return {"created": [], "updated": [], "failed": []}
 
     created = []
     updated = []
@@ -45,6 +105,7 @@ def sync_external_quotation_docs(source_doctype, names):
     for name in names:
         try:
             src = frappe.get_doc(source_doctype, name)
+            sync_started_at = src.modified
 
             remote_id = src.name
             company_abbr = frappe.db.get_value('Company', src.company, 'abbr') or ''
@@ -65,9 +126,11 @@ def sync_external_quotation_docs(source_doctype, names):
 
             doc = upsert_quotation(src, target_name, existing)
             sync_docstatus(doc, src.docstatus)
-
-            # Commit per record so a later failure in the batch doesn't
-            # roll back records that already succeeded.
+            src.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
+            )
 
             if existing:
                 updated.append(doc.name)

@@ -1,8 +1,9 @@
 import frappe
 import json
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_tax_category_docs(source_doctype=None, names=None):
 
     if names:
@@ -54,10 +55,17 @@ def sync_bulk_tax_categories(names):
     for row in docs:
         try:
             src = frappe.get_doc("External Tax Category", row.name)
+            sync_started_at = src.modified
 
             upsert_tax_category(
                 src,
                 existing_name=existing.get(src.remote_id)
+            )
+
+            src.db_set(
+                "last_synced_on",
+                sync_started_at,
+                update_modified=False
             )
 
             success += 1

@@ -14,6 +14,7 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 
 SYSTEM_FIELDS = {
@@ -45,6 +46,7 @@ HANDLED_SEPARATELY = {
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_prospects(names=None):
 
 	if isinstance(names, str):

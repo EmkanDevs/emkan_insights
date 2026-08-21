@@ -33,7 +33,8 @@
   "old_parent",
   "include_in_gross",
   "remote_id",
-  "source_site"
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -218,13 +219,18 @@
    "fieldname": "custom_pa_number",
    "fieldtype": "Data",
    "label": "PA Number"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-money",
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-06-17 14:09:25.549809",
+ "modified": "2026-07-29 12:37:30.032261",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Account",

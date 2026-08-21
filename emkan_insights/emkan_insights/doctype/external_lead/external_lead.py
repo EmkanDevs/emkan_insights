@@ -12,7 +12,7 @@ class ExternalLead(Document):
 import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -34,7 +34,7 @@ NON_DATA_FIELDS = {
 }
 
 # Added custom_remote_id to handled separately
-HANDLED_SEPARATELY = {"company", "docstatus", "notes", "lead_name", "title", "custom_remote_id"}
+HANDLED_SEPARATELY = {"company", "docstatus", "notes", "lead_name", "title", "custom_remote_id","lead_owner"}
 
 
 # ==========================================================
@@ -42,6 +42,7 @@ HANDLED_SEPARATELY = {"company", "docstatus", "notes", "lead_name", "title", "cu
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_leads(names=None):
 
     if isinstance(names, str):
@@ -245,11 +246,29 @@ def sync_single_lead(source_name):
     # SAVE WITHOUT HOOKS
     # ------------------------------------------------------
 
+        # ------------------------------------------------------
+    # SAVE WITHOUT HOOKS
+    # ------------------------------------------------------
+
     lead.flags.ignore_permissions = True
 
-    # save() handles both insert (new doc) and update (existing doc),
-    # and automatically syncs child tables - no need for db_insert()/
-    # db_update() or manually looping over table fields.
-    lead.save()
+    # Bypass the standard ERPNext `before_insert` hook which automatically 
+    # creates a Contact. Your Contact DocType requires `remote_id` for 
+    # naming, but the standard `create_contact` method does not pass it.
+    # We temporarily disable the method on this specific instance.
+    original_create_contact = getattr(lead, "create_contact", None)
+
+    if original_create_contact:
+        lead.create_contact = lambda: None
+
+    try:
+        # save() handles both insert (new doc) and update (existing doc),
+        # and automatically syncs child tables.
+        lead.save()
+    finally:
+        # Restore original method immediately so if this doc object is 
+        # used elsewhere in this request, it behaves normally.
+        if original_create_contact:
+            lead.create_contact = original_create_contact
 
     return lead.name

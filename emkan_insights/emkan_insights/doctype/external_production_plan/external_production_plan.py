@@ -4,7 +4,7 @@
 import frappe
 import json
 from frappe.model.document import Document
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 class ExternalProductionPlan(Document):
     pass
@@ -75,6 +75,7 @@ def _deduplicate_child_table(parent_name, child_table, key_field="custom_remote_
 
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_production_plan_docs(source_doctype, names):
 
     if isinstance(names, str):
@@ -114,11 +115,24 @@ def sync_external_production_plan_docs(source_doctype, names):
                         "mr_items",
                         "sub_assembly_items",
                         "skip_available_sub_assembly_item",
-                        "remote_id"
+                        "remote_id",
+                        "amended_from"  # <--- ADDED: Prevent blind copy
                     ]
                     and hasattr(pp, field)
                 ):
                     pp.set(field, value)
+
+            # ------------------------------------------------------
+            # RESOLVE AMENDED FROM (Company Prefix Fix)
+            # ------------------------------------------------------
+            if ext_pp.get("amended_from"):
+                pp.amended_from = _prefix_reference(company_abbr, ext_pp.amended_from)
+                if pp.amended_from and not frappe.db.exists("Production Plan", pp.amended_from):
+                    frappe.log_error(
+                        title=f"Production Plan Sync - Unresolved amended_from",
+                        message=f"Cannot resolve amended_from '{ext_pp.amended_from}' to a local Production Plan. Setting to None for {ext_pp.name}."
+                    )
+                    pp.amended_from = None
 
             # SALES ORDERS
             if hasattr(ext_pp, "sales_orders"):
@@ -128,6 +142,13 @@ def sync_external_production_plan_docs(source_doctype, names):
                     for field, value in row.as_dict().items():
                         if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                             so_row[field] = value
+                    
+                    # Resolve Sales Order link to local prefix
+                    if so_row.get("sales_order"):
+                        so_row["sales_order"] = _prefix_reference(company_abbr, so_row["sales_order"])
+                        if so_row["sales_order"] and not frappe.db.exists("Sales Order", so_row["sales_order"]):
+                            so_row["sales_order"] = None
+                            
                     pp.append("sales_orders", so_row)
 
             # MATERIAL REQUESTS
@@ -138,6 +159,13 @@ def sync_external_production_plan_docs(source_doctype, names):
                     for field, value in row.as_dict().items():
                         if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                             mr_row[field] = value
+                    
+                    # Resolve Material Request link to local prefix
+                    if mr_row.get("material_request"):
+                        mr_row["material_request"] = _prefix_reference(company_abbr, mr_row["material_request"])
+                        if mr_row["material_request"] and not frappe.db.exists("Material Request", mr_row["material_request"]):
+                            mr_row["material_request"] = None
+                            
                     pp.append("material_requests", mr_row)
 
             # PO ITEMS

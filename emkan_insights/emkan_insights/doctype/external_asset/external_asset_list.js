@@ -21,18 +21,29 @@ frappe.listview_settings['External Asset'] = {
                         callback(r) {
                             if (r.exc) return;
 
-                            const results = r.message || [];
+                            if (r.message && r.message.status === 'queued') {
+                                frappe.show_alert({
+                                    message: r.message.message || __('Asset sync queued'),
+                                    indicator: 'blue',
+                                });
+                                listview.refresh();
+                                return;
+                            }
+
+                            const results = Array.isArray(r.message) ? r.message : [];
                             const synced   = results.filter(x => x.status === 'synced').length;
+                            const updated  = results.filter(x => x.status === 'updated').length;
                             const exists   = results.filter(x => x.status === 'exists').length;
                             const failed   = results.filter(x => x.status === 'failed').length;
 
                             const parts = [];
                             if (synced)  parts.push(__('Created: {0}', [synced]));
+                            if (updated) parts.push(__('Updated: {0}', [updated]));
                             if (exists)  parts.push(__('Already Existed: {0}', [exists]));
                             if (failed)  parts.push(__('Failed: {0}', [failed]));
 
                             const summary = parts.length ? parts.join(', ') : __('No assets processed');
-                            const indicator = failed > 0 ? 'orange' : (synced > 0 ? 'green' : 'blue');
+                            const indicator = failed > 0 ? 'orange' : ((synced || updated) > 0 ? 'green' : 'blue');
 
                             frappe.show_alert({ message: summary, indicator });
 

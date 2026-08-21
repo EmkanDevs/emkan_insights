@@ -16,9 +16,9 @@ frappe.listview_settings['External Supplier'] = {
                 __('Sync selected External Supplier records to Supplier master?'),
                 () => {
                     frappe.call({
-                        method: 'emkan_insights.emkan_insights.doctype.external_supplier.external_supplier.sync_external_suppliers',
+                        method: 'emkan_insights.emkan_insights.doctype.external_supplier.external_supplier.sync_external_records',
                         args: {
-                            external_suppliers: names
+                            names: names
                         },
                         freeze: true,
                         freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),

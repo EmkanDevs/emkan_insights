@@ -15,6 +15,7 @@
   "is_default",
   "remote_id",
   "site_url",
+  "last_synced_on",
   "letter_head_image_section",
   "image",
   "image_height",
@@ -205,6 +206,11 @@
    "fieldname": "site_url",
    "fieldtype": "Data",
    "label": "Site Url"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-font",
@@ -212,7 +218,7 @@
  "links": [],
  "make_attachments_public": 1,
  "max_attachments": 3,
- "modified": "2026-03-04 12:03:57.078832",
+ "modified": "2026-07-29 12:44:54.918601",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Letter Head",

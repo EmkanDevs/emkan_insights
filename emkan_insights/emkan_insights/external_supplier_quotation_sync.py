@@ -1,44 +1,84 @@
 import frappe
 import json
 from frappe.utils import flt
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
+# ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
+CHUNK_SIZE = 300
 
 # ==========================================================
-# ENTRY POINT
+# ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
-def sync_supplier_quotation_docs(source_doctype: str, names=None):
+@filter_kwargs
+def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotation", names=None):
+    if isinstance(names, str):
+        names = json.loads(names)
 
-    if names:
-        if isinstance(names, str):
-            names = json.loads(names)
-
-        result = sync_bulk_supplier_quotations(names)
-        return f"Success: {result['success']}, Failed: {result['failed']}"
-
-    else:
+    if not names:
         all_names = frappe.get_all(
             "External Supplier Quotation",
             pluck="name",
             limit_page_length=0
         )
+    else:
+        all_names = list(names)
 
-        if not all_names:
-            return "No External Supplier Quotations found to sync"
+    if not all_names:
+        return "No External Supplier Quotations found to sync"
 
-        chunk_size = 200
-        chunks = [all_names[i:i + chunk_size] for i in range(0, len(all_names), chunk_size)]
+    # De-duplicate incoming names while preserving order. This guarantees
+    # the same record can never end up in two different chunks, which is the
+    # only scenario that could cause a duplicate Supplier Quotation to be created
+    # when chunks run in parallel on different workers.
+    seen = set()
+    unique_names = []
+    for n in all_names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
 
-        for chunk in chunks:
-            frappe.enqueue(
-                "emkan_insights.emkan_insights.external_supplier_quotation_sync.sync_bulk_supplier_quotations",
-                queue="long",
-                timeout=3000,
-                names=chunk
-            )
+    # Split into chunks and enqueue one background job per chunk instead
+    # of a single job handling all records serially. Each job gets a
+    # unique job_name so chunks can be tracked/deduped in the RQ job list.
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
 
-        return f"{len(all_names)} records queued across {len(chunks)} background jobs"
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"sq_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_supplier_quotation_sync._sync_supplier_quotation_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=3000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_supplier_quotation_docs_job(source_doctype=None, names=None):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    return sync_bulk_supplier_quotations(names)
 
 
 # ==========================================================
@@ -122,36 +162,52 @@ def sync_bulk_supplier_quotations(names):
     failed_names = []
 
     for idx, name in enumerate(names, start=1):
-
+        savepoint = f"sq_sync_{frappe.generate_hash(length=10)}"
         src = full_docs.get(name)
 
         try:
-            if not src:
-                raise Exception(f"Source doc not found: {name}")
+            with sync_record_guard("External Supplier Quotation", name):
+                frappe.db.savepoint(savepoint)
 
-            if not src.remote_id:
-                raise Exception("remote_id is missing")
+                if not src:
+                    raise Exception(f"Source doc not found: {name}")
 
-            if not src.company:
-                raise Exception("Company is missing")
+                if not src.remote_id:
+                    raise Exception("remote_id is missing")
 
-            if not src.supplier:
-                raise Exception("Supplier is missing")
+                if not src.company:
+                    raise Exception("Company is missing")
 
-            existing = existing_map.get(src.remote_id)
+                if not src.supplier:
+                    raise Exception("Supplier is missing")
 
-            doc = upsert_supplier_quotation(
-                src,
-                existing_name=existing["name"] if existing else None,
-                suppliers=suppliers,
-                items=items,
-                warehouses=warehouses
-            )
+                sync_started_at = src.modified
 
-            sync_docstatus(doc, src.docstatus)
-            success += 1
+                existing = existing_map.get(src.remote_id)
+
+                doc = upsert_supplier_quotation(
+                    src,
+                    existing_name=existing["name"] if existing else None,
+                    suppliers=suppliers,
+                    items=items,
+                    warehouses=warehouses
+                )
+
+                sync_docstatus(doc, int(src.docstatus or 0))
+
+                src.db_set(
+                    "last_synced_on",
+                    sync_started_at,
+                    update_modified=False
+                )
+
+                success += 1
 
         except Exception as e:
+            try:
+                frappe.db.rollback(save_point=savepoint)
+            except Exception:
+                frappe.db.rollback()
             failed += 1
             failed_names.append(name)
 
@@ -522,23 +578,32 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
         doc = frappe.get_doc("Supplier Quotation", existing_name)
 
         if doc.docstatus in (1, 2):
-            # Force revert to draft via raw SQL. Frappe has no ORM method 
-            # to revert docstatus to 0. The SQL updates write to the transaction.
-            frappe.db.set_value("Supplier Quotation", doc.name, "docstatus", 0, update_modified=False)
-            frappe.db.sql(
-                """UPDATE `tabSupplier Quotation Item`
-                SET docstatus = 0
-                WHERE parent = %s""",
-                (doc.name,)
-            )
-            frappe.db.sql(
-                """UPDATE `tabPurchase Taxes and Charges`
-                SET docstatus = 0
-                WHERE parent = %s AND parenttype = 'Supplier Quotation'""",
-                (doc.name,)
-            )
-            
-            doc.docstatus = 0
+            # Document is already submitted or cancelled. ERPNext does not allow
+            # editing a submitted/cancelled document's items via ORM or SQL without
+            # going through the cancel+amend lifecycle, which would break all
+            # downstream links (PO items, etc.).
+            #
+            # Safe approach: update only non-structural header fields via db_set,
+            # then let sync_docstatus() handle any docstatus transition.
+            # Item re-sync is skipped for submitted/cancelled docs.
+            update_fields = {
+                "transaction_date": src.transaction_date,
+                "valid_till": src.valid_till,
+                "currency": src.currency,
+                "conversion_rate": src.conversion_rate or 1,
+            }
+            if frappe.get_meta("Supplier Quotation").has_field("custom_remote_id"):
+                update_fields["custom_remote_id"] = src.remote_id
+            elif hasattr(doc, "remote_id"):
+                update_fields["remote_id"] = src.remote_id
+            if hasattr(doc, "source_site") and src.get("source_site"):
+                update_fields["source_site"] = src.source_site
+            frappe.db.set_value("Supplier Quotation", doc.name, update_fields, update_modified=False)
+            frappe.clear_document_cache("Supplier Quotation", doc.name)
+            doc.reload()
+            # Skip item/tax re-sync for submitted/cancelled docs and return early.
+            # sync_docstatus() in the caller will handle any docstatus transition.
+            return doc
 
         doc.set("items", [])
         doc.set("taxes", [])
@@ -744,8 +809,16 @@ def sync_docstatus(doc, target_status):
     """
     Submits or cancels the document using ORM methods.
     All writes persist in the current transaction automatically.
+
+    IMPORTANT: Both target_status and doc.docstatus are cast to int here
+    because src.docstatus can arrive as a string (e.g. "1") when the value
+    travels through JSON serialisation or is read from a non-submittable
+    custom doctype. A string-vs-int comparison silently skips every branch,
+    leaving the Supplier Quotation in Draft even when the source is Submitted.
     """
-    current = doc.docstatus
+    # Always work with integers to avoid string-vs-int comparison bugs.
+    target_status = int(target_status or 0)
+    current = int(doc.docstatus or 0)
 
     if target_status == 0:
         if current in (1, 2):

@@ -1,6 +1,9 @@
 import frappe
 import json
 from frappe.utils import flt, cint
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -14,6 +17,10 @@ IGNORE_ITEM_FIELDS = {
     "prevdoc_doctype",
     "prevdoc_docname"
 }
+
+# Chunk size for splitting large bulk syncs into multiple background jobs
+CHUNK_SIZE = 300
+
 
 # -----------------------------------------------------
 # SAFE LOG ERROR (fixes 140-char title truncation)
@@ -87,73 +94,20 @@ def _cancel_gl_entries_for_voucher(doctype, docname):
 
 
 # -----------------------------------------------------
-# FORCE CANCEL HELPERS
+# CANCEL HELPER
 # -----------------------------------------------------
-
-def _force_cancel_doc(doctype, docname):
-    """
-    Force cancel a document by directly updating the database.
-    Use as fallback when normal cancel() fails due to linked docs or validations.
-    No explicit commit — the ORM caller or request end handles persistence.
-
-    IMPORTANT: We reverse GL Entries BEFORE setting docstatus=2 so that the
-    cancellation rows are written with the correct voucher reference while the
-    document is still technically submitted (docstatus=1).  Without this step
-    the on_cancel hook is never called and the reversal GL entries are never
-    created, causing the local GL entry count to diverge from the remote.
-    """
-    # Step 1: Reverse GL Entries first (while docstatus is still 1 / submitted)
-    _cancel_gl_entries_for_voucher(doctype, docname)
-
-    # Step 2: Set docstatus=2 on the parent document via SQL
-    frappe.db.sql("""
-        UPDATE `tab{doctype}`
-        SET docstatus = 2, 
-            status = 'Cancelled', 
-            modified = NOW(), 
-            modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-        WHERE name = %s
-    """.format(doctype=doctype), docname)
-
-    # Step 3: Cascade docstatus=2 to all child tables
-    meta = frappe.get_meta(doctype)
-    for df in meta.get_table_fields():
-        child_doctype = df.options
-        if frappe.db.exists("DocType", child_doctype):
-            frappe.db.sql("""
-                UPDATE `tab{child_doctype}`
-                SET docstatus = 2, 
-                    modified = NOW(), 
-                    modified_by = SUBSTRING_INDEX(USER(), '@', 1)
-                WHERE parent = %s AND parenttype = %s
-            """.format(child_doctype=child_doctype), (docname, doctype))
-
-    frappe.clear_document_cache(doctype, docname)
-
 
 def _safe_cancel_doc(doc, log_prefix=""):
     """
-    Safely cancel a document with fallback to force cancel.
-    Uses doc.cancel() (ORM) first, then raw SQL fallback.
-    Returns True if successful, raises exception if both methods fail.
+    Cancel a document via the ORM (doc.cancel()).
+    Raises immediately on failure — no raw-SQL fallback that could leave
+    GL/SLE data in an inconsistent state.
+    Returns True if successful.
     """
-    try:
-        doc.flags.ignore_permissions = True
-        doc.cancel()  # ORM submit — writes to DB, no explicit commit needed
-        _log(f"{log_prefix} cancelled normally", "")
-        return True
-    except Exception as normal_cancel_err:
-        _log(f"{log_prefix} normal cancel failed, attempting force cancel",
-             f"Error: {str(normal_cancel_err)}")
-        
-        try:
-            _force_cancel_doc(doc.doctype, doc.name)
-            _log(f"{log_prefix} force cancelled successfully", "")
-            return True
-        except Exception as force_cancel_err:
-            _log(f"{log_prefix} force cancel also failed",
-                 f"Normal: {str(normal_cancel_err)}\nForce: {str(force_cancel_err)}")
-            raise
+    doc.flags.ignore_permissions = True
+    doc.cancel()  # ORM cancel — triggers all on_cancel hooks (GL, SLE, etc.)
+    _log(f"{log_prefix} cancelled", "")
+    return True
 
 
 # -----------------------------------------------------
@@ -322,6 +276,41 @@ def get_mr_detail(material_request, item_code):
     )
 
 
+def get_returned_pi_item(return_against, item_code, remote_pi_item=None):
+    """
+    Resolve the local Purchase Invoice Item row referenced by a return item.
+
+    Source rows carry purchase_invoice_item as the remote child-row name. On
+    this site ERPNext validates against the local returned-against PI item
+    `name`, so using the remote value directly causes "Returned Item ... does
+    not exist in Purchase Invoice ..." at submit time.
+    """
+    if not return_against:
+        return None
+
+    pi_item_meta = frappe.get_meta("Purchase Invoice Item")
+
+    if remote_pi_item and pi_item_meta.has_field("custom_remote_id"):
+        local_pi_item = frappe.db.get_value(
+            "Purchase Invoice Item",
+            {"parent": return_against, "custom_remote_id": remote_pi_item},
+            "name"
+        )
+        if local_pi_item:
+            return local_pi_item
+
+    candidates = frappe.get_all(
+        "Purchase Invoice Item",
+        filters={"parent": return_against, "item_code": item_code},
+        pluck="name",
+    )
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    return None
+
+
 # -----------------------------------------------------
 # DUPLICATE CLEANER
 # -----------------------------------------------------
@@ -334,7 +323,61 @@ def _dedupe_purchase_invoice_children(pi_name):
     an otherwise-successful sync record look like it failed (see caller).
     """
 
-    def _dedupe_table(doctype, parentfield, key_fields, float_fields=()):
+    def _dedupe_table_by_remote_id(doctype, parentfield):
+        """
+        Dedupe by custom_remote_id only.
+
+        Each remote item row has a globally-unique name. When we sync, that
+        name is stored in custom_remote_id on the local row. If two local
+        rows share the same custom_remote_id they are true duplicates (e.g.
+        from a retry). Rows with different custom_remote_id are ALWAYS
+        distinct — even if every other field (item_code, qty, rate, etc.)
+        happens to match — because they represent different lines on the
+        original invoice that may link to different PO items, MR items, etc.
+
+        Rows without a custom_remote_id are left alone (safer than guessing).
+        """
+        if not frappe.db.exists("DocType", doctype):
+            return
+
+        # Check if the custom_remote_id field exists on this doctype
+        if not frappe.get_meta(doctype).has_field("custom_remote_id"):
+            return
+
+        rows = frappe.db.get_all(
+            doctype,
+            filters={
+                "parent": pi_name,
+                "parenttype": "Purchase Invoice",
+                "parentfield": parentfield,
+            },
+            fields=["name", "custom_remote_id"],
+            order_by="creation asc",
+        )
+
+        seen_remote_ids = set()
+        delete_rows = []
+
+        for row in rows:
+            remote_id = (row.get("custom_remote_id") or "").strip()
+            if remote_id:
+                if remote_id in seen_remote_ids:
+                    delete_rows.append(row.name)
+                else:
+                    seen_remote_ids.add(remote_id)
+            # Rows without custom_remote_id are never deleted
+
+        if delete_rows:
+            frappe.db.delete(
+                doctype,
+                {"name": ["in", delete_rows]}
+            )
+
+    def _dedupe_table_by_fields(doctype, parentfield, key_fields, float_fields=()):
+        """
+        Field-based deduplication for tables that don't have custom_remote_id
+        (taxes, payment_schedule). Keeps first occurrence, deletes rest.
+        """
         if not frappe.db.exists("DocType", doctype):
             return
 
@@ -374,20 +417,22 @@ def _dedupe_purchase_invoice_children(pi_name):
                 {"name": ["in", delete_rows]}
             )
 
-    _dedupe_table(
-        "Purchase Invoice Item", "items",
-        ["item_code", "purchase_order", "purchase_receipt",
-         "material_request", "warehouse", "uom"],
-        ["qty", "rate"],
-    )
+    # ITEMS: dedupe by custom_remote_id ONLY
+    # This is the critical fix — field-based deduplication was incorrectly
+    # removing legitimate duplicate item lines (same item_code/qty/rate but
+    # different po_detail / material_request_item links).
+    _dedupe_table_by_remote_id("Purchase Invoice Item", "items")
 
-    _dedupe_table(
+    # TAXES: field-based deduplication is safe here (no custom_remote_id,
+    # and genuinely duplicate tax rows are almost always a sync artifact).
+    _dedupe_table_by_fields(
         "Purchase Taxes and Charges", "taxes",
         ["charge_type", "account_head", "description"],
         ["rate", "tax_amount"],
     )
 
-    _dedupe_table(
+    # PAYMENT SCHEDULE: field-based deduplication is safe here.
+    _dedupe_table_by_fields(
         "Payment Schedule", "payment_schedule",
         ["payment_term", "due_date"],
         ["payment_amount", "invoice_portion"],
@@ -508,10 +553,15 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
     ...
     success_count = 0
     errors = []
+    target_item_meta = frappe.get_meta("Purchase Invoice Item")
     if is_return is None:
         is_return = cint(ext_pi.get("is_return", 0))
     else:
         is_return = cint(is_return)
+
+    local_return_against = None
+    if is_return and ext_pi.get("return_against"):
+        local_return_against = resolve_local_pinv(ext_pi.return_against, company_abbr)
 
     for idx, row in enumerate(ext_pi.items, start=1):
         try:
@@ -569,7 +619,7 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
                     continue
                 if field in {"purchase_order", "purchase_receipt",
                              "po_detail", "pr_detail", "material_request",
-                             "material_request_item"}:
+                             "material_request_item", "purchase_invoice_item"}:
                     continue
                 # IMPORTANT: Copy value AS-IS to preserve negative qty for returns
                 # Do NOT use abs() or any transformation here
@@ -624,6 +674,20 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
             else:
                 item_row["material_request"] = None
                 item_row["material_request_item"] = None
+
+            # Resolve purchase_invoice_item for return invoice validation.
+            if is_return and local_return_against:
+                remote_pi_item = row.get("purchase_invoice_item") or row.get("name")
+                item_row["purchase_invoice_item"] = get_returned_pi_item(
+                    local_return_against,
+                    row.item_code,
+                    remote_pi_item=remote_pi_item
+                )
+            else:
+                item_row["purchase_invoice_item"] = None
+
+            if target_item_meta.has_field("custom_remote_id"):
+                item_row["custom_remote_id"] = row.name
 
             if is_return:
                 current_qty = flt(item_row.get("qty", 0))
@@ -754,6 +818,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
     the current transaction. Frappe commits automatically at request end.
     """
     ext_pi = frappe.get_doc(source_doctype, name)
+    sync_started_at = ext_pi.modified
     remote_id = ext_pi.name
 
     # Defensive reload if items empty
@@ -843,7 +908,16 @@ def _sync_single_purchase_invoice(source_doctype, name):
                 "error": "Item count mismatch on non-draft Purchase Invoice; manual rebuild needed."
             }
         else:
-            return _sync_existing_docstatus(existing, ext_pi)
+            result = _sync_existing_docstatus(existing, ext_pi)
+
+            if result.get("status") in ("exists", "docstatus_synced"):
+                ext_pi.db_set(
+                    "last_synced_on",
+                    sync_started_at,
+                    update_modified=False
+                )
+
+            return result
 
     # Clean up any orphaned child rows for the target name
     _delete_purchase_invoice_child_rows(target_name)
@@ -1173,90 +1247,90 @@ def _sync_single_purchase_invoice(source_doctype, name):
 
         except Exception as cancel_err:
             tb = frappe.get_traceback()
-            _log(f"PI {pi.name} CANCEL FAILED - CRITICAL",
+            _log(f"PI {pi.name} SUBMIT+CANCEL FAILED",
                  f"Error: {str(cancel_err)}\n\nTraceback:\n{tb}")
-            
-            # Last resort: Force cancel via SQL
-            try:
-                _force_cancel_doc("Purchase Invoice", pi.name)
-                _log(f"PI {pi.name} force cancelled as last resort", "")
-                
-                actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
-                return {
-                    "name": pi.name,
-                    "status": "synced",
-                    "docstatus": 2,
-                    "items_synced": actual_item_count,
-                    "items_expected": expected_item_count
-                }
-            except Exception as force_err:
-                _log(f"PI {pi.name} FORCE CANCEL ALSO FAILED",
-                     f"Force error: {str(force_err)}")
-                
-                actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
-                return {
-                    "name": pi.name,
-                    "status": "synced_submitted",
-                    "error": f"Cancel failed: {str(cancel_err)}",
-                    "items_synced": actual_item_count,
-                    "items_expected": expected_item_count
-                }
 
-    else:
-        # docstatus = 0 (Draft) — already in correct state after insert
-        actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
-        return {
-            "name": pi.name,
-            "status": "synced",
-            "docstatus": 0,
-            "items_synced": actual_item_count,
-            "items_expected": expected_item_count
-        }
+            actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
+            return {
+                "name": pi.name,
+                "status": "sync_error",
+                "docstatus": frappe.db.get_value("Purchase Invoice", pi.name, "docstatus"),
+                "expected_docstatus": 2,
+                "error": f"Submit+cancel failed: {str(cancel_err)}",
+                "items_synced": actual_item_count,
+                "items_expected": expected_item_count
+            }
 
 
-# -----------------------------------------------------
-# MAIN SYNC
-# -----------------------------------------------------
+# ==========================================================
+# WHITELIST ENTRY POINT (CHUNKED)
+# ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_purchase_invoice_docs(source_doctype, names):
-    """
-    Main sync entry point.
-
-    Each document is processed sequentially within a single transaction.
-    Frappe automatically commits the transaction at HTTP request end.
-
-    Per-document errors are caught and logged — they do NOT roll back
-    previously processed documents because InnoDB only rolls back the
-    failing statement (not the whole transaction) on constraint errors.
-    """
-
     if isinstance(names, str):
         names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
+
+    # De-duplicate incoming names while preserving order
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    # Split into chunks and enqueue one background job per chunk
+    chunks = [
+        unique_names[i:i + CHUNK_SIZE]
+        for i in range(0, len(unique_names), CHUNK_SIZE)
+    ]
+
+    queued_chunks = 0
+    for idx, chunk in enumerate(chunks):
+        job_name = f"pi_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_pi_sync._sync_purchase_invoice_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=6000,
+            source_doctype=source_doctype,
+            names=chunk,
+        )
+        queued_chunks += 1
+
+    return (
+        f"Sync Queued: {len(unique_names)} record(s) split into "
+        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+    )
+
+
+# ==========================================================
+# BACKGROUND WORKER
+# ==========================================================
+
+def _sync_purchase_invoice_docs_job(source_doctype, names):
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    if not isinstance(names, (list, tuple)):
+        return []
 
     results = []
 
     for name in names:
         try:
-            result = _sync_single_purchase_invoice(source_doctype, name)
-            results.append(result)
-            frappe.db.set_value(
-                source_doctype,
-                name,
-                "is_synced",
-                1,
-                update_modified=False
-            )
- 
-
+            with sync_record_guard(source_doctype, name):
+                result = _sync_single_purchase_invoice(source_doctype, name)
+                results.append(result)
         except Exception as e:
-            error = frappe.get_traceback()
-
-            _log(
+            frappe.log_error(
                 title=f"Purchase Invoice Sync Error: {name}",
-                message=error
+                message=frappe.get_traceback()
             )
-
             results.append({
                 "name": name,
                 "status": "failed",

@@ -12,7 +12,7 @@ class ExternalOpportunity(Document):
 import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -47,6 +47,7 @@ HANDLED_SEPARATELY = {
 # ==========================================================
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_external_opportunities(names=None):
 
     if isinstance(names, str):

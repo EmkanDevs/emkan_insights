@@ -45,7 +45,7 @@ PARENT_REMOTE_ID_FIELD = "remote_id"
 # ---------------------------------------------------------------------------
 
 
-def _fetch_remote_names(base_url, headers, remote_dt):
+def _fetch_remote_names(base_url, headers, remote_dt, filters):
     url = f"{base_url}/api/resource/{remote_dt}"
     names = []
     limit = 1000
@@ -54,7 +54,7 @@ def _fetch_remote_names(base_url, headers, remote_dt):
     while True:
         params = {
             "fields": json.dumps(["name"]),
-            "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+            "filters": json.dumps(filters),
             "limit_page_length": limit,
             "limit_start": start,
         }
@@ -305,10 +305,12 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
         doc.name = target_name
         doc.flags.name_set = True
 
-        # Keep naming_series populated as a plain display value (not used for
-        # name generation) — dynamically built from the company abbreviation,
-        # never hardcoded to one company and never taken from the remote's
-        # own naming_series value (which was overriding ours previously).
+        # Keep naming_series populated with the company-prefixed series so
+        # docs from each company are immediately distinguishable in the list
+        # view (e.g. "IMC-RFQ-.YY.-").  The actual document name is already
+        # pinned above via doc.name / flags.name_set so no counter is used.
+        # flags.ignore_naming_series (set below) suppresses Frappe's check
+        # that this value must exist in the doctype's options list.
         if "naming_series" in local_fields:
             doc.naming_series = f"{company_abbr}-RFQ-.YY.-"
 
@@ -339,12 +341,34 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
             if site_url_fieldname in local_fields:
                 doc.set(site_url_fieldname, site_url)
 
-        # Flags
-        doc.flags.ignore_permissions = True
+        # Ensure all scalar mandatory (reqd=1) fields have a value so that
+        # Frappe's validate_mandatory() doesn't reject the record.
+        # We do NOT use ignore_mandatory / ignore_validate — validation runs
+        # normally.  These are fallbacks for remote docs that happen to have
+        # NULL in a field that is required on our local doctype.
+        _mandatory_defaults = {
+            "transaction_date": frappe.utils.today(),
+            "status": "Draft",
+            "subject": "Request for Quotation",
+            "message_for_supplier": "Please supply the specified items at the best possible rates",
+        }
+        for fieldname, default_val in _mandatory_defaults.items():
+            if fieldname in local_fields and not doc.get(fieldname):
+                doc.set(fieldname, default_val)
 
-        doc.insert(
-            ignore_permissions=True,
-        )
+        # Flags:
+        #   ignore_permissions    – this is a background sync job, no user context
+        #   ignore_links          – legitimate for cross-site data: linked docs
+        #                           (billing_address, letter_head …) live on the
+        #                           remote site and won't exist locally
+        #   ignore_naming_series  – lets us store a company-prefixed series
+        #                           (e.g. "CPC-RFQ-.YY.-") that isn't in the
+        #                           doctype's options list
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_links = True
+        doc.flags.ignore_naming_series = True
+
+        doc.insert(ignore_permissions=True)
 
         # Set deferred fields
         for field in deferred_fields:
@@ -362,7 +386,20 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
         return True
 
     except Exception as e:
-        frappe.db.rollback(save_point=savepoint)
+        # Roll back to the savepoint to undo any partial writes from this item.
+        # Wrapped in try/except because Frappe-internal full ROLLBACKs
+        # (e.g. triggered by validation hooks or link-error handling inside
+        # doc.insert) destroy ALL savepoints before the exception surfaces here.
+        # In that case, a "SAVEPOINT does not exist" error from the rollback
+        # would otherwise propagate up and crash the *entire chunk* — not just
+        # skip this one item. Fall back to a full rollback if needed.
+        try:
+            frappe.db.rollback(save_point=savepoint)
+        except Exception:
+            try:
+                frappe.db.rollback()
+            except Exception:
+                pass
         errors.append({"remote_id": original_remote_id, "error": str(e)})
         return False
 
@@ -438,17 +475,35 @@ def sync_request_for_quotation_from_remote(site_url, api_key, api_secret, ref_do
             "Content-Type": "application/json",
         }
 
+        fetch_started_at = frappe.utils.now()
+
+        previous_last_sync = frappe.db.get_value(
+            "External Site Configuration CT",
+            child_docname,
+            "last_sync"
+        )
+
+        filters = [
+            ["docstatus", "in", [0, 1, 2]]
+        ]
+        # if previous_last_sync:
+        #     filters.append([
+        #         "modified",
+        #         ">",
+        #         frappe.utils.get_datetime_str(previous_last_sync)
+        #     ])
+
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
                 _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
                 .format(LOCAL_DT)
             )
 
-        names = _fetch_remote_names(base_url, headers, REMOTE_DT)
+        names = _fetch_remote_names(base_url, headers, REMOTE_DT, filters)
 
         if not names:
             _release_sync_lock(child_docname)
-            last_sync = frappe.utils.now()
+            last_sync = fetch_started_at
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
             return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
 
@@ -470,6 +525,7 @@ def sync_request_for_quotation_from_remote(site_url, api_key, api_secret, ref_do
                 child_docname=child_docname,
                 remote_names=chunk,
                 is_last_chunk=(idx == len(chunks) - 1),
+                fetch_started_at=fetch_started_at,
             )
 
         return f"Queued {len(chunks)} chunk(s) covering {len(names)} Request for Quotations"
@@ -480,7 +536,7 @@ def sync_request_for_quotation_from_remote(site_url, api_key, api_secret, ref_do
 
 
 @frappe.whitelist()
-def process_rfq_chunk(site_url, api_key, api_secret, company, company_abbr, configuration_name, child_docname, remote_names, is_last_chunk=False):
+def process_rfq_chunk(site_url, api_key, api_secret, company, company_abbr, configuration_name, child_docname, remote_names, is_last_chunk=False, fetch_started_at=None):
     base_url = (site_url or "").rstrip("/")
     headers = {
         "Authorization": f"token {api_key}:{api_secret}",
@@ -527,7 +583,7 @@ def process_rfq_chunk(site_url, api_key, api_secret, company, company_abbr, conf
             if state is None:
                 state = _get_progress_state(child_docname)
 
-            last_sync = frappe.utils.now()
+            last_sync = fetch_started_at or frappe.utils.now()
             frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
             _release_sync_lock(child_docname)
             frappe.publish_realtime(

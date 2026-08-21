@@ -17,6 +17,7 @@
   "custom_slump",
   "custom_work_order_type",
   "custom_temperature",
+  "is_synced",
   "section_break_sdqo",
   "naming_series",
   "status",
@@ -35,6 +36,7 @@
   "disassembled_qty",
   "process_loss_qty",
   "project",
+  "last_synced_on",
   "section_break_ndpq",
   "required_items",
   "work_order_configuration",
@@ -666,6 +668,17 @@
    "fieldname": "custom_temperature",
    "fieldtype": "Data",
    "label": "Temperature"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_synced",
+   "fieldtype": "Check",
+   "label": "Is Synced"
   }
  ],
  "icon": "fa fa-cogs",
@@ -673,7 +686,7 @@
  "image_field": "image",
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-08 11:02:09.461503",
+ "modified": "2026-07-30 09:22:51.631544",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Work Order",

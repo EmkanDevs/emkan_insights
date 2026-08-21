@@ -23,6 +23,7 @@
   "department",
   "remote_id",
   "source_site",
+  "last_synced_on",
   "customer_details",
   "customer",
   "client_name",
@@ -480,6 +481,11 @@
    "fieldname": "contract_no",
    "fieldtype": "Data",
    "label": "Contract No"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "icon": "fa fa-puzzle-piece",
@@ -487,7 +493,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "max_attachments": 4,
- "modified": "2026-04-20 11:15:14.831812",
+ "modified": "2026-07-29 12:49:45.099145",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Project",

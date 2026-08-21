@@ -1,4 +1,5 @@
 import json
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
@@ -14,15 +15,18 @@ from emkan_insights.emkan_insights.doctype.external_site_configuration.external_
     _sort_by_hierarchy,
 )
 
+# ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
+CHUNK_SIZE = 300
+FETCH_WORKERS = 8
 
 REMOTE_DT = "Cost Center"
 LOCAL_DT = "External Cost Center"
-FETCH_WORKERS = 8
 FAILED_NAME_LOG_LIMIT = 100
 DATA_FIELD_MAX_LENGTH = 140
+PROGRESS_KEY_PREFIX = "cc_sync_progress"
 
 
-def _fetch_remote_names(base_url, headers):
+def _fetch_remote_names(base_url, headers, filters):
     url = f"{base_url}/api/resource/{quote(REMOTE_DT, safe='')}"
     names = []
     limit = 1000
@@ -31,7 +35,7 @@ def _fetch_remote_names(base_url, headers):
     while True:
         params = {
             "fields": json.dumps(["name"]),
-            "filters": json.dumps([["docstatus", "in", [0, 1, 2]]]),
+            "filters": json.dumps(filters),
             "limit_page_length": limit,
             "limit_start": start,
             "order_by": "name asc",
@@ -74,20 +78,6 @@ def _fetch_full_docs_threaded(base_url, headers, names):
             docs.append(future.result())
 
     return docs
-
-
-def _empty_result(child_docname):
-    last_sync = frappe.utils.now()
-    if child_docname:
-        frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-    return {
-        "count": 0,
-        "fetched_total": 0,
-        "not_saved_count": 0,
-        "last_sync": last_sync,
-        "errors": [],
-        "missing_parent_accounts": [],
-    }
 
 
 def _get_doc_name(item):
@@ -209,11 +199,40 @@ def _log_cost_center_result(fetched_total, saved_count, not_saved, errors):
         )
 
 
+def _progress_key(child_docname):
+    return f"{PROGRESS_KEY_PREFIX}:{child_docname}"
+
+
+def _init_progress(child_docname, total_chunks):
+    frappe.cache().set_value(_progress_key(child_docname), json.dumps({
+        "total_chunks": total_chunks,
+        "completed_chunks": 0,
+        "count": 0,
+        "not_saved_count": 0,
+        "errors": [],
+    }))
+
+
+def _update_progress(child_docname, count_delta, not_saved_delta, chunk_errors):
+    key = _progress_key(child_docname)
+    raw = frappe.cache().get_value(key)
+    state = json.loads(raw) if raw else {
+        "total_chunks": 0, "completed_chunks": 0, "count": 0,
+        "not_saved_count": 0, "errors": [],
+    }
+    state["completed_chunks"] += 1
+    state["count"] += count_delta
+    state["not_saved_count"] += not_saved_delta
+    state["errors"].extend(chunk_errors)
+    frappe.cache().set_value(key, json.dumps(state))
+    return state
+
+
 @frappe.whitelist()
 def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=None, child_docname=None, company=None, configuration_name=None):
     frappe.logger("external_sync").info("Starting Cost Center sync with company %s", company)
 
-    if child_docname and not _acquire_sync_lock(child_docname):
+    if not _acquire_sync_lock(child_docname):
         frappe.throw(_("A Cost Center sync is already running for this row. Please wait for it to finish."))
 
     try:
@@ -223,29 +242,110 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
             "Content-Type": "application/json",
         }
 
+        fetch_started_at = frappe.utils.now()
+
+        previous_last_sync = frappe.db.get_value(
+            "External Site Configuration CT",
+            child_docname,
+            "last_sync"
+        )
+
+        filters = [
+            ["docstatus", "in", [0, 1, 2]]
+        ]
+        if previous_last_sync:
+            filters.append([
+                "modified",
+                ">",
+                frappe.utils.get_datetime_str(previous_last_sync)
+            ])
+
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
                 _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
                 .format(LOCAL_DT)
             )
 
-        remote_names = _fetch_remote_names(base_url, headers)
+        remote_names = _fetch_remote_names(base_url, headers, filters)
         frappe.logger("external_sync").info(
             "Cost Center name listing fetched %s remote records", len(remote_names)
         )
 
         if not remote_names:
-            return _empty_result(child_docname)
+            _release_sync_lock(child_docname)
+            last_sync = fetch_started_at
+            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+            return {
+                "count": 0,
+                "fetched_total": 0,
+                "not_saved_count": 0,
+                "last_sync": last_sync,
+                "errors": [],
+                "missing_parent_accounts": [],
+            }
 
-        data = _fetch_full_docs_threaded(base_url, headers, remote_names)
-        data = _make_cost_center_names_unique(data)
-        data = _sort_by_hierarchy(data, "parent_cost_center")
+        chunks = [remote_names[i:i + CHUNK_SIZE] for i in range(0, len(remote_names), CHUNK_SIZE)]
+        _init_progress(child_docname, len(chunks))
+
+        for idx, chunk in enumerate(chunks):
+            frappe.enqueue(
+                "emkan_insights.emkan_insights.sync_cost_centers_from_remote.process_cost_center_chunk",
+                queue="long",
+                timeout=900,
+                job_name=f"cc_sync_chunk_{child_docname}_{idx}_{int(time.time())}",
+                site_url=site_url,
+                api_key=api_key,
+                api_secret=api_secret,
+                company=company,
+                configuration_name=configuration_name,
+                child_docname=child_docname,
+                remote_names=chunk,
+                is_last_chunk=(idx == len(chunks) - 1),
+                fetch_started_at=fetch_started_at,
+            )
+
+        return {
+            "status": "queued",
+            "message": (
+                f"Queued {len(chunks)} chunk(s) covering {len(remote_names)} Cost Centers. "
+                "Please wait for completion before starting again."
+            ),
+        }
+
+    except Exception:
+        _release_sync_lock(child_docname)
+        raise
+
+
+@frappe.whitelist()
+def process_cost_center_chunk(
+    site_url,
+    api_key,
+    api_secret,
+    company,
+    configuration_name,
+    child_docname,
+    remote_names,
+    is_last_chunk=False,
+    fetch_started_at=None,
+):
+    base_url = (site_url or "").rstrip("/")
+    headers = {
+        "Authorization": f"token {api_key}:{api_secret}",
+        "Content-Type": "application/json",
+    }
+    state = {}
+
+    try:
+        docs = _fetch_full_docs_threaded(base_url, headers, remote_names)
+        docs = _make_cost_center_names_unique(docs)
+        docs = _sort_by_hierarchy(docs, "parent_cost_center")
 
         local_meta = frappe.get_meta(LOCAL_DT)
         local_fields = [df.fieldname for df in local_meta.fields]
 
         count, errors, not_saved = _run_sync_loop(
-            data, LOCAL_DT, local_fields, company, configuration_name, site_url
+            docs, LOCAL_DT, local_fields, company, configuration_name, site_url
         )
 
         if not_saved:
@@ -255,25 +355,22 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
             count += retry_count
             errors.extend(retry_errors)
 
-        last_sync = frappe.utils.now()
-        if child_docname:
-            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-
         _log_cost_center_result(len(remote_names), count, not_saved, errors)
 
-        return {
-            "count": count,
-            "fetched_total": len(remote_names),
-            "not_saved_count": len(not_saved),
-            "last_sync": last_sync,
-            "errors": errors,
-            "missing_parent_accounts": [],
-        }
-
-    except Exception:
-        frappe.logger("external_sync").exception("Cost Center sync failed")
-        raise
+        state = _update_progress(child_docname, count, len(not_saved), errors)
 
     finally:
-        if child_docname:
+        if is_last_chunk:
+            last_sync = fetch_started_at or frappe.utils.now()
+            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
             _release_sync_lock(child_docname)
+            frappe.publish_realtime(
+                "cost_center_sync_complete",
+                {
+                    "child_docname": child_docname,
+                    "count": state.get("count"),
+                    "not_saved_count": state.get("not_saved_count"),
+                    "errors": state.get("errors"),
+                    "last_sync": last_sync,
+                },
+            )

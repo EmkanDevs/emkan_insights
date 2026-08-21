@@ -19,13 +19,11 @@ frappe.listview_settings['External Item Group'] = {
                             source_doctype: 'External Item Group',
                             names
                         },
-                        freeze: true,
-                        freeze_message: __('Syncing {0} selected {1} record(s)...', [names.length, listview.doctype]),
                         callback(r) {
                             if (!r.exc) {
                                 frappe.show_alert({
-                                    message: __('Item Group synced successfully'),
-                                    indicator: 'green'
+                                    message: __('Sync queued — {0} Item Group(s) will be processed in the background.', [names.length]),
+                                    indicator: 'blue'
                                 });
                                 listview.refresh();
                             }

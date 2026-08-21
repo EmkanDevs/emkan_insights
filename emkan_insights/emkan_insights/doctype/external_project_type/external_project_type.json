@@ -10,7 +10,8 @@
   "project_type",
   "description",
   "remote_id",
-  "source_site"
+  "source_site",
+  "last_synced_on"
  ],
  "fields": [
   {
@@ -31,15 +32,20 @@
    "fieldtype": "Data",
    "label": "Remote ID"
   },
- {
+  {
    "fieldname": "source_site",
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "label": "Last Synced On"
   }
  ],
  "links": [],
- "modified": "2026-02-05 14:33:36.550627",
+ "modified": "2026-07-29 12:41:52.522175",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Project Type",

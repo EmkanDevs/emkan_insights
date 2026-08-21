@@ -1,12 +1,21 @@
 import frappe
 import json
-
+from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
+@filter_kwargs
 def sync_cost_center_docs(source_doctype, names):
 
     if isinstance(names, str):
         names = json.loads(names)
+    if not names:
+        names = frappe.db.sql("""
+            SELECT name
+            FROM `tabExternal Cost Center`
+            WHERE
+                last_synced_on IS NULL
+                OR modified >= last_synced_on
+        """, pluck=True)
 
     created = []
 
@@ -20,6 +29,7 @@ def sync_cost_center_docs(source_doctype, names):
 def create_cost_center_from_external(external_name):
 
     external = frappe.get_doc("External Cost Center", external_name)
+    sync_started_at = external.modified
 
     company = external.company
     company_abbr = frappe.get_cached_value("Company", company, "abbr") or ""
@@ -41,6 +51,11 @@ def create_cost_center_from_external(external_name):
     # -----------------------
     # Fast path: look up by exact name (matches External Cost Center ID)
     if frappe.db.exists("Cost Center", target_name):
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
+        )
         return target_name
 
     # Legacy fallback: document may have been created before this fix with a
@@ -51,6 +66,11 @@ def create_cost_center_from_external(external_name):
         "name",
     )
     if existing:
+        external.db_set(
+            "last_synced_on",
+            sync_started_at,
+            update_modified=False
+        )
         return existing
 
     # -----------------------
@@ -91,5 +111,12 @@ def create_cost_center_from_external(external_name):
     doc.name = target_name
     doc.flags.name_set = True      # tells Frappe not to auto-generate the name
     doc.insert(ignore_permissions=True)
+
+
+    external.db_set(
+        "last_synced_on",
+        sync_started_at,
+        update_modified=False
+    )
 
     return doc.name
