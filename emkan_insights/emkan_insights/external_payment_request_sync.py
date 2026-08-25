@@ -2,6 +2,7 @@ import frappe
 import json
 from frappe.utils import flt, getdate
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -127,6 +128,7 @@ def _sync_payment_request_docs_job(source_doctype, names):
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"Payment Request Sync Failed: {name}")
             results.append({"name": name, "status": "failed"})
+            break
 
     return results
 
@@ -163,9 +165,7 @@ def sync_external_payment_request(source_doctype, external_name):
     # Set remote_id on correct field
     pr.custom_remote_id = remote_id
 
-    # Set source_site on correct field
-    if hasattr(external, "source_site"):
-        pr.custom_source_site = external.source_site
+    set_source_site_fields(pr, site_url=getattr(external, "source_site", None))
 
     # Flags
     pr.flags.ignore_permissions = True

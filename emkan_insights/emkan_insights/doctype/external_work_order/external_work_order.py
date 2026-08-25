@@ -606,17 +606,11 @@ def _do_sync_external_work_order(external_name, company):
     wo.flags.ignore_permissions = True
     wo.flags.ignore_naming_series = True
 
-    # Temporarily clear BOM No to prevent ERPNext's before_validate hook
-    # from auto-appending BOM items and causing duplicates.
-    # ⭐ FIX: bom_no is a mandatory field on Work Order, so blanking it makes
-    # _validate_mandatory() raise MandatoryError before we get a chance to
-    # restore it post-insert. Since the real value (if any) is restored
-    # immediately after insert below, bypass mandatory-field validation for
-    # this insert call only — every other mandatory field was already
-    # populated earlier in this function.
-    original_bom_no = wo.bom_no
-    wo.bom_no = None
-    wo.flags.ignore_mandatory = True
+    if not wo.bom_no:
+        frappe.throw(
+            f"External Work Order '{external_name}' has no resolvable BOM. "
+            "Work Order sync cannot bypass ERPNext mandatory validation."
+        )
 
     try:
         wo.insert(
@@ -626,26 +620,10 @@ def _do_sync_external_work_order(external_name, company):
         frappe.log_error(title=f"Work Order Insert FAILED: {external_name}", message=frappe.get_traceback())
         raise
 
-    # Restore BOM No immediately after insert
-    if original_bom_no:
-        frappe.db.set_value("Work Order", target_name, "bom_no", original_bom_no, update_modified=False)
-    else:
-        # ⭐ FIX: surface the fact that this Work Order was created with no BOM,
-        # since it will now silently sit without one (previous behaviour was
-        # identical here, this just makes it visible instead of silent).
-        frappe.log_error(
-            title=f"Work Order Sync: created without bom_no: {target_name}",
-            message=f"External Work Order '{external_name}' produced no resolvable bom_no; "
-                    f"local Work Order '{target_name}' was created without a BOM."
-        )
-
     # Defensive: kill any duplicates that may have been appended by an update-on-insert or hook
     _dedupe_work_order_children(target_name)
 
     _write_back_external_link(external_name, target_name)
-
-    if _doctype_has_field("Work Order", "remote_id"):
-        frappe.db.set_value("Work Order", target_name, "remote_id", base_id, update_modified=False)
 
     result = _sync_docstatus(target_name, external)
     result["status"] = "synced"
@@ -677,7 +655,6 @@ def _sync_docstatus(target_name, external):
     wo.flags.name_set = True
 
     current_docstatus = cint(wo.docstatus)
-    submit_exception = None
 
     try:
         if target_docstatus == 0 and current_docstatus == 0:
@@ -699,39 +676,30 @@ def _sync_docstatus(target_name, external):
         elif target_docstatus == 1 and current_docstatus == 1:
             pass
     except Exception as submit_err:
-        submit_exception = submit_err
         frappe.log_error(
-            title=f"Work Order Submit/Cancel Error: {target_name}",
-            message=frappe.get_traceback()
+            title=f"CRITICAL: Work Order lifecycle failed: {target_name}",
+            message=(
+                f"Could not move Work Order {target_name} from docstatus "
+                f"{current_docstatus} to {target_docstatus} using ERPNext ORM.\n\n"
+                f"Error: {submit_err}\n\n{frappe.get_traceback()}"
+            )
+        )
+        raise
+
+    final_docstatus = cint(frappe.db.get_value("Work Order", target_name, "docstatus"))
+    if final_docstatus != target_docstatus:
+        frappe.throw(
+            f"Work Order {target_name} lifecycle mismatch. "
+            f"Expected docstatus {target_docstatus}, got {final_docstatus}."
         )
 
-    if submit_exception or cint(frappe.db.get_value("Work Order", target_name, "docstatus")) != target_docstatus:
-        frappe.db.set_value("Work Order", target_name, "docstatus", target_docstatus, update_modified=False)
-        for child_doctype in ("Work Order Item", "Work Order Operation", "Work Order Scrap Item"):
-            if frappe.db.exists("DocType", child_doctype):
-                frappe.db.set_value(
-                    child_doctype,
-                    {"parent": target_name, "parenttype": "Work Order"},
-                    "docstatus", target_docstatus, update_modified=False
-                )
-
-    if wo_status and wo_status != "Draft":
-        frappe.db.set_value("Work Order", target_name, "status", wo_status, update_modified=False)
-
-    if wo_status == "Completed" and frappe.db.exists("DocType", "Work Order Operation"):
-        frappe.db.set_value(
-            "Work Order Operation",
-            {"parent": target_name, "parenttype": "Work Order"},
-            "status", "Completed",
-            update_modified=False
-        )
-
+    final_status = frappe.db.get_value("Work Order", target_name, "status")
     actual_item_count = frappe.db.count("Work Order Item", {"parent": target_name})
 
     return {
         "name": target_name,
-        "docstatus": target_docstatus,
-        "wo_status": wo_status,
+        "docstatus": final_docstatus,
+        "wo_status": final_status,
         "required_items_count": actual_item_count
     }
 
@@ -801,12 +769,19 @@ def _sync_external_work_order_docs_job(source_doctype=None, names=None):
     results = []
 
     for name in names:
+        savepoint = f"wo_sync_{frappe.generate_hash(length=10)}"
         try:
+            frappe.db.savepoint(savepoint)
             external_doc = frappe.get_doc(source_doctype or "External Work Order", name)
             result = sync_external_work_order(name, external_doc.company)
             results.append(result)
 
         except Exception as e:
+            try:
+                frappe.db.rollback(save_point=savepoint)
+            except Exception:
+                frappe.db.rollback()
+
             frappe.log_error(
                 title=f"Work Order Sync Error: {name}",
                 message=frappe.get_traceback()
@@ -816,5 +791,6 @@ def _sync_external_work_order_docs_job(source_doctype=None, names=None):
                 "status": "failed",
                 "error": str(e)
             })
+            break
 
     return results

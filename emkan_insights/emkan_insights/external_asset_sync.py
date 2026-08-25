@@ -291,7 +291,7 @@ def _sync_external_assets_job(source_doctype, names):
                 "status": "failed",
                 "error": "See error log for details"
             })
-            continue
+            break
 
     return results
 

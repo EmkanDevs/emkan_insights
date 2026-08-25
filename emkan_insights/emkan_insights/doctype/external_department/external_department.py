@@ -223,6 +223,7 @@ def sync_bulk_departments(names):
                     "traceback": traceback.format_exc(),
                 }
             )
+            break
 
     
     return results

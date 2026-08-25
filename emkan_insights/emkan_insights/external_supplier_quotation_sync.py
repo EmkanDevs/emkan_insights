@@ -2,7 +2,11 @@ import frappe
 import json
 from frappe.utils import flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 
 # ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
 CHUNK_SIZE = 300
@@ -40,30 +44,20 @@ def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotat
             seen.add(n)
             unique_names.append(n)
 
-    # Split into chunks and enqueue one background job per chunk instead
-    # of a single job handling all records serially. Each job gets a
-    # unique job_name so chunks can be tracked/deduped in the RQ job list.
-    chunks = [
-        unique_names[i:i + CHUNK_SIZE]
-        for i in range(0, len(unique_names), CHUNK_SIZE)
-    ]
-
-    queued_chunks = 0
-    for idx, chunk in enumerate(chunks):
-        job_name = f"sq_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
-        frappe.enqueue(
-            "emkan_insights.emkan_insights.external_supplier_quotation_sync._sync_supplier_quotation_docs_job",
-            queue="long",
-            job_name=job_name,
-            timeout=3000,
-            source_doctype=source_doctype,
-            names=chunk,
-        )
-        queued_chunks += 1
+    job_name = f"sq_sync_chunk_{frappe.generate_hash(length=8)}_0"
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.external_supplier_quotation_sync._sync_supplier_quotation_docs_job",
+        queue="long",
+        job_name=job_name,
+        timeout=3000,
+        source_doctype=source_doctype,
+        names=unique_names,
+        batch_index=0,
+    )
 
     return (
-        f"Sync Queued: {len(unique_names)} record(s) split into "
-        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+        f"Sync Queued: {len(unique_names)} record(s) in sequential "
+        f"batches of up to {CHUNK_SIZE} each"
     )
 
 
@@ -71,14 +65,31 @@ def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotat
 # BACKGROUND WORKER
 # ==========================================================
 
-def _sync_supplier_quotation_docs_job(source_doctype=None, names=None):
+def _sync_supplier_quotation_docs_job(source_doctype=None, names=None, batch_index=0):
     if isinstance(names, str):
         names = json.loads(names)
 
     if not isinstance(names, (list, tuple)):
         return []
 
-    return sync_bulk_supplier_quotations(names)
+    batch_index = int(batch_index or 0)
+    chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
+    result = sync_bulk_supplier_quotations(chunk)
+
+    next_batch_index = batch_index + 1
+    if not result.get("failed") and next_batch_index * CHUNK_SIZE < len(names):
+        job_name = f"sq_sync_chunk_{frappe.generate_hash(length=8)}_{next_batch_index}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_supplier_quotation_sync._sync_supplier_quotation_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=3000,
+            source_doctype=source_doctype,
+            names=names,
+            batch_index=next_batch_index,
+        )
+
+    return result
 
 
 # ==========================================================
@@ -106,6 +117,7 @@ def sync_bulk_supplier_quotations(names):
             full_docs[d.name] = frappe.get_doc("External Supplier Quotation", d.name)
         except Exception as e:
             frappe.log_error(f"Failed to load External SQ {d.name}: {str(e)}", "SQ Sync")
+            break
 
     suppliers  = set(frappe.get_all("Supplier",  pluck="name", limit_page_length=0))
     items      = set(frappe.get_all("Item",      pluck="name", limit_page_length=0))
@@ -219,6 +231,7 @@ def sync_bulk_supplier_quotations(names):
                     f"Error         : {str(e)}"
                 )
             )
+            break
 
         # NO batch commit every 50 records
 
@@ -235,7 +248,7 @@ def sync_bulk_supplier_quotations(names):
 # ITEM / SUPPLIER / WAREHOUSE RESOLVERS
 # ==========================================================
 
-def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
+def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None, company_abbr=None):
     """Resolve External Item code to local Item code with leading-zero fix."""
     if not row_item_code:
         return None
@@ -245,6 +258,8 @@ def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
         variants.append("0" + row_item_code)
     if row_item_code.startswith("0") and len(row_item_code) > 1:
         variants.append(row_item_code.lstrip("0"))
+    if company_abbr:
+        variants = [f"{company_abbr}-{variant}" for variant in variants] + variants
 
     for variant in variants:
         ext_item = frappe.db.get_value("External Item", variant,
@@ -279,7 +294,7 @@ def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
         ["name", "item_code", "item_name", "stock_uom", "item_group", "remote_id"], as_dict=1)
 
     if ext_item:
-        created = _auto_create_item(ext_item)
+        created = _auto_create_item(ext_item, company_abbr=company_abbr)
         if created:
             return created
         return ext_item.remote_id or ext_item.item_code or ext_item.name
@@ -290,7 +305,12 @@ def _resolve_item_code(row_item_code, row_item_name=None, row_uom=None):
             item = frappe.new_doc("Item")
             item.item_code = row_item_code
             item.item_name = row_item_name or row_item_code
-            item.item_group = "All Item Groups"
+            prefixed_item_group = f"{company_abbr}-All Item Groups" if company_abbr else None
+            item.item_group = (
+                prefixed_item_group
+                if prefixed_item_group and frappe.db.exists("Item Group", prefixed_item_group)
+                else "All Item Groups"
+            )
             item.stock_uom = row_uom or "Nos"
             item.is_stock_item = 1
             item.flags.ignore_permissions = True
@@ -323,7 +343,7 @@ def _resolve_supplier(supplier_code):
     return None
 
 
-def _auto_create_item(ext_item):
+def _auto_create_item(ext_item, company_abbr=None):
     """Create local Item from External Item data."""
     if not ext_item:
         return None
@@ -337,7 +357,13 @@ def _auto_create_item(ext_item):
         item = frappe.new_doc("Item")
         item.item_code = item_code
         item.item_name = ext_item.get("item_name") or item_code
-        item.item_group = ext_item.get("item_group") or "All Item Groups"
+        item_group = ext_item.get("item_group") or "All Item Groups"
+        prefixed_item_group = f"{company_abbr}-{item_group}" if company_abbr else None
+        item.item_group = (
+            prefixed_item_group
+            if prefixed_item_group and frappe.db.exists("Item Group", prefixed_item_group)
+            else item_group
+        )
         item.stock_uom = ext_item.get("stock_uom") or "Nos"
         item.is_stock_item = 1
         item.flags.ignore_permissions = True
@@ -629,8 +655,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     elif hasattr(doc, "remote_id"):
         doc.remote_id = src.remote_id
 
-    if hasattr(doc, "source_site") and src.get("source_site"):
-        doc.source_site = src.source_site
+    set_source_site_fields(doc, site_url=src.get("source_site"))
 
     if src.get("tax_category"):
         doc.tax_category = src.tax_category
@@ -668,7 +693,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
 
     for idx, row in enumerate(src.items, start=1):
 
-        resolved_item = _resolve_item_code(row.item_code, row.item_name, row.uom)
+        resolved_item = _resolve_item_code(row.item_code, row.item_name, row.uom, company_abbr)
         if not resolved_item:
             skipped_items.append(row.item_code)
             frappe.log_error(
@@ -785,11 +810,12 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     elif hasattr(doc, "set_total_taxes_and_charges"):
         doc.set_total_taxes_and_charges()
 
-    if existing_name:
-        doc.save()
-    else:
-        doc.naming_series = None
-        doc.insert()
+    with temporarily_enable_transaction_items(doc):
+        if existing_name:
+            doc.save()
+        else:
+            doc.naming_series = None
+            doc.insert()
 
     # FIX: always (re)link External SQ -> Supplier Quotation, not just on
     # first creation — covers the case where existing_name was resolved
@@ -826,14 +852,17 @@ def sync_docstatus(doc, target_status):
 
     elif target_status == 1:
         if current == 0:
-            doc.submit()  # ORM submit writes to DB
+            with temporarily_enable_transaction_items(doc):
+                doc.submit()  # ORM submit writes to DB
 
         elif current == 2:
             frappe.log_error(f"Cannot resubmit cancelled SQTN {doc.name}", "SQ Sync")
 
     elif target_status == 2:
         if current == 0:
-            doc.submit()  # ORM submit writes to DB
-            doc.cancel()  # ORM cancel writes to DB
+            with temporarily_enable_transaction_items(doc):
+                doc.submit()  # ORM submit writes to DB
+                doc.cancel()  # ORM cancel writes to DB
         elif current == 1:
-            doc.cancel()  # ORM cancel writes to DB
+            with temporarily_enable_transaction_items(doc):
+                doc.cancel()  # ORM cancel writes to DB

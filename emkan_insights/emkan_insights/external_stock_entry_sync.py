@@ -4,7 +4,11 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt
 from contextlib import contextmanager
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 from frappe import _
 class ExternalStockEntry(Document):
     pass
@@ -33,7 +37,7 @@ def _target_sync_lock_key(source_doctype):
 
 def _acquire_target_sync_lock(source_doctype):
     return bool(
-        frappe.cache().redis.set(
+        frappe.cache().set(
             _target_sync_lock_key(source_doctype),
             "1",
             nx=True,
@@ -43,7 +47,7 @@ def _acquire_target_sync_lock(source_doctype):
 
 
 def _release_target_sync_lock(source_doctype):
-    frappe.cache().redis.delete(_target_sync_lock_key(source_doctype))
+    frappe.cache().delete(_target_sync_lock_key(source_doctype))
 
 
 def _enqueue_stock_entry_target_batch(source_doctype, names, batch_index=0):
@@ -364,6 +368,24 @@ def _resolve_material_request(remote_mr_name, company_abbr=None):
             if linked and frappe.db.exists("Material Request", linked):
                 return linked
 
+            if company_abbr:
+                company = frappe.db.get_value("Company", {"abbr": company_abbr}, "name")
+                if company:
+                    try:
+                        from emkan_insights.emkan_insights.external_material_request_sync import (
+                            sync_external_material_request,
+                        )
+
+                        result = sync_external_material_request(name, company)
+                        synced_name = result.get("name") if isinstance(result, dict) else None
+                        if synced_name and frappe.db.exists("Material Request", synced_name):
+                            return synced_name
+                    except Exception:
+                        _log(
+                            f"Stock Entry MR auto-sync failed: {name}",
+                            frappe.get_traceback(),
+                        )
+
     return None
 
 
@@ -456,9 +478,11 @@ def _apply_parent_link_mapping(se_doc, external, company_abbr):
             se_doc.set(fieldname, resolved)
         else:
             se_doc.set(fieldname, None)
-            frappe.log_error(
-                title=f"Stock Entry parent link unresolved: {external.name}",
-                message=f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+            title = f"Stock Entry parent link unresolved: {external.name}"
+            message = f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+            frappe.log_error(title=title, message=message)
+            raise frappe.ValidationError(
+                _("{0}\n{1}").format(title, message)
             )
 
 
@@ -486,9 +510,13 @@ def _apply_item_link_mapping(item_row, company_abbr, external_name=None):
                 item_row[fieldname] = resolved
             else:
                 item_row[fieldname] = None
-                frappe.log_error(
-                    title=f"Stock Entry item link unresolved: {external_name or 'Unknown'}",
-                    message=f"Field: material_request\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+                title = f"Stock Entry item link unresolved: {external_name or 'Unknown'}"
+                message = (
+                    f"Field: material_request\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+                )
+                frappe.log_error(title=title, message=message)
+                raise frappe.ValidationError(
+                    _("{0}\n{1}").format(title, message)
                 )
             continue
 
@@ -498,9 +526,11 @@ def _apply_item_link_mapping(item_row, company_abbr, external_name=None):
             item_row[fieldname] = resolved
         else:
             item_row[fieldname] = None
-            frappe.log_error(
-                title=f"Stock Entry item link unresolved: {external_name or 'Unknown'}",
-                message=f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+            title = f"Stock Entry item link unresolved: {external_name or 'Unknown'}"
+            message = f"Field: {fieldname}\nIncoming: {raw_value}\nAbbr: {company_abbr}"
+            frappe.log_error(title=title, message=message)
+            raise frappe.ValidationError(
+                _("{0}\n{1}").format(title, message)
             )
 
 
@@ -608,8 +638,9 @@ def _sync_existing_docstatus(existing_name, external, company_abbr=None):
                 # We do NOT force-cancel from Draft: a draft with no SLE/GL
                 # entries yet can simply be deleted manually if not needed.
                 try:
-                    se.submit()  # ORM submit — creates SLE + GL entries
-                    se = frappe.get_doc("Stock Entry", existing_name)
+                    with temporarily_enable_transaction_items(se):
+                        se.submit()  # ORM submit — creates SLE + GL entries
+                        se = frappe.get_doc("Stock Entry", existing_name)
                 except Exception as submit_err:
                     _log(
                         f"CRITICAL: Stock Entry {existing_name} submit-before-cancel failed "
@@ -628,7 +659,8 @@ def _sync_existing_docstatus(existing_name, external, company_abbr=None):
             # Now cancel via ORM — this reverses SLE + GL entries correctly.
             # _safe_cancel_doc() will raise if cancel() fails; the exception
             # propagates to savepoint_context which rolls back the transaction.
-            _safe_cancel_doc(se, log_prefix=f"Stock Entry {existing_name}")
+            with temporarily_enable_transaction_items(se):
+                _safe_cancel_doc(se, log_prefix=f"Stock Entry {existing_name}")
 
             # Verify
             final_docstatus = frappe.db.get_value("Stock Entry", existing_name, "docstatus")
@@ -642,7 +674,8 @@ def _sync_existing_docstatus(existing_name, external, company_abbr=None):
                 return {"name": existing_name, "status": "exists", "warning": "cancel verification failed"}
 
         elif target_docstatus == 1 and local_docstatus == 0:
-            se.submit()  # ORM submit writes to DB
+            with temporarily_enable_transaction_items(se):
+                se.submit()  # ORM submit writes to DB
             return {"name": se.name, "status": "docstatus_synced", "docstatus": 1}
 
         else:
@@ -704,9 +737,6 @@ def _build_header_values(external, company, company_abbr):
     if _doctype_has_field("Stock Entry", "remote_id"):
         header["remote_id"] = (external.remote_id or external.name or "").strip()
 
-    if _doctype_has_field("Stock Entry", "source_site"):
-        header["source_site"] = getattr(external, "source_site", None)
-
     # Filter to only valid columns
     header = _filter_valid_fields("Stock Entry", header)
 
@@ -739,6 +769,14 @@ def _build_child_rows(external, company_abbr):
 
         # Resolve material_request_item if material_request was resolved
         _resolve_material_request_item(item_row)
+
+        if item_row.get("s_warehouse") or not (
+            flt(item_row.get("basic_rate"))
+            or flt(item_row.get("valuation_rate"))
+            or flt(item_row.get("incoming_rate"))
+            or flt(item_row.get("rate"))
+        ):
+            item_row["allow_zero_valuation_rate"] = 1
 
         # Filter to only valid fields
         item_row = _filter_valid_fields("Stock Entry Detail", item_row)
@@ -778,7 +816,7 @@ def _build_additional_cost_rows(external):
 # ORM-BASED INSERT HELPER (NO COMMIT)
 # ==========================================================
 
-def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows):
+def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows, source_site=None):
     """
     Insert Stock Entry and child tables via the Frappe ORM (frappe.new_doc /
     doc.insert()) instead of raw SQL INSERT statements.
@@ -822,6 +860,7 @@ def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows)
 
     for field, value in header_values.items():
         doc.set(field, value)
+    set_source_site_fields(doc, site_url=source_site)
 
     # ── Append children: Stock Entry Detail ──────────────────────
     # set_basic_rate_manually=1 signals the ERPNext controller to skip
@@ -840,7 +879,8 @@ def _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows)
     # stock_qty derivation from conversion_factor, warehouse/WO validations.
     # We do NOT patch rate fields after insert — the ORM-computed values
     # are authoritative. set_basic_rate_manually above is the only hint.
-    doc.insert(ignore_permissions=True)
+    with temporarily_enable_transaction_items(doc):
+        doc.insert(ignore_permissions=True)
 
     return doc.name
 
@@ -1016,7 +1056,13 @@ def sync_external_stock_entry(external_name, company):
     )
 
     # ORM insert — runs full Stock Entry controller lifecycle
-    _direct_insert_stock_entry(target_name, header_values, item_rows, cost_rows)
+    _direct_insert_stock_entry(
+        target_name,
+        header_values,
+        item_rows,
+        cost_rows,
+        source_site=getattr(external, "source_site", None),
+    )
 
     # Remap MR links immediately after insert (document is still Draft here).
     try:
@@ -1047,7 +1093,8 @@ def sync_external_stock_entry(external_name, company):
         try:
             se.flags.ignore_permissions = True
             se.set_posting_time = 1
-            se.submit()  # ORM submit — creates SLE + GL entries
+            with temporarily_enable_transaction_items(se):
+                se.submit()  # ORM submit — creates SLE + GL entries
             _log(f"Stock Entry {se.name} submitted successfully", "")
 
             actual_item_count = frappe.db.count("Stock Entry Detail", {"parent": se.name})
@@ -1128,7 +1175,7 @@ def sync_stock_entry_docs(source_doctype=None, names=None):
 
 
 # ==========================================================
-# BACKGROUND WORKER (unchanged — processes whatever chunk it receives)
+# BACKGROUND WORKER
 # ==========================================================
 def _sync_stock_entry_docs_job(source_doctype=None, names=None, batch_index=0):
     if isinstance(names, str):
@@ -1140,11 +1187,13 @@ def _sync_stock_entry_docs_job(source_doctype=None, names=None, batch_index=0):
     batch_index = int(batch_index or 0)
     chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
     results = []
+    source_doctype = source_doctype or "External Stock Entry"
+    sync_failed = False
 
     for name in chunk:
         try:
-            with sync_record_guard(source_doctype or "External Stock Entry", name):
-                external_doc = frappe.get_doc(source_doctype or "External Stock Entry", name)
+            with sync_record_guard(source_doctype, name):
+                external_doc = frappe.get_doc(source_doctype, name)
                 sync_started_at = external_doc.modified
 
                 result = sync_external_stock_entry(name, external_doc.company)
@@ -1152,7 +1201,7 @@ def _sync_stock_entry_docs_job(source_doctype=None, names=None, batch_index=0):
 
                 if result.get("status") in ("synced", "exists", "docstatus_synced", "skipped"):
                     frappe.db.set_value(
-                        source_doctype or "External Stock Entry",
+                        source_doctype,
                         name,
                         "last_synced_on",
                         sync_started_at,
@@ -1172,15 +1221,19 @@ def _sync_stock_entry_docs_job(source_doctype=None, names=None, batch_index=0):
                 "status": "failed",
                 "error": str(e)
             })
+            sync_failed = True
+            break
 
     next_batch_index = batch_index + 1
-    if next_batch_index * CHUNK_SIZE < len(names):
+    if sync_failed:
+        _release_target_sync_lock(source_doctype)
+    elif next_batch_index * CHUNK_SIZE < len(names):
         _enqueue_stock_entry_target_batch(
-            source_doctype or "External Stock Entry",
+            source_doctype,
             names,
             next_batch_index,
         )
     else:
-        _release_target_sync_lock(source_doctype or "External Stock Entry")
+        _release_target_sync_lock(source_doctype)
 
     return results

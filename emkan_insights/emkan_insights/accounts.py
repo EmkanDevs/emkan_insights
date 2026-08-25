@@ -123,6 +123,17 @@ def _find_existing_account(candidate_name, company):
     return None
 
 
+def _find_existing_account_by_number(account_number, company):
+    if not account_number or not company:
+        return None
+
+    return frappe.db.get_value(
+        "Account",
+        {"account_number": account_number, "company": company},
+        "name",
+    )
+
+
 def sync_external_account(external_name, company):
 
     external = frappe.get_doc("External Account", external_name)
@@ -139,6 +150,8 @@ def sync_external_account(external_name, company):
     existing = _find_existing_account(remote_id, company)
     if not existing and company_abbr:
         existing = _find_existing_account(f"{company_abbr}-{remote_id}", company)
+    if not existing:
+        existing = _find_existing_account_by_number(external.account_number, company)
     if existing:
         return existing
 

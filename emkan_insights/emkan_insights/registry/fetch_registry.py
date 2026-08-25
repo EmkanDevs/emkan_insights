@@ -1,5 +1,6 @@
 from emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration import (
     sync__docs,
+    sync_data_from_remote,
 )
 
 from emkan_insights.emkan_insights.sync_leads_from_remote import sync_leads_from_remote
@@ -29,4 +30,4 @@ SPECIAL_FETCHERS = {
     "Journal Entry": sync_journal_entries_from_remote,
 }
 
-DEFAULT_FETCHER = sync__docs
+DEFAULT_FETCHER = sync_data_from_remote

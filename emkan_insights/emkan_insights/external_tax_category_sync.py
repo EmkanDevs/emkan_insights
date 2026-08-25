@@ -1,6 +1,7 @@
 import frappe
 import json
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 @frappe.whitelist()
 @filter_kwargs
@@ -99,8 +100,7 @@ def upsert_tax_category(src, existing_name=None):
     if hasattr(doc, "remote_id"):
         doc.remote_id = src.remote_id
 
-    if hasattr(doc, "source_site"):
-        doc.source_site = src.source_site
+    set_source_site_fields(doc, site_url=getattr(src, "source_site", None))
 
     doc.flags.ignore_permissions = True
 

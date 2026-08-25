@@ -2,6 +2,7 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 # ==========================================================
 # HELPERS
@@ -151,7 +152,6 @@ def sync_single_item_price(source_name):
     item_price.update({
 
         "custom_remote_id": src.name,
-        "custom_source_site": src.source_site,
 
         "selling": cint(getattr(src, "selling", 1)),
         "buying": cint(getattr(src, "buying", 0)),
@@ -174,6 +174,7 @@ def sync_single_item_price(source_name):
         "discount_amount": flt(getattr(src, "discount_amount", 0)),
 
     })
+    set_source_site_fields(item_price, site_url=getattr(src, "source_site", None))
 
     # ------------------------------------------------------
     # RESOLVE LINKED FIELDS (Company Prefix Fix)

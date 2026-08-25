@@ -1,8 +1,14 @@
 import frappe
 import json
 from frappe.utils import flt
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import acquire_sync_lock, release_sync_lock
+from emkan_insights.emkan_insights.sync_guard import (
+    acquire_sync_lock,
+    release_sync_lock,
+    set_source_site_fields,
+    temporarily_enable_transaction_items,
+)
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -42,14 +48,17 @@ def _sync_existing_docstatus(existing_name, ext_si):
     si.flags.ignore_permissions = True
 
     if target_docstatus == 1 and int(local_docstatus or 0) == 0:
-        si.submit()
+        with temporarily_enable_transaction_items(si):
+            si.submit()
         return {"name": si.name, "status": "docstatus_synced", "docstatus": 1}
 
     if target_docstatus == 2:
         if int(local_docstatus or 0) == 0:
-            si.submit()
+            with temporarily_enable_transaction_items(si):
+                si.submit()
             si = frappe.get_doc("Sales Invoice", existing_name)
-        si.cancel()
+        with temporarily_enable_transaction_items(si):
+            si.cancel()
         final_docstatus = frappe.db.get_value("Sales Invoice", existing_name, "docstatus")
         return {"name": existing_name, "status": "docstatus_synced", "docstatus": final_docstatus}
 
@@ -174,7 +183,7 @@ def _ensure_item_uom(item_code, uom):
     if not frappe.db.exists("UOM", uom):
         return
 
-    already_registered = frappe.exists("UOM Conversion Detail", {
+    already_registered = frappe.db.exists("UOM Conversion Detail", {
         "parent": item_code,
         "parenttype": "Item",
         "uom": uom
@@ -390,8 +399,7 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
             si.name = target_name
             si.flags.name_set = True
 
-            if hasattr(si, "source_site"):
-                si.source_site = ext_si.source_site
+            set_source_site_fields(si, site_url=getattr(ext_si, "source_site", None))
 
             # ------------------------------------------------
             # COPY MAIN FIELDS
@@ -550,6 +558,10 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
                     for field, value in row.as_dict().items():
                         if field not in SYSTEM_FIELDS:
                             tax_row[field] = value
+                    if tax_row.get("account_head"):
+                        tax_row["account_head"] = resolve_company_account(
+                            tax_row["account_head"], ext_si.company, company_abbr
+                        )
                     si.append("taxes", tax_row)
 
             # ------------------------------------------------
@@ -638,8 +650,16 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
             # ============================================================
 
             for item in si.items:
+                if item.income_account:
+                    item.income_account = resolve_company_account(
+                        item.income_account, ext_si.company, company_abbr
+                    )
                 if item.income_account and not frappe.db.exists("Account", item.income_account):
                     item.income_account = None
+                if item.expense_account:
+                    item.expense_account = resolve_company_account(
+                        item.expense_account, ext_si.company, company_abbr
+                    )
                 if item.expense_account and not frappe.db.exists("Account", item.expense_account):
                     item.expense_account = None
 
@@ -661,9 +681,10 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
             # INSERT
             # ------------------------------------------------
             si.merge_similar_items = 0
-            si.insert(
-                ignore_permissions=True,
-            )
+            with temporarily_enable_transaction_items(si):
+                si.insert(
+                    ignore_permissions=True,
+                )
 
             clean_duplicate_si_items(si.name)
 
@@ -705,11 +726,13 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
             # DOCSTATUS SYNC
             # ------------------------------------------------
             if ext_si.docstatus == 1:
-                si.submit()
+                with temporarily_enable_transaction_items(si):
+                    si.submit()
 
             elif ext_si.docstatus == 2:
-                si.submit()
-                si.cancel()
+                with temporarily_enable_transaction_items(si):
+                    si.submit()
+                    si.cancel()
 
             results.append({
                 "name": si.name,
@@ -737,6 +760,7 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
                 "status": "failed",
                 "error": str(e)
             })
+            break
         finally:
             release_sync_lock(lock_name)
 

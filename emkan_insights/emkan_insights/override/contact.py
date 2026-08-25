@@ -28,12 +28,20 @@ class Contact(_Contact):
 			self.name = self.remote_id
 			return
 
-		self.name = None
+		self.name = (self.full_name or "").strip()
+
+		if not self.name:
+			self.name = " ".join(
+				part for part in [self.first_name, self.middle_name, self.last_name] if part
+			).strip()
 
 		for link in self.links:
-			if link.link_name:
+			if not self.name and link.link_name:
 				self.name = link.link_name.strip()
 				break
+
+		if not self.name:
+			self.name = self.email_id or self.user or frappe.generate_hash(length=10)
 
 		if frappe.db.exists("Contact", self.name):
 			from frappe.model.naming import append_number_if_name_exists

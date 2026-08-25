@@ -64,5 +64,6 @@ def sync_external_docs(source_doctype, names):
                 message=error
             )
             results.append({"name": name, "status": "failed"})
+            break
     
     return results

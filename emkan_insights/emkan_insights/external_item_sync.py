@@ -2,6 +2,7 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 # Chunk size for splitting large bulk syncs into multiple background jobs
 CHUNK_SIZE = 300
@@ -37,6 +38,21 @@ def resolve_local_doc(doctype, remote_or_local_name, company_abbr=None):
         return remote_or_local_name
 
     return None
+
+
+def _build_company_prefixed_name(company_abbr, name):
+    if not name:
+        return None
+
+    name = str(name).strip()
+    if not name or not company_abbr:
+        return name
+
+    prefix = f"{company_abbr}-"
+    if name.startswith(prefix):
+        return name
+
+    return f"{prefix}{name}"
 
 
 # ==========================================================
@@ -158,18 +174,14 @@ def sync_single_item(source_name):
     src = frappe.get_doc("External Item", source_name)
     sync_started_at = src.modified
 
-    target_name = src.remote_id
+    company = getattr(src, "company", None)
+    company_abbr = frappe.db.get_value("Company", company, "abbr") if company else ""
+    target_name = _build_company_prefixed_name(company_abbr, src.remote_id or src.name)
 
     existing = None
 
     if target_name and frappe.db.exists("Item", target_name):
         existing = target_name
-
-    # ------------------------------------------------------
-    # Determine Company Abbr for prefixing linked docs
-    # ------------------------------------------------------
-    company = getattr(src, "company", None)
-    company_abbr = frappe.db.get_value("Company", company, "abbr") if company else ""
 
     # ------------------------------------------------------
     # LOAD / CREATE
@@ -187,15 +199,19 @@ def sync_single_item(source_name):
     # ------------------------------------------------------
     # BASIC FIELDS
     # ------------------------------------------------------
+    item_group = resolve_local_doc(
+        "Item Group",
+        getattr(src, "item_group", None) or "All Item Groups",
+        company_abbr,
+    ) or getattr(src, "item_group", None) or "All Item Groups"
 
     item.update({
 
         "custom_remote_id": src.name,
-        "custom_source_site": src.source_site,
 
-        "item_code": getattr(src, "item_code", None) or src.name,
+        "item_code": target_name,
         "item_name": getattr(src, "item_name", None) or getattr(src, "item_code", None) or src.name,
-        "item_group": getattr(src, "item_group", None) or "All Item Groups",
+        "item_group": item_group,
         "stock_uom": getattr(src, "stock_uom", None) or "Nos",
         "description": getattr(src, "description", None),
 
@@ -264,6 +280,7 @@ def sync_single_item(source_name):
         "variant_based_on": getattr(src, "variant_based_on", None),
 
     })
+    set_source_site_fields(item, site_url=getattr(src, "source_site", None))
 
     # ------------------------------------------------------
     # RESOLVE DEFAULT BOM (Company Prefix Fix)
@@ -286,9 +303,16 @@ def sync_single_item(source_name):
         rows = getattr(src, source_field, [])
         for row in rows:
             new_row = {}
-            for target_key, source_key in field_map.items():
+            for target_key, source_spec in field_map.items():
+                linked_doctype = None
+                source_key = source_spec
+                if isinstance(source_spec, tuple):
+                    source_key, linked_doctype = source_spec
+
                 val = getattr(row, source_key, None)
                 if val is not None:
+                    if linked_doctype:
+                        val = resolve_local_doc(linked_doctype, val, company_abbr) or val
                     new_row[target_key] = val
             if new_row:
                 item.append(target_field, new_row)
@@ -346,7 +370,7 @@ def sync_single_item(source_name):
     # ------------------------------------------------------
 
     sync_child_table("reorder_levels", "reorder_levels", {
-        "warehouse": "warehouse",
+        "warehouse": ("warehouse", "Warehouse"),
         "warehouse_reorder_level": "re_order_level",
         "warehouse_reorder_qty": "re_order_qty",
         "material_request_type": "material_request_type"
@@ -367,7 +391,7 @@ def sync_single_item(source_name):
 
     sync_child_table("customer_items", "customer_items", {
         "customer_name": "customer_name",
-        "customer_group": "customer_group",
+        "customer_group": ("customer_group", "Customer Group"),
         "ref_code": "ref_code"
     })
 

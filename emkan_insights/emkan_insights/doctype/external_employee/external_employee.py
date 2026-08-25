@@ -700,5 +700,6 @@ def sync_bulk_employees(names):
                 "error": str(e),
                 "traceback": traceback.format_exc()
             })
+            break
 
     return results

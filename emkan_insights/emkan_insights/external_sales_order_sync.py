@@ -2,7 +2,11 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -14,6 +18,24 @@ DEFAULT_WAREHOUSE = "Stores - IMC"
 
 # Chunk size for splitting large bulk syncs into multiple background jobs
 CHUNK_SIZE = 300
+
+
+def _resolve_usable_warehouse(warehouse, company):
+    if warehouse:
+        details = frappe.db.get_value("Warehouse", warehouse, ["disabled", "is_group", "company"], as_dict=True)
+        if (
+            details
+            and not details.disabled
+            and not details.is_group
+            and (not company or details.company == company)
+        ):
+            return warehouse
+
+    return frappe.db.get_value(
+        "Warehouse",
+        {"company": company, "disabled": 0, "is_group": 0},
+        "name",
+    )
 
 
 def _resolve_quotation(remote_qtn_name, company_abbr=None):
@@ -162,7 +184,8 @@ def _safe_cancel_doc(doc, log_prefix=""):
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()  # ORM cancel — runs all lifecycle hooks
+        with temporarily_enable_transaction_items(doc):
+            doc.cancel()  # ORM cancel — runs all lifecycle hooks
         return True
     except Exception as cancel_err:
         frappe.log_error(
@@ -184,7 +207,8 @@ def _safe_submit_doc(doc, log_prefix=""):
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.submit()  # ORM submit — runs all lifecycle hooks
+        with temporarily_enable_transaction_items(doc):
+            doc.submit()  # ORM submit — runs all lifecycle hooks
         return True
     except Exception as submit_err:
         # submit() may have already written docstatus=1 before on_submit threw.
@@ -371,13 +395,8 @@ def _sync_sales_order_docs_job(source_doctype, names):
 
             src_site_value = getattr(ext_so, "site_url", None) or getattr(ext_so, "source_site", None)
             if src_site_value:
-                mapped = False
-                for site_field in ("source_site", "site_url"):
-                    if hasattr(so, site_field):
-                        so.set(site_field, src_site_value)
-                        mapped = True
-                        break
-                if not mapped:
+                set_source_site_fields(so, site_url=src_site_value)
+                if not any(so.meta.has_field(fieldname) for fieldname in ("source_site", "site_url", "custom_source_site")):
                     frappe.log_error(
                         f"SO Sync: source_site value '{src_site_value}' not mapped — "
                         f"Sales Order missing 'source_site'/'site_url' Custom Field.",
@@ -423,13 +442,21 @@ def _sync_sales_order_docs_job(source_doctype, names):
 
             for row in ext_so.items:
                 item_code = row.get("item_code")
+                local_item_code = f"{company_abbr}-{item_code}" if company_abbr and item_code else item_code
+                if local_item_code and frappe.db.exists("Item", local_item_code):
+                    item_code = local_item_code
 
                 if not frappe.db.exists("Item", item_code):
+                    prefixed_item_group = f"{company_abbr}-All Item Groups" if company_abbr else None
                     frappe.get_doc({
                         "doctype": "Item",
                         "item_code": item_code,
                         "item_name": row.get("item_name") or item_code,
-                        "item_group": "All Item Groups",
+                        "item_group": (
+                            prefixed_item_group
+                            if prefixed_item_group and frappe.db.exists("Item Group", prefixed_item_group)
+                            else "All Item Groups"
+                        ),
                         "stock_uom": row.get("uom") or "Nos"
                     }).insert(ignore_permissions=True)
 
@@ -479,7 +506,7 @@ def _sync_sales_order_docs_job(source_doctype, names):
                     "uom":                  row.get("uom") or "Nos",
                     "stock_uom":            row.get("stock_uom") or row.get("uom") or "Nos",
                     "conversion_factor":    row.get("conversion_factor") or 1,
-                    "warehouse":            row.get("warehouse") or DEFAULT_WAREHOUSE,
+                    "warehouse":            _resolve_usable_warehouse(row.get("warehouse"), ext_so.company) or DEFAULT_WAREHOUSE,
                     "delivery_date":        row.get("delivery_date"),
                     "cost_center":          row.get("cost_center"),
                     "project":              row.get("project") or getattr(ext_so, "project", None),
@@ -530,9 +557,10 @@ def _sync_sales_order_docs_job(source_doctype, names):
             # ------------------------------------------------
             # INSERT
             # ------------------------------------------------
-            so.insert(
-                ignore_permissions=True,
-            )
+            with temporarily_enable_transaction_items(so):
+                so.insert(
+                    ignore_permissions=True,
+                )
 
             # ------------------------------------------------
             # NAMING SAFETY NET: If Frappe renamed it
@@ -660,5 +688,6 @@ def _sync_sales_order_docs_job(source_doctype, names):
                 "status": "failed",
                 "error": str(e)
             })
+            break
 
     return results

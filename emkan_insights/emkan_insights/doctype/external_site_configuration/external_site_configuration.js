@@ -1,4 +1,33 @@
 frappe.ui.form.on('External Site Configuration', {
+    refresh: function(frm) {
+        if (!frm.is_new()) {
+            add_sequence_button(
+                frm,
+                __('Fetch Only'),
+                "emkan_insights.emkan_insights.scheduler.fetch_external_site_configuration_sequence",
+                __('Queueing sequential fetch...')
+            );
+            add_sequence_button(
+                frm,
+                __('Sync Only'),
+                "emkan_insights.emkan_insights.scheduler.sync_external_site_configuration_sequence",
+                __('Queueing sequential sync...')
+            );
+            add_sequence_button(
+                frm,
+                __('Fetch + Sync'),
+                "emkan_insights.emkan_insights.scheduler.fetch_and_sync_external_site_configuration_sequence",
+                __('Queueing sequential fetch and sync...')
+            );
+            add_sequence_button(
+                frm,
+                __('Stop Jobs'),
+                "emkan_insights.emkan_insights.scheduler.stop_external_site_configuration_jobs",
+                __('Stopping external sync jobs...')
+            );
+        }
+    },
+
     site_name: function (frm) {  
         set_naming_series(frm);
     },
@@ -51,6 +80,38 @@ frappe.ui.form.on('External Site Configuration', {
             });
     },
 });
+
+function add_sequence_button(frm, label, method, freeze_message) {
+    frm.add_custom_button(label, function () {
+        frappe.call({
+            method: method,
+            args: {
+                site_config: frm.doc.name
+            },
+            freeze: true,
+            freeze_message: freeze_message,
+            callback: function (r) {
+                if (r.message) {
+                    frappe.show_alert({
+                        message: __(r.message.message || r.message.status || 'Done'),
+                        indicator: get_sequence_indicator(r.message.status)
+                    });
+                    frm.reload_doc();
+                }
+            }
+        });
+    }, __('Sequential Sync'));
+}
+
+function get_sequence_indicator(status) {
+    if (status === 'complete' || status === 'queued' || status === 'stopped') {
+        return 'green';
+    }
+    if (status === 'complete_with_link_mismatches' || status === 'skipped') {
+        return 'orange';
+    }
+    return 'blue';
+}
 
 
 

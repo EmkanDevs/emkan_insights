@@ -30,6 +30,7 @@ from emkan_insights.emkan_insights.doctype.external_bank.external_bank import sy
 from emkan_insights.emkan_insights.doctype.external_bank_account.external_bank_account import sync_external_records as sync_external_bank_account_records
 from emkan_insights.emkan_insights.doctype.external_contract.external_contract import sync_external_records as sync_external_contract_records
 from emkan_insights.emkan_insights.doctype.external_customer.external_customer import sync_external_records as sync_external_customer_records
+from emkan_insights.emkan_insights.doctype.external_customer_group.external_customer_group import sync_external_records as sync_external_customer_group_records
 from emkan_insights.emkan_insights.doctype.external_department.external_department import sync_department_docs
 from emkan_insights.emkan_insights.doctype.external_designation.external_designation import sync_designation_docs
 from emkan_insights.emkan_insights.doctype.external_employee.external_employee import sync_employee_docs
@@ -63,6 +64,7 @@ SYNC_METHODS = {
     "Contract": sync_external_contract_records,
     "Cost Center": sync_cost_center_docs,
     "Customer": sync_external_customer_records,
+    "Customer Group": sync_external_customer_group_records,
     "Department": sync_department_docs,
     "Designation": sync_designation_docs,
     "Employee": sync_employee_docs,

@@ -4,7 +4,11 @@ from contextlib import contextmanager
 import frappe
 from frappe.utils import cint
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 
 
 SYSTEM_FIELDS = {
@@ -264,7 +268,8 @@ def _safe_submit_doc(doc, log_prefix=""):
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.submit()
+        with temporarily_enable_transaction_items(doc):
+            doc.submit()
         return True
     except Exception as submit_err:
         current = cint(frappe.db.get_value(doc.doctype, doc.name, "docstatus"))
@@ -292,7 +297,8 @@ def _safe_cancel_doc(doc, log_prefix=""):
     """
     try:
         doc.flags.ignore_permissions = True
-        doc.cancel()
+        with temporarily_enable_transaction_items(doc):
+            doc.cancel()
         return True
     except Exception as cancel_err:
         _log(
@@ -396,8 +402,7 @@ def sync_external_stock_reconciliation(external_name, company):
 
     if _doctype_has_field("Stock Reconciliation", "remote_id"):
         sr.remote_id = source_id
-    if _doctype_has_field("Stock Reconciliation", "source_site"):
-        sr.source_site = getattr(external, "source_site", None)
+    set_source_site_fields(sr, site_url=getattr(external, "source_site", None))
 
     sr.company = company
     sr.purpose = external.purpose or "Stock Reconciliation"
@@ -434,7 +439,8 @@ def sync_external_stock_reconciliation(external_name, company):
     sr.flags.ignore_permissions = True
     sr.flags.ignore_link_validation = True
     sr.flags.ignore_naming_series = True
-    sr.insert(ignore_permissions=True)
+    with temporarily_enable_transaction_items(sr):
+        sr.insert(ignore_permissions=True)
 
     if sr.name != target_name and not frappe.db.exists("Stock Reconciliation", target_name):
         old_name = sr.name
@@ -570,5 +576,6 @@ def _sync_stock_reconciliation_docs_job(source_doctype=None, names=None):
                 "status": "failed",
                 "error": str(e),
             })
+            break
 
     return results

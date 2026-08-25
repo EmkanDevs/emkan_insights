@@ -15,6 +15,7 @@ from emkan_insights.emkan_insights.doctype.external_site_configuration.external_
     _release_sync_lock,
     _build_company_prefixed_remote_id,
 )
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 CHUNK_SIZE = 300
 FETCH_WORKERS = 8
@@ -336,10 +337,9 @@ def _process_rfq_item(local_dt, item, idx, local_fields, company, company_abbr, 
         if 'company' in local_fields and company:
             doc.company = company
 
-        # Set site_url
-        for site_url_fieldname in ("source_site", "site_url"):
-            if site_url_fieldname in local_fields:
-                doc.set(site_url_fieldname, site_url)
+        # Set source fields according to local metadata.  Some doctypes keep
+        # the URL in Data fields, while Link fields must store the config name.
+        set_source_site_fields(doc, configuration_name=configuration_name, site_url=site_url)
 
         # Ensure all scalar mandatory (reqd=1) fields have a value so that
         # Frappe's validate_mandatory() doesn't reject the record.

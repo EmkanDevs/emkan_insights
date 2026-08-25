@@ -691,5 +691,6 @@ def _sync_delivery_note_docs_job(source_doctype, names=None):
                 "status": "failed",
                 "error": str(e)
             })
+            break
 
     return results

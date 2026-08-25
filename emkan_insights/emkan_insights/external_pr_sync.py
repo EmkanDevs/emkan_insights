@@ -1,7 +1,12 @@
 import frappe
 import json
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import acquire_sync_lock, release_sync_lock
+from emkan_insights.emkan_insights.sync_guard import (
+    acquire_sync_lock,
+    release_sync_lock,
+    set_source_site_fields,
+)
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -98,9 +103,15 @@ def _append_matching_child_table(target_doc, source_doc, table_fieldname):
 
     target_doc.set(table_fieldname, [])
     for row in source_rows:
+        child_row = _copy_child_row_fields(row, target_df.options)
+        if child_row.get("account_head"):
+            company_abbr = frappe.db.get_value("Company", target_doc.company, "abbr") or ""
+            child_row["account_head"] = resolve_company_account(
+                child_row["account_head"], target_doc.company, company_abbr
+            )
         target_doc.append(
             table_fieldname,
-            _copy_child_row_fields(row, target_df.options)
+            child_row
         )
 
 
@@ -658,8 +669,7 @@ def sync_bulk_purchase_receipts(names):
             pr.flags.name_set = True
             _apply_sync_flags(pr)
 
-            if hasattr(pr, "source_site"):
-                pr.source_site = ext_pr.source_site
+            set_source_site_fields(pr, site_url=getattr(ext_pr, "source_site", None))
 
             pr_table_fields = _get_table_fieldnames(pr_meta)
             for field, value in ext_pr.as_dict().items():
@@ -878,6 +888,7 @@ def sync_bulk_purchase_receipts(names):
                 "status": "failed",
                 "error": str(e)
             })
+            break
         finally:
             release_sync_lock(_lock_name)
 
@@ -903,5 +914,6 @@ def sync_bulk_purchase_receipts(names):
                 title=f"Purchase Receipt Submit Retry Failed: {pr_name}",
                 message=frappe.get_traceback()
             )
+            break
 
     return results

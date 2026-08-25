@@ -564,6 +564,7 @@
 import frappe
 import json
 from frappe.utils import flt, cint
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 from emkan_insights.emkan_insights.sync_guard import acquire_sync_lock, release_sync_lock
 
@@ -872,12 +873,21 @@ def _build_account_rows(ext, company_abbr, company, cc_cache=None):
             reference_type = None
         party_type = row.get("party_type") or None
         party = _resolve_party(party_type, row.get("party"), company_abbr)
+        account = resolve_company_account(row.account, company, company_abbr)
+        if not account:
+            skipped_rows_count += 1
+            _log(
+                f"Journal Entry {ext.name} account row skipped",
+                f"Row {idx + 1} account '{row.account}' could not be resolved for company {company}."
+            )
+            continue
+
         cost_center = _cost_center_for_account(
-            row.account, row.cost_center, company, company_abbr, cc_cache
+            account, row.cost_center, company, company_abbr, cc_cache
         )
 
         final_rows.append({
-            "account": row.account,
+            "account": account,
             "party_type": party_type,
             "party": party,
             "cost_center": cost_center,
@@ -1107,7 +1117,7 @@ def _sync_journal_entries_job(names):
                     "All rows were skipped because 'account' field was empty.",
                 )
                 result["failed"].append({"external": name, "error": "No valid account rows (account field missing on all rows)"})
-                continue
+                break
 
             je.set("accounts", final_rows)
             # FIX: this now raises (instead of silently returning) when the
@@ -1175,6 +1185,7 @@ def _sync_journal_entries_job(names):
                 frappe.db.rollback(save_point=savepoint)
             frappe.log_error(frappe.get_traceback(), f"Sync Error: {name}")
             result["failed"].append({"external": name, "error": str(e)})
+            break
         finally:
             release_sync_lock(lock_name)
     

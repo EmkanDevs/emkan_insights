@@ -174,5 +174,6 @@ def sync_bulk_designations(names):
                     "traceback": traceback.format_exc(),
                 }
             )
+            break
 
     return results

@@ -1,8 +1,13 @@
 import frappe
 import json
 from frappe.utils import flt, cint
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 
 
 SYSTEM_FIELDS = {
@@ -105,7 +110,8 @@ def _safe_cancel_doc(doc, log_prefix=""):
     Returns True if successful.
     """
     doc.flags.ignore_permissions = True
-    doc.cancel()  # ORM cancel — triggers all on_cancel hooks (GL, SLE, etc.)
+    with temporarily_enable_transaction_items(doc):
+        doc.cancel()  # ORM cancel — triggers all on_cancel hooks (GL, SLE, etc.)
     _log(f"{log_prefix} cancelled", "")
     return True
 
@@ -764,7 +770,8 @@ def _sync_existing_docstatus(existing_name, ext_pi):
         if target_docstatus == 1:
             if local_docstatus == 0:
                 _recalculate_totals(pi)
-                pi.submit() 
+                with temporarily_enable_transaction_items(pi):
+                    pi.submit()
                 _safe_dedupe(pi.name)
                 _log(f"PI {pi.name} docstatus synced: Draft -> Submitted", "")
                 return {"name": pi.name, "status": "docstatus_synced", "docstatus": 1}
@@ -779,7 +786,8 @@ def _sync_existing_docstatus(existing_name, ext_pi):
             if local_docstatus == 0:
                 # Draft -> need to submit first, then cancel
                 _recalculate_totals(pi)
-                pi.submit()  
+                with temporarily_enable_transaction_items(pi):
+                    pi.submit()
                 pi = frappe.get_doc("Purchase Invoice", existing_name)
             
             # Now cancel (whether it was 0 or 1 before)
@@ -929,11 +937,12 @@ def _sync_single_purchase_invoice(source_doctype, name):
     pi.name = target_name
     pi.flags.name_set = True
 
-    if hasattr(pi, "source_site"):
-        pi.source_site = ext_pi.source_site
+    set_source_site_fields(pi, site_url=getattr(ext_pi, "source_site", None))
 
     # Copy scalar header fields only
     _copy_header_fields(ext_pi, pi)
+    if pi.get("credit_to"):
+        pi.credit_to = resolve_company_account(pi.credit_to, ext_pi.company, company_abbr)
     pi.set_posting_time = 1
 
     # Fix currency
@@ -1004,6 +1013,10 @@ def _sync_single_purchase_invoice(source_doctype, name):
         pi.set("taxes", [])
         for row in ext_pi.taxes:
             tax_row = _copy_child_row_fields(row, "Purchase Taxes and Charges")
+            if tax_row.get("account_head"):
+                tax_row["account_head"] = resolve_company_account(
+                    tax_row["account_head"], ext_pi.company, company_abbr
+                )
             pi.append("taxes", tax_row)
 
     # PAYMENT SCHEDULE
@@ -1031,10 +1044,11 @@ def _sync_single_purchase_invoice(source_doctype, name):
     pi.flags.ignore_naming_series = True
 
     # INSERT PARENT ONLY (no items yet) — ORM insert writes to DB
-    pi.insert(
-        ignore_permissions=True,
-        ignore_mandatory=True,
-    )
+    with temporarily_enable_transaction_items(pi):
+        pi.insert(
+            ignore_permissions=True,
+            ignore_mandatory=True,
+        )
 
     # Ensure remote_id is set via ORM (safety net, no commit needed)
     pi.db_set("remote_id", remote_id, update_modified=False)
@@ -1175,7 +1189,8 @@ def _sync_single_purchase_invoice(source_doctype, name):
         # Submit via ORM
         try:
             _recalculate_totals(pi)
-            pi.submit()
+            with temporarily_enable_transaction_items(pi):
+                pi.submit()
             _safe_dedupe(pi.name)
             _log(f"PI {pi.name} submitted successfully", "")
             
@@ -1208,13 +1223,15 @@ def _sync_single_purchase_invoice(source_doctype, name):
         # Submit first via ORM, then cancel
         try:
             _recalculate_totals(pi)
-            pi.submit()
+            with temporarily_enable_transaction_items(pi):
+                pi.submit()
             _safe_dedupe(pi.name)
             _log(f"PI {pi.name} submitted (step 1 of cancel)", "")
 
             # Re-fetch fresh doc and cancel
             pi = frappe.get_doc("Purchase Invoice", pi.name)
-            _safe_cancel_doc(pi, log_prefix=f"PI {pi.name}")
+            with temporarily_enable_transaction_items(pi):
+                _safe_cancel_doc(pi, log_prefix=f"PI {pi.name}")
             _safe_dedupe(pi.name)
             
             # Verify
@@ -1336,5 +1353,6 @@ def _sync_purchase_invoice_docs_job(source_doctype, names):
                 "status": "failed",
                 "error": str(e)
             })
+            break
 
     return results

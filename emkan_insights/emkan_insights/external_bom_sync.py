@@ -425,7 +425,7 @@ def sync_external_bom(external_name, company):
 # ==========================================================
 
 @frappe.whitelist()
-def sync_external_bom_docs(source_doctype=None, names=None):
+def sync_external_bom_docs(source_doctype=None, names=None, company=None):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -502,5 +502,6 @@ def _sync_external_bom_docs_job(source_doctype=None, names=None):
                 "status": "failed",
                 "error": str(e)
             })
+            break
 
     return results

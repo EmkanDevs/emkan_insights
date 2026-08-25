@@ -153,6 +153,7 @@ def _sync_one_external_account(external_name: str, stack: list = None, company: 
         _apply_parent_rules(src, tgt, stack, target_company=company)
         _apply_root_defaults(src, tgt)
         _apply_remote_id(src, tgt)
+        _apply_account_number_rules(tgt, target_company=company)
 
         tgt.flags.ignore_root_company_validation = True
         tgt.flags.ignore_mandatory = False
@@ -193,6 +194,25 @@ def _find_existing_target_account(src, target_company: str | None = None) -> str
         )
 
     return None
+
+
+def _apply_account_number_rules(tgt, target_company: str | None = None) -> None:
+    company = target_company or tgt.get("company")
+    account_number = tgt.get("account_number")
+    if not company or not account_number:
+        return
+
+    duplicate = frappe.db.get_value(
+        "Account",
+        {"account_number": account_number, "company": company, "name": ["!=", tgt.name]},
+        "name",
+    )
+    if duplicate:
+        frappe.throw(
+            f"Account Number {account_number} already belongs to {duplicate} "
+            f"for company {company}. Sync should reuse that account instead of "
+            f"creating/updating a second account with the same number."
+        )
 
 
 def _map_fields(src, tgt) -> None:

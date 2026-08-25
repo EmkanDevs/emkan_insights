@@ -10,6 +10,9 @@ SYSTEM_FIELDS = {
 CHUNK_SIZE = 300
 
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.doctype.external_address.external_address import (
+    _resolve_dynamic_link,
+)
 
 
 # ==========================================================
@@ -107,6 +110,7 @@ def _sync_external_contact_docs_job(source_doctype, names):
                     "first_name", "last_name", "remote_id", "name", 
                     "email_ids", "phone_nos", "links", "naming_series" , "source_site" , "user"
                 ] and hasattr(contact, field):
+                    df = contact.meta.get_field(field)
                     contact.set(field, value)
 
             # --- Emails ---
@@ -159,18 +163,16 @@ def _sync_external_contact_docs_job(source_doctype, names):
                 for row in ext_contact.links:
                     if not row.link_doctype or not row.link_name:
                         continue
-                    if row.link_doctype == "Lead":
-                        continue
-                    if not frappe.db.exists(row.link_doctype, row.link_name):
-                        continue
+                    resolved_link = _resolve_dynamic_link(row.link_doctype, row.link_name)
 
                     contact.append("links", {
                         "link_doctype": row.link_doctype,
-                        "link_name": row.link_name,
+                        "link_name": resolved_link or row.link_name,
                         "link_title": row.link_title or ""
                     })
 
             # --- INSERT WITH FLAGS ---
+            contact.flags.ignore_links = True
             contact.insert(
                 ignore_permissions=True, 
             )
@@ -192,5 +194,6 @@ def _sync_external_contact_docs_job(source_doctype, names):
                 "status": "error", 
                 "error": str(e)
             })
+            break
 
     return results

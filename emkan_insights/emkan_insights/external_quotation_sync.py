@@ -142,6 +142,7 @@ def _sync_quotation_docs_job(source_doctype, names):
             error = frappe.get_traceback()
             frappe.log_error(title=f"Quotation Sync Error: {name}", message=error)
             failed.append({"name": name, "error": error})
+            break
 
     return {
         "created": created,

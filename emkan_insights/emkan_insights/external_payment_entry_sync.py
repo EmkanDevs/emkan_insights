@@ -1,6 +1,7 @@
 import frappe
 import json
 from frappe.utils import flt
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
@@ -126,7 +127,7 @@ def _find_existing_payment_entry(remote_id, target_name, company):
 # ACCOUNT RESOLUTION (taxes / deductions)
 # ==========================================================
 
-def _resolve_account(account, company_abbr):
+def _resolve_account(account, company, company_abbr):
     """
     Resolve a possibly-remote account name to a valid local one.
     make_gl_entries() silently skips any row whose account doesn't exist
@@ -136,14 +137,24 @@ def _resolve_account(account, company_abbr):
     if not account:
         return None
 
-    if frappe.db.exists("Account", account):
-        return account
+    return resolve_company_account(account, company, company_abbr)
 
-    if company_abbr and not account.endswith(f" - {company_abbr}"):
-        candidate = f"{account} - {company_abbr}"
-        if frappe.db.exists("Account", candidate):
-            return candidate
 
+def _resolve_amended_from(amended_from, company_abbr, company, target_name):
+    local_amended_from = resolve_local_doc(
+        "Payment Entry", amended_from, company_abbr=company_abbr, company=company
+    )
+    if local_amended_from:
+        return local_amended_from
+
+    _log(
+        title=f"PE {target_name} amended_from unresolved - cleared",
+        message=(
+            f"Could not resolve amended_from '{amended_from}' for Payment Entry "
+            f"{target_name}. Cleared the link before insert to avoid a dangling "
+            f"Amended From validation failure."
+        ),
+    )
     return None
 
 
@@ -380,6 +391,41 @@ def _sanitize_existing_reference_terms(pe_name):
     )
 
 
+def _repair_existing_payment_entry_accounts(pe_name, src, company, company_abbr):
+    updates = {}
+    for fieldname in ("paid_from", "paid_to"):
+        source_account = getattr(src, fieldname, None)
+        if not source_account:
+            continue
+
+        resolved = _resolve_account(source_account, company, company_abbr)
+        if resolved:
+            updates[fieldname] = resolved
+
+    for fieldname, value in updates.items():
+        frappe.db.set_value("Payment Entry", pe_name, fieldname, value, update_modified=False)
+
+    child_tables = {
+        "Advance Taxes and Charges": "account_head",
+        "Payment Entry Deduction": "account",
+    }
+    for child_dt, account_field in child_tables.items():
+        if not frappe.db.exists("DocType", child_dt):
+            continue
+        if not frappe.get_meta(child_dt).has_field(account_field):
+            continue
+        rows = frappe.get_all(
+            child_dt,
+            filters={"parent": pe_name, "parenttype": LOCAL_PARENTTYPE},
+            fields=["name", account_field],
+        )
+        for row in rows:
+            source_account = row.get(account_field)
+            resolved = _resolve_account(source_account, company, company_abbr)
+            if resolved and resolved != source_account:
+                frappe.db.set_value(child_dt, row.name, account_field, resolved, update_modified=False)
+
+
 def _sync_existing_docstatus(existing_name, src):
     """
     Reconcile a local Payment Entry that already exists but whose docstatus
@@ -390,6 +436,9 @@ def _sync_existing_docstatus(existing_name, src):
     """
     local_docstatus = frappe.db.get_value("Payment Entry", existing_name, "docstatus")
     target_docstatus = src.docstatus
+    company = src.company
+    company_abbr = _get_company_abbr(company)
+    _repair_existing_payment_entry_accounts(existing_name, src, company, company_abbr)
 
     if local_docstatus == target_docstatus:
         return existing_name
@@ -526,6 +575,7 @@ def _sync_payment_entry_docs_job(source_doctype, names):
                 "name": name,
                 "status": "failed"
             })
+            break
 
     return results
 
@@ -564,13 +614,13 @@ def sync_external_payment_entry(source_doctype, external_name):
     local_paid_from = None
 
     if src.paid_from:
-        local_paid_from = _resolve_account(src.paid_from, company_abbr)
+        local_paid_from = _resolve_account(src.paid_from, company, company_abbr)
         if not local_paid_from:
             frappe.throw(f"Account {src.paid_from} not found.")
 
     local_paid_to = None
     if src.paid_to:
-        local_paid_to = _resolve_account(src.paid_to, company_abbr)
+        local_paid_to = _resolve_account(src.paid_to, company, company_abbr)
         if not local_paid_to:
             frappe.throw(f"Account {src.paid_to} not found.")
 
@@ -600,6 +650,8 @@ def sync_external_payment_entry(source_doctype, external_name):
     doc.remote_id = remote_id
     doc.paid_from = local_paid_from
     doc.paid_to = local_paid_to
+    if getattr(src, "amended_from", None):
+        doc.amended_from = _resolve_amended_from(src.amended_from, company_abbr, company, target_name)
 
     # ------------------------------------------------------
     # Apply Resolved Party Name
@@ -643,7 +695,7 @@ def sync_external_payment_entry(source_doctype, external_name):
                     child[field] = value
 
             if child.get("account"):
-                resolved_account = _resolve_account(child["account"], company_abbr)
+                resolved_account = _resolve_account(child["account"], company, company_abbr)
                 if not resolved_account:
                     _log(
                         title=f"PE {target_name} {table_field} account unresolved",

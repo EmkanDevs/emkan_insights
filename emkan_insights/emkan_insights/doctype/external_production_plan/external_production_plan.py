@@ -5,6 +5,7 @@ import frappe
 import json
 from frappe.model.document import Document
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 class ExternalProductionPlan(Document):
     pass
@@ -101,8 +102,7 @@ def sync_external_production_plan_docs(source_doctype, names):
             pp = frappe.new_doc("Production Plan")
             pp.remote_id = ext_pp.remote_id
 
-            if hasattr(pp, "source_site"):
-                pp.source_site = ext_pp.source_site
+            set_source_site_fields(pp, site_url=getattr(ext_pp, "source_site", None))
 
             # COPY MAIN FIELDS
             for field, value in ext_pp.as_dict().items():
@@ -262,5 +262,6 @@ def sync_external_production_plan_docs(source_doctype, names):
         except Exception:
             frappe.log_error(f"Production Plan Sync Error: {name}", frappe.get_traceback())
             results.append({"name": name, "status": "failed"})
+            break
 
     return results

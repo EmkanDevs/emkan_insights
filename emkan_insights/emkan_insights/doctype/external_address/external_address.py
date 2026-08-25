@@ -83,6 +83,57 @@ def _safe_dedupe(parent_name, parenttype):
 		)
 
 
+def _resolve_dynamic_link(link_doctype, link_name):
+	if not link_doctype or not link_name:
+		return None
+
+	if frappe.db.exists(link_doctype, link_name):
+		return link_name
+
+	external_doctype = {
+		"Customer": "External Customer",
+		"Supplier": "External Supplier",
+		"Lead": "External Lead",
+		"Opportunity": "External Opportunity",
+	}.get(link_doctype)
+
+	if not external_doctype:
+		return None
+
+	external_name = None
+	if frappe.db.exists(external_doctype, link_name):
+		external_name = link_name
+	else:
+		external_name = frappe.db.get_value(external_doctype, {"remote_id": link_name}, "name")
+
+	if not external_name:
+		return None
+
+	try:
+		from emkan_insights.emkan_insights.external_sync import sync_doc_by_key
+
+		sync_doc_by_key(
+			source_doctype=external_doctype,
+			source_name=external_name,
+			target_doctype=link_doctype,
+			key_field="remote_id",
+		)
+	except Exception:
+		frappe.log_error(
+			title=f"Address link auto-sync failed: {link_doctype} {link_name}",
+			message=frappe.get_traceback(),
+		)
+
+	if frappe.db.exists(link_doctype, link_name):
+		return link_name
+
+	mapped = frappe.db.get_value(external_doctype, external_name, "remote_id")
+	if mapped and frappe.db.exists(link_doctype, mapped):
+		return mapped
+
+	return None
+
+
 @frappe.whitelist()
 @filter_kwargs
 def sync_external_records(names):
@@ -133,6 +184,11 @@ def sync_external_records(names):
 								clean_row = {
 									k: v for k, v in row.items() if k not in SYSTEM_FIELDS
 								}
+								if field == "links":
+									link_doctype = clean_row.get("link_doctype")
+									link_name = clean_row.get("link_name")
+									resolved_link = _resolve_dynamic_link(link_doctype, link_name)
+									clean_row["link_name"] = resolved_link or link_name
 								doc.append(field, clean_row)
 					else:
 						doc.set(field, value)
@@ -143,6 +199,7 @@ def sync_external_records(names):
 
 			# Flags
 			doc.flags.ignore_permissions = True
+			doc.flags.ignore_links = True
 
 			if existing:
 				doc.save(ignore_permissions=True)
@@ -165,5 +222,6 @@ def sync_external_records(names):
 				message=error
 			)
 			results.append({"name": name, "status": "failed"})
+			break
 
 	return results

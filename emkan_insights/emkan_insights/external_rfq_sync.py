@@ -1,8 +1,13 @@
 import frappe
 import json
+from frappe import _
 from frappe.utils import flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import sync_record_guard
+from emkan_insights.emkan_insights.sync_guard import (
+    set_source_site_fields,
+    sync_record_guard,
+    temporarily_enable_transaction_items,
+)
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -206,7 +211,8 @@ def _sync_existing_docstatus(existing, external):
             return {"name": rfq.name, "status": "docstatus_synced", "docstatus": 2}
 
         elif external.docstatus == 1 and local_docstatus == 0:
-            rfq.submit()
+            with temporarily_enable_transaction_items(rfq):
+                rfq.submit()
             _safe_dedupe(rfq.name)
 
             return {"name": rfq.name, "status": "docstatus_synced", "docstatus": 1}
@@ -302,7 +308,7 @@ def _sync_single_rfq(name):
         rfq.auto_repeat = None
 
     rfq.custom_remote_id = remote_id
-    rfq.custom_source_site = external.source_site
+    set_source_site_fields(rfq, site_url=getattr(external, "source_site", None))
 
     # Resolve project
     if external.get("project"):
@@ -328,8 +334,8 @@ def _sync_single_rfq(name):
             "quote_status": s.quote_status or "Pending",
             "supplier_name": s.supplier_name,
             "email_id": s.email_id,
-            "send_email": s.send_email or 0,
-            "email_sent": s.email_sent or 0,
+            "send_email": 0,
+            "email_sent": 0,
         })
 
     # -------------------------------------------------
@@ -341,6 +347,12 @@ def _sync_single_rfq(name):
         if not item_code:
             _log(f"RFQ item skip - no local item for {row.item_code}",
                  f"External RFQ {name}, row {row.name}")
+            continue
+        if frappe.db.get_value("Item", item_code, "disabled"):
+            _log(
+                f"RFQ item skip - disabled item {item_code}",
+                f"External RFQ {name}, row {row.name}"
+            )
             continue
 
         # Resolve warehouse
@@ -391,6 +403,11 @@ def _sync_single_rfq(name):
             "project_name": row.project_name,
             "page_break": row.page_break,
         })
+
+    if not rfq.items:
+        frappe.throw(
+            _("RFQ {0} has no valid enabled item rows to sync").format(name)
+        )
 
     _log(f"RFQ {target_name} pre-insert check",
          f"Suppliers: {len(rfq.suppliers)}, Items: {len(rfq.items)}, "
@@ -479,11 +496,13 @@ def _sync_single_rfq(name):
             rfq.flags.ignore_permissions = True
 
             # Submit first (required before ORM cancel)
-            rfq.submit()
+            with temporarily_enable_transaction_items(rfq):
+                rfq.submit()
             _log(f"RFQ {rfq.name} submitted (step 1 of cancel)", "")
 
             rfq = frappe.get_doc("Request for Quotation", rfq.name)
-            _safe_cancel_doc(rfq, log_prefix=f"RFQ {rfq.name}")
+            with temporarily_enable_transaction_items(rfq):
+                _safe_cancel_doc(rfq, log_prefix=f"RFQ {rfq.name}")
             _safe_dedupe(rfq.name)
 
             final_docstatus = frappe.db.get_value("Request for Quotation", rfq.name, "docstatus")
@@ -563,27 +582,19 @@ def sync_rfq_docs(source_doctype: str, names):
             seen.add(n)
             unique_names.append(n)
 
-    # Split into chunks and enqueue one background job per chunk
-    chunks = [
-        unique_names[i:i + CHUNK_SIZE]
-        for i in range(0, len(unique_names), CHUNK_SIZE)
-    ]
-
-    queued_chunks = 0
-    for idx, chunk in enumerate(chunks):
-        job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
-        frappe.enqueue(
-            "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",
-            queue="long",
-            job_name=job_name,
-            timeout=1000,
-            names=chunk,
-        )
-        queued_chunks += 1
+    job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_0"
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",
+        queue="long",
+        job_name=job_name,
+        timeout=1000,
+        names=unique_names,
+        batch_index=0,
+    )
 
     return (
-        f"Sync Queued: {len(unique_names)} record(s) split into "
-        f"{queued_chunks} chunk(s) of up to {CHUNK_SIZE} each"
+        f"Sync Queued: {len(unique_names)} record(s) in sequential "
+        f"batches of up to {CHUNK_SIZE} each"
     )
 
 
@@ -591,16 +602,19 @@ def sync_rfq_docs(source_doctype: str, names):
 # BACKGROUND WORKER
 # ==========================================================
 
-def _sync_rfq_docs_job(names):
+def _sync_rfq_docs_job(names, batch_index=0):
     if isinstance(names, str):
         names = json.loads(names)
 
     if not isinstance(names, (list, tuple)):
         return []
 
+    batch_index = int(batch_index or 0)
+    chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
     results = []
+    sync_failed = False
 
-    for name in names:
+    for name in chunk:
         try:
             with sync_record_guard("External Request for Quotation", name):
                 result = _sync_single_rfq(name)
@@ -614,5 +628,19 @@ def _sync_rfq_docs_job(names):
                 "status": "failed",
                 "error": str(e)
             })
+            sync_failed = True
+            break
+
+    next_batch_index = batch_index + 1
+    if not sync_failed and next_batch_index * CHUNK_SIZE < len(names):
+        job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_{next_batch_index}"
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",
+            queue="long",
+            job_name=job_name,
+            timeout=1000,
+            names=names,
+            batch_index=next_batch_index,
+        )
 
     return results

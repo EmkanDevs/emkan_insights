@@ -9,6 +9,7 @@ from urllib.parse import quote
 from frappe import _
 from urllib.parse import quote
 from frappe.utils import get_datetime_str
+from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 
 class ExternalSiteConfiguration(Document):
@@ -60,7 +61,7 @@ def get_site_config_doctypes_rows():
 def _acquire_sync_lock(child_docname, timeout=1800):
     key = f"external_sync_lock:{child_docname}"
     try:
-        acquired = frappe.cache().redis.set(key, "1", nx=True, ex=timeout)
+        acquired = frappe.cache().set(key, "1", nx=True, ex=timeout)
         return bool(acquired)
     except Exception:
         frappe.logger("external_sync").warning(
@@ -73,7 +74,7 @@ def _acquire_sync_lock(child_docname, timeout=1800):
 def _release_sync_lock(child_docname):
     key = f"external_sync_lock:{child_docname}"
     try:
-        frappe.cache().redis.delete(key)
+        frappe.cache().delete(key)
     except Exception:
         pass
 
@@ -718,6 +719,21 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         if df.fieldtype in ("Attach", "Attach Image")
     }
 
+    def _is_local_attachment_path(value):
+        if not isinstance(value, str):
+            return False
+
+        normalized = value.strip().replace("\\", "/")
+        if normalized.startswith(("http://", "https://")):
+            return False
+
+        return (
+            normalized.startswith(("/private/files/", "/files/"))
+            or "/private/files/" in normalized
+            or "/public/files/" in normalized
+            or "/files/" in normalized
+        )
+
     for field, value in item.items():
         if field in local_fields and field not in ['name', 'owner', 'creation', 'modified', 'naming_series', 'docstatus'] and field not in deferred_fields:
             if value is not None:
@@ -726,14 +742,7 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                 # disk, which raises FileNotFoundError because the file only
                 # exists on the remote server.  External URLs (http/https) are
                 # fine and are left untouched.
-                if (
-                    field in _attach_fieldnames
-                    and isinstance(value, str)
-                    and (
-                        value.startswith("/private/files/")
-                        or value.startswith("/files/")
-                    )
-                ):
+                if field in _attach_fieldnames and _is_local_attachment_path(value):
                     continue
 
                 if isinstance(value, list):
@@ -743,12 +752,10 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                 else:
                     doc.set(field, value)
 
-    # ── remote_id & site_url ──
+    # ── remote_id & source site ──
     if 'remote_id' in local_fields:
         doc.remote_id = remote_id
-    for site_url_fieldname in ("source_site", "site_url"):
-        if site_url_fieldname in local_fields:
-            doc.set(site_url_fieldname, site_url)
+    set_source_site_fields(doc, configuration_name=configuration_name, site_url=site_url)
 
     # ── Flags ──
     doc.flags.ignore_links = True
@@ -869,6 +876,7 @@ def _run_sync_loop(data, local_dt, local_fields, company, configuration_name, si
             count += 1
         else:
             not_saved.append(item)
+            break
 
     return count, errors, not_saved
 
@@ -1049,6 +1057,45 @@ def _get_generic_progress_state(child_docname):
     return {"total_chunks": 0, "completed_chunks": 0, "count": 0, "not_saved_count": 0, "errors": []}
 
 
+def _enqueue_generic_chunk(
+    *,
+    site_url,
+    api_key,
+    api_secret,
+    company,
+    configuration_name,
+    child_docname,
+    ref_doctype,
+    local_dt,
+    remote_dt,
+    chunks,
+    chunk_index,
+    fetch_started_at,
+):
+    if chunk_index >= len(chunks):
+        return
+
+    frappe.enqueue(
+        "emkan_insights.emkan_insights.doctype.external_site_configuration"
+        ".external_site_configuration.process_generic_chunk",
+        queue="long",
+        timeout=900,
+        job_name=f"external_fetch_chunk_{child_docname}_{chunk_index}",
+        site_url=site_url,
+        api_key=api_key,
+        api_secret=api_secret,
+        company=company,
+        configuration_name=configuration_name,
+        child_docname=child_docname,
+        ref_doctype=ref_doctype,
+        local_dt=local_dt,
+        remote_dt=remote_dt,
+        chunks=chunks,
+        chunk_index=chunk_index,
+        fetch_started_at=fetch_started_at,
+    )
+
+
 def _fetch_remote_names_generic(base_url, headers, remote_dt, filters):
     """
     Cheap listing pass: fetches only `name` fields so we can plan chunks
@@ -1197,7 +1244,7 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
     The sync lock is acquired here and released by the last chunk worker.
     """
     frappe.logger("external_sync").info(
-        "Generic chunk-sync orchestrator: %s (company=%s)", ref_doctype, company
+        "External fetch chunk orchestrator: %s (company=%s)", ref_doctype, company
     )
 
     if not _acquire_sync_lock(child_docname):
@@ -1269,29 +1316,23 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         chunks = [names[i:i + GENERIC_CHUNK_SIZE] for i in range(0, len(names), GENERIC_CHUNK_SIZE)]
         _init_generic_progress(child_docname, len(chunks))
 
-        for idx, chunk in enumerate(chunks):
-            frappe.enqueue(
-                "emkan_insights.emkan_insights.doctype.external_site_configuration"
-                ".external_site_configuration.process_generic_chunk",
-                queue="long",
-                timeout=900,
-                job_name=f"generic_sync_chunk_{child_docname}_{idx}",
-                site_url=site_url,
-                api_key=api_key,
-                api_secret=api_secret,
-                company=company,
-                configuration_name=configuration_name,
-                child_docname=child_docname,
-                ref_doctype=ref_doctype,
-                local_dt=local_dt,
-                remote_dt=remote_dt,
-                remote_names=chunk,
-                is_last_chunk=(idx == len(chunks) - 1),
-                fetch_started_at=fetch_started_at,
-            )
+        _enqueue_generic_chunk(
+            site_url=site_url,
+            api_key=api_key,
+            api_secret=api_secret,
+            company=company,
+            configuration_name=configuration_name,
+            child_docname=child_docname,
+            ref_doctype=ref_doctype,
+            local_dt=local_dt,
+            remote_dt=remote_dt,
+            chunks=chunks,
+            chunk_index=0,
+            fetch_started_at=fetch_started_at,
+        )
 
         return (
-            f"Queued {len(chunks)} chunk(s) covering {len(names)} {ref_doctype} records"
+            f"Queued {len(chunks)} fetch chunk(s) covering {len(names)} {ref_doctype} records"
         )
 
     except Exception:
@@ -1303,7 +1344,8 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
 def process_generic_chunk(
     site_url, api_key, api_secret, company, configuration_name,
     child_docname, ref_doctype, local_dt, remote_dt,
-    remote_names, is_last_chunk=False, fetch_started_at=None,
+    remote_names=None, is_last_chunk=False, fetch_started_at=None,
+    chunks=None, chunk_index=0,
 ):
     """
     Background worker for a single chunk of generic-path doctype records.
@@ -1322,6 +1364,9 @@ def process_generic_chunk(
         "Content-Type": "application/json",
     }
     state = None
+    chunks = chunks or [remote_names or []]
+    chunk_index = int(chunk_index or 0)
+    remote_names = chunks[chunk_index] if chunk_index < len(chunks) else []
 
     try:
         # Phase 1 — fetch full docs for this chunk (threaded HTTP)
@@ -1346,14 +1391,6 @@ def process_generic_chunk(
             docs, local_dt, local_fields, company, configuration_name, site_url
         )
 
-        # Phase 4 — retry pass for transient failures
-        if not_saved:
-            retry_count, retry_errors, not_saved = _run_sync_loop(
-                not_saved, local_dt, local_fields, company, configuration_name, site_url
-            )
-            count += retry_count
-            errors.extend(retry_errors)
-
         state = _update_generic_progress(child_docname, count, len(not_saved), errors)
 
     except Exception:
@@ -1368,7 +1405,23 @@ def process_generic_chunk(
         raise
 
     finally:
-        if is_last_chunk:
+        next_chunk_index = chunk_index + 1
+        if next_chunk_index < len(chunks):
+            _enqueue_generic_chunk(
+                site_url=site_url,
+                api_key=api_key,
+                api_secret=api_secret,
+                company=company,
+                configuration_name=configuration_name,
+                child_docname=child_docname,
+                ref_doctype=ref_doctype,
+                local_dt=local_dt,
+                remote_dt=remote_dt,
+                chunks=chunks,
+                chunk_index=next_chunk_index,
+                fetch_started_at=fetch_started_at,
+            )
+        else:
             if state is None:
                 state = _get_generic_progress_state(child_docname)
 

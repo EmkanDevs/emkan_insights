@@ -172,63 +172,6 @@ def _enqueue_stock_entry_chunk(
     )
 
 
-# @frappe.whitelist()
-# def sync_stock_entries_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
-    if not _acquire_sync_lock(child_docname):
-        frappe.throw(_("A Stock Entry sync is already running for this row. Please wait for it to finish."))
-
-    try:
-        company_abbr = _get_company_abbr_for_sync(company)
-        base_url = (site_url or "").rstrip("/")
-        headers = {
-            "Authorization": f"token {api_key}:{api_secret}",
-            "Content-Type": "application/json",
-        }
-
-        if not frappe.db.exists("DocType", LOCAL_DT):
-            frappe.throw(
-                _("Local DocType {0} is not installed on this site. Run bench migrate and reload.")
-                .format(LOCAL_DT)
-            )
-
-        names = _fetch_remote_names(base_url, headers, REMOTE_DT)
-
-        if not names:
-            _release_sync_lock(child_docname)
-            last_sync = frappe.utils.now()
-            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
-            return {"count": 0, "fetched_total": 0, "not_saved_count": 0, "last_sync": last_sync, "errors": [], "missing_parent_accounts": []}
-
-        chunks = [names[i:i + CHUNK_SIZE] for i in range(0, len(names), CHUNK_SIZE)]
-        _init_progress(child_docname, len(chunks))
-
-        for idx, chunk in enumerate(chunks):
-            frappe.enqueue(
-                "emkan_insights.emkan_insights.sync_stock_entry_from_remote.process_stock_entry_chunk",
-                queue="long",
-                timeout=900,
-                job_name=f"se_sync_chunk_{child_docname}_{idx}",
-                site_url=site_url,
-                api_key=api_key,
-                api_secret=api_secret,
-                company=company,
-                company_abbr=company_abbr,
-                configuration_name=configuration_name,
-                child_docname=child_docname,
-                remote_names=chunk,
-                is_last_chunk=(idx == len(chunks) - 1),
-            )
-
-        # FIX: Return an object with status='queued' so the JS correctly identifies it
-        return {
-            "status": "queued",
-            "message": f"Queued {len(chunks)} chunk(s) covering {len(names)} Stock Entries. Please wait for completion before starting again."
-        }
-
-    except Exception:
-        _release_sync_lock(child_docname)
-        raise
-
 @frappe.whitelist()
 def sync_stock_entries_from_remote(site_url, api_key, api_secret, ref_doctype, child_docname, company=None, configuration_name=None):
     if not _acquire_sync_lock(child_docname):

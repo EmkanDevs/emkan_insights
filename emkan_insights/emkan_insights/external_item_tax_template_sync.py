@@ -88,6 +88,7 @@ def sync_item_tax_templates(names):
                 "external_doc": name,
                 "error": frappe.get_traceback()
             })
+            break
 
     return {
         "status": "Completed",
