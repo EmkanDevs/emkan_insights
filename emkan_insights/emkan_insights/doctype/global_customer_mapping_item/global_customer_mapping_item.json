@@ -21,9 +21,10 @@
   {
    "columns": 4,
    "fieldname": "source_site",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Source Site"
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "columns": 4,

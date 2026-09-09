@@ -1,14 +1,10 @@
 {
  "actions": [],
- "allow_rename": 1,
- "autoname": "field:source_name",
- "creation": "2016-09-16 01:47:47.382372",
+ "allow_import": 1,
+ "autoname": "hash",
  "doctype": "DocType",
- "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "source_name",
-  "details",
   "remote_id",
   "source_site",
   "last_synced_on",
@@ -16,33 +12,23 @@
  ],
  "fields": [
   {
-   "fieldname": "source_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Source Name",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "details",
-   "fieldtype": "Text Editor",
-   "label": "Details"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -52,12 +38,8 @@
   }
  ],
  "links": [],
- "modified": "2026-07-29 12:43:41.069378",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Lead Source",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -83,10 +65,8 @@
    "write": 1
   }
  ],
- "quick_entry": 1,
- "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "translated_doctype": 1
+ "track_changes": 1
 }

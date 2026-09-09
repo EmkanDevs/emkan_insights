@@ -1,116 +1,34 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
- "creation": "2013-02-05 11:48:26",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
-  "department_name",
-  "parent_department",
-  "last_synced_on",
-  "column_break_3",
-  "company",
   "remote_id",
   "source_site",
-  "sap_source_site",
-  "is_group",
-  "disabled",
-  "lft",
-  "rgt",
-  "old_parent",
+  "last_synced_on",
   "json"
  ],
  "fields": [
   {
-   "fieldname": "department_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Department",
-   "oldfieldname": "department_name",
-   "oldfieldtype": "Data",
-   "reqd": 1
-  },
-  {
-   "fieldname": "parent_department",
-   "fieldtype": "Link",
-   "ignore_user_permissions": 1,
-   "in_list_view": 1,
-   "label": "Parent Department",
-   "options": "Department"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
-   "fieldname": "company",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Company",
-   "options": "Company",
-   "reqd": 1
-  },
-  {
-   "bold": 1,
-   "default": "0",
-   "fieldname": "is_group",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Group"
-  },
-  {
-   "default": "0",
-   "fieldname": "disabled",
-   "fieldtype": "Check",
-   "label": "Disabled"
-  },
-  {
-   "fieldname": "lft",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "lft",
-   "print_hide": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "rgt",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "rgt",
-   "print_hide": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "old_parent",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "ignore_user_permissions": 1,
-   "label": "Old Parent",
-   "print_hide": 1
-  },
-  {
-   "fieldname": "column_break_3",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
-  },
-  {
-   "fieldname": "sap_source_site",
-   "fieldtype": "Link",
-   "label": "SAP Source Site",
-   "options": "External SAP Configuration"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -119,16 +37,9 @@
    "read_only": 1
   }
  ],
- "icon": "fa fa-sitemap",
- "idx": 1,
- "is_tree": 1,
  "links": [],
- "modified": "2026-09-04 11:20:08.983611",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Department",
- "nsm_parent_field": "parent_department",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -171,9 +82,8 @@
    "select": 1
   }
  ],
- "row_format": "Dynamic",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "ASC",
- "states": []
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

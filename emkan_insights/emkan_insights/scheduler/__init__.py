@@ -6,14 +6,7 @@ from inspect import signature
 import frappe
 from frappe.model.document import Document
 
-from emkan_insights.emkan_insights.registry.fetch_registry import (
-    SPECIAL_FETCHERS,
-    DEFAULT_FETCHER,
-)
-
-from emkan_insights.emkan_insights.registry.sync_registry import (
-    SYNC_METHODS,
-)
+from emkan_insights.emkan_insights.external_data_fetch import fetch_external_data
 
 from emkan_insights.emkan_insights.sync_validation import data_field_validation_disabled
 
@@ -181,7 +174,7 @@ def _site_pipeline_lock_key(config_name):
 
 
 def _row_fetch_lock_key(child_docname):
-    return f"external_sync_lock:{child_docname}"
+    return f"external_data_fetch:{child_docname}"
 
 
 def _target_sync_lock_key(external_doctype):
@@ -1009,6 +1002,7 @@ def stop_external_site_configuration_jobs(site_config):
     lock_keys = [
         _site_pipeline_lock_key(site_config),
     ]
+    lock_keys.extend(frappe.cache().execute_command("KEYS", "external_data_fetch:*") or [])
     lock_keys.extend(frappe.cache().execute_command("KEYS", "external_sync_lock:*") or [])
     lock_keys.extend(frappe.cache().execute_command("KEYS", "external_target_sync_lock:*") or [])
 
@@ -1111,14 +1105,11 @@ def sync_external_site_configuration_sequence_job(site_config):
         }
 
     try:
-        _sync_configuration_sequentially(site_config)
-        link_validation = validate_external_site_configuration_target_links(site_config)
-        status = "complete" if link_validation["status"] == "pass" else "complete_with_link_mismatches"
-        return {
-            "status": status,
-            "message": f"Sequential sync completed for {site_config}",
-            "link_validation": link_validation,
-        }
+        from emkan_insights.emkan_insights.external_data_bulk_insert import (
+            bulk_insert_external_data,
+        )
+
+        return bulk_insert_external_data(site_config)
     finally:
         _release_site_pipeline_lock(site_config)
 
@@ -1136,14 +1127,11 @@ def run_external_site_configuration_sequence_job(site_config):
 
     try:
         _fetch_configuration_sequentially(site_config)
-        _sync_configuration_sequentially(site_config)
-        link_validation = validate_external_site_configuration_target_links(site_config)
-        status = "complete" if link_validation["status"] == "pass" else "complete_with_link_mismatches"
-        return {
-            "status": status,
-            "message": f"Sequential fetch and sync completed for {site_config}",
-            "link_validation": link_validation,
-        }
+        from emkan_insights.emkan_insights.external_data_bulk_insert import (
+            bulk_insert_external_data,
+        )
+
+        return bulk_insert_external_data(site_config)
     finally:
         _release_site_pipeline_lock(site_config)
 
@@ -1173,22 +1161,9 @@ def _fetch_configuration_sequentially(config_name):
         )
         _wait_for_redis_lock_to_clear(_row_fetch_lock_key(row.name))
 
-        fetch_method = SPECIAL_FETCHERS.get(
-            row.ref_doctype,
-            DEFAULT_FETCHER,
-        )
-
         try:
             with _synchronous_enqueue():
-                fetch_method(
-                    site_url=config.site_url,
-                    api_key=config.api_key,
-                    api_secret=config.api_secret,
-                    ref_doctype=row.ref_doctype,
-                    child_docname=row.name,
-                    company=config.company,
-                    configuration_name=config.name,
-                )
+                fetch_external_data(child_docname=row.name)
             _wait_for_redis_lock_to_clear(_row_fetch_lock_key(row.name))
             _log_sync_progress(
                 f"Fetched {row.ref_doctype}",
@@ -1204,97 +1179,6 @@ def _fetch_configuration_sequentially(config_name):
     _log_sync_progress(
         f"Fetch Completed: {config.name}",
         f"Sequential fetch completed for {config.name}.",
-    )
-
-
-def _sync_configuration_sequentially(config_name):
-    config = frappe.get_doc(
-        "External Site Configuration",
-        config_name,
-    )
-
-    logger = frappe.logger("external_sync")
-    logger.info("Sequential Sync Started: %s", config.name)
-    _log_sync_progress(
-        f"Sync Started: {config.name}",
-        f"Sequential sync started for {config.name}.",
-    )
-
-    for row in _ordered_fetch_rows(config):
-
-        sync_method = SYNC_METHODS.get(row.ref_doctype)
-
-        if not sync_method:
-            logger.info("Sequential Sync Skipped: no sync method for '%s'", row.ref_doctype)
-            continue
-
-        external_doctype = _external_doctype_for_ref(row.ref_doctype)
-
-        if not frappe.db.exists("DocType", external_doctype):
-            logger.info(
-                "Sequential Sync Skipped: missing external doctype '%s' for '%s'",
-                external_doctype,
-                row.ref_doctype,
-            )
-            continue
-
-        names = get_external_doc_names_to_sync(
-            external_doctype,
-            config=config,
-        )
-
-        filter_clauses, filter_values = _external_doc_sync_filters(external_doctype, config)
-        sync_filter_description = (
-            "(last_synced_on IS NULL OR modified > last_synced_on)"
-            + (f" AND {' AND '.join(filter_clauses)}" if filter_clauses else "")
-        )
-        if filter_values:
-            sync_filter_description += f" | values: {filter_values}"
-
-        from emkan_insights.emkan_insights.fetch_log import log_sync_plan
-
-        log_sync_plan(row.ref_doctype, config.name, sync_filter_description, len(names))
-
-        if not names:
-            logger.info("No %s records pending sync.", row.ref_doctype)
-            continue
-
-        logger.info("Syncing %d %s record(s).", len(names), row.ref_doctype)
-        _log_sync_progress(
-            f"Syncing {row.ref_doctype}",
-            f"Site: {config.name} | Records pending: {len(names)} | Filters: {sync_filter_description}",
-        )
-        try:
-            _wait_for_redis_lock_to_clear(_target_sync_lock_key(external_doctype))
-            with data_field_validation_disabled(), _link_validation_disabled(), _synchronous_enqueue():
-                result = _sync_records_for_sequence_row(
-                    sync_method,
-                    row=row,
-                    external_doctype=external_doctype,
-                    names=names,
-                    config=config,
-                )
-            _wait_for_redis_lock_to_clear(_target_sync_lock_key(external_doctype))
-            synced_count = _get_synced_record_count(row.ref_doctype, names, result)
-
-            _log_sync_progress(
-                f"Synced {row.ref_doctype}",
-                f"Site: {config.name} | Records synced: {synced_count}",
-            )
-            frappe.db.commit()
-
-        except Exception:
-            logger.info("Sync Failed: %s from %s", row.ref_doctype, config.name)
-            _log_sync_failure(f"Failed to sync {row.ref_doctype}")
-            _force_release_target_sync_lock(external_doctype)
-            raise
-
-        logger.info("Synced %d %s record(s) from %s.", synced_count, row.ref_doctype, config.name)
-
-    logger.info("Sequential Sync Completed: %s", config.name)
-    _log_sync_progress(
-        f"Sync Completed: {config.name}",
-        f"Sequential sync completed for {config.name}.",
     )
 
 
@@ -1331,14 +1215,10 @@ def fetch_scheduler(site_config=None):
 
 
 def sync_external_docs_scheduler(site_config=None):
-    """
-    Separate scheduled job (runs ~30 min after fetch_scheduler).
-
-    fetch_scheduler only *enqueues* the remote API fetch via frappe.enqueue().
-    By the time this function runs, the background worker has finished writing
-    External Warehouse rows to the DB, so get_external_doc_names_to_sync()
-    will find records ready to sync.
-    """
+    """Bulk insert pending staging records for every configured external site."""
+    from emkan_insights.emkan_insights.external_data_bulk_insert import (
+        bulk_insert_external_data,
+    )
 
     filters = {}
     if site_config:
@@ -1361,7 +1241,7 @@ def sync_external_docs_scheduler(site_config=None):
             continue
 
         try:
-            _sync_configuration_sequentially(config_name)
+            bulk_insert_external_data(config_name)
         finally:
             _release_site_pipeline_lock(config_name)
 

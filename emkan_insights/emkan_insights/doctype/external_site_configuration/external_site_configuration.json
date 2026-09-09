@@ -7,8 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_1qbz",
-  "amended_from",
-  "naming_series",
   "site_url",
   "site_name",
   "company",
@@ -16,23 +14,12 @@
   "api_secret",
   "check_connection",
   "section_break_qfew",
-  "fetch_data",
-  "json"
+  "fetch_data"
  ],
  "fields": [
   {
    "fieldname": "section_break_1qbz",
    "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "External Site Configuration",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
   },
   {
    "fieldname": "site_url",
@@ -85,22 +72,6 @@
    "label": "Site Name",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "naming_series",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Naming  Series",
-   "print_hide": 1,
-   "read_only": 1,
-   "report_hide": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "json",
-   "fieldtype": "JSON",
-   "label": "JSON",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,

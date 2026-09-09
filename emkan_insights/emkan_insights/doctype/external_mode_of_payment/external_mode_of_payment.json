@@ -1,17 +1,10 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
- "autoname": "field:remote_id",
- "creation": "2012-12-04 17:49:20",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
-  "mode_of_payment",
-  "enabled",
-  "type",
-  "accounts",
   "remote_id",
   "source_site",
   "last_synced_on",
@@ -19,50 +12,23 @@
  ],
  "fields": [
   {
-   "fieldname": "mode_of_payment",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Mode of Payment",
-   "oldfieldname": "mode_of_payment",
-   "oldfieldtype": "Data",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "type",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Type",
-   "options": "Cash\nBank\nGeneral\nPhone"
-  },
-  {
-   "fieldname": "accounts",
-   "fieldtype": "Table",
-   "label": "Accounts",
-   "options": "Mode of Payment Account"
-  },
-  {
-   "default": "1",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID",
-   "unique": 1
+   "in_list_view": 1,
+   "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -71,16 +37,9 @@
    "read_only": 1
   }
  ],
- "icon": "fa fa-credit-card",
- "idx": 1,
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-29 12:44:06.824469",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Mode of Payment",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -98,10 +57,8 @@
    "role": "Accounts User"
   }
  ],
- "quick_entry": 1,
- "row_format": "Dynamic",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "ASC",
- "states": []
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

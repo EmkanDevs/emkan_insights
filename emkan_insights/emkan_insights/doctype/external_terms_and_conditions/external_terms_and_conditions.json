@@ -1,97 +1,34 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
- "autoname": "field:title",
- "creation": "2013-01-10 16:34:24",
- "description": "Standard Terms and Conditions that can be added to Sales and Purchases. Examples: Validity of the offer, Payment Terms, Safety and Usage, etc.",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
-  "title",
-  "disabled",
   "remote_id",
   "source_site",
   "last_synced_on",
-  "applicable_modules_section",
-  "selling",
-  "buying",
-  "section_break_7",
-  "terms",
-  "terms_and_conditions_help",
   "json"
  ],
  "fields": [
   {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "label": "Title",
-   "no_copy": 1,
-   "oldfieldname": "title",
-   "oldfieldtype": "Data",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "disabled",
-   "fieldtype": "Check",
-   "label": "Disabled"
-  },
-  {
-   "allow_in_quick_entry": 1,
-   "fieldname": "terms",
-   "fieldtype": "Text Editor",
-   "in_global_search": 1,
-   "label": "Terms and Conditions",
-   "oldfieldname": "terms",
-   "oldfieldtype": "Text Editor"
-  },
-  {
-   "fieldname": "terms_and_conditions_help",
-   "fieldtype": "HTML",
-   "label": "Terms and Conditions Help",
-   "options": "<h4>Standard Terms and Conditions Example</h4>\n\n<pre>Delivery Terms for Order number {{ name }}\n\n-Order Date : {{ transaction_date }} \n-Expected Delivery Date : {{ delivery_date }}\n</pre>\n\n<h4>How to get fieldnames</h4>\n\n<p>The fieldnames you can use in your email template are the fields in the document from which you are sending the email. You can find out the fields of any documents via Setup &gt; Customize Form View and selecting the document type (e.g. Sales Invoice)</p>\n\n<h4>Templating</h4>\n\n<p>Templates are compiled using the Jinja Templating Language. To learn more about Jinja, <a class=\"strong\" href=\"http://jinja.pocoo.org/docs/dev/templates/\">read this documentation.</a></p>"
-  },
-  {
-   "fieldname": "applicable_modules_section",
-   "fieldtype": "Section Break",
-   "label": "Applicable Modules"
-  },
-  {
-   "default": "1",
-   "fieldname": "selling",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Selling"
-  },
-  {
-   "default": "1",
-   "fieldname": "buying",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Buying"
-  },
-  {
-   "fieldname": "section_break_7",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -100,15 +37,9 @@
    "read_only": 1
   }
  ],
- "icon": "icon-legal",
- "idx": 1,
  "links": [],
- "modified": "2026-07-29 12:45:43.822186",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Terms and Conditions",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -158,10 +89,8 @@
    "role": "Stock User"
   }
  ],
- "quick_entry": 1,
- "row_format": "Dynamic",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "ASC",
- "states": []
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

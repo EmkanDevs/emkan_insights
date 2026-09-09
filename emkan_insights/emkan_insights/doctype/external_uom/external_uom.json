@@ -1,68 +1,34 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
- "autoname": "field:uom_name",
- "creation": "2013-01-10 16:34:24",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
-  "uom_name",
-  "must_be_whole_number",
   "remote_id",
   "source_site",
-  "sap_source_site",
   "last_synced_on",
   "json"
  ],
  "fields": [
   {
-   "fieldname": "uom_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "UOM Name",
-   "oldfieldname": "uom_name",
-   "oldfieldtype": "Data",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "default": "0",
-   "description": "Check this to disallow fractions. (for Nos)",
-   "fieldname": "must_be_whole_number",
-   "fieldtype": "Check",
-   "label": "Must be Whole Number"
-  },
-  {
-   "default": "1",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
-   "in_standard_filter": 1,
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
-  },
-  {
-   "fieldname": "sap_source_site",
-   "fieldtype": "Link",
-   "label": "SAP Source Site",
-   "options": "External SAP Configuration"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -71,15 +37,9 @@
    "read_only": 1
   }
  ],
- "icon": "fa fa-compass",
- "idx": 1,
  "links": [],
- "modified": "2026-09-08 07:35:32.263066",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Uom",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -109,10 +69,8 @@
    "role": "Stock User"
   }
  ],
- "quick_entry": 1,
- "row_format": "Dynamic",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "ASC",
- "states": []
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

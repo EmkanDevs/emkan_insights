@@ -12,9 +12,7 @@
   "fetch_started_at",
   "fetch_completed_at",
   "fetch_data",
-  "test",
-  "abbr_required",
-  "json"
+  "abbr_required"
  ],
  "fields": [
   {
@@ -60,25 +58,12 @@
    "reqd": 1
   },
   {
-   "fieldname": "test",
-   "fieldtype": "Button",
-   "hidden": 1,
-   "in_list_view": 1,
-   "label": "Test"
-  },
-  {
    "default": "0",
    "fieldname": "abbr_required",
    "fieldtype": "Check",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Abbr Required"
-  },
-  {
-   "fieldname": "json",
-   "fieldtype": "JSON",
-   "label": "JSON",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,

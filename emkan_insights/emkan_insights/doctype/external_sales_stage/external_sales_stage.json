@@ -1,13 +1,10 @@
 {
  "actions": [],
- "allow_rename": 1,
- "autoname": "field:stage_name",
- "creation": "2018-10-01 09:28:16.399518",
+ "allow_import": 1,
+ "autoname": "hash",
  "doctype": "DocType",
- "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "stage_name",
   "remote_id",
   "source_site",
   "last_synced_on",
@@ -15,26 +12,23 @@
  ],
  "fields": [
   {
-   "fieldname": "stage_name",
-   "fieldtype": "Data",
-   "label": "Stage Name",
-   "unique": 1
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -44,12 +38,8 @@
   }
  ],
  "links": [],
- "modified": "2026-07-29 12:43:01.458315",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Stage",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -64,11 +54,8 @@
    "write": 1
   }
  ],
- "quick_entry": 1,
- "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1,
- "translated_doctype": 1
+ "track_changes": 1
 }

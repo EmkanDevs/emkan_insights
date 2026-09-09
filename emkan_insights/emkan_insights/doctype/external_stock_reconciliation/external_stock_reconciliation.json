@@ -1,209 +1,34 @@
 {
  "actions": [],
  "allow_import": 1,
- "autoname": "naming_series:",
- "creation": "2026-07-22 11:30:00",
- "description": "External replica of Stock Reconciliation for remote fetch and local sync.",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Document",
  "engine": "InnoDB",
  "field_order": [
-  "naming_series",
-  "company",
-  "purpose",
-  "col1",
-  "posting_date",
-  "posting_time",
-  "set_posting_time",
   "remote_id",
   "source_site",
   "last_synced_on",
-  "section_break_8",
-  "set_warehouse",
-  "section_break_22",
-  "scan_barcode",
-  "last_scanned_warehouse",
-  "column_break_12",
-  "scan_mode",
-  "sb9",
-  "items",
-  "section_break_9",
-  "expense_account",
-  "column_break_13",
-  "difference_amount",
-  "amended_from",
-  "accounting_dimensions_section",
-  "cost_center",
-  "dimension_col_break",
   "json"
  ],
  "fields": [
   {
-   "fieldname": "naming_series",
-   "fieldtype": "Select",
-   "label": "Series",
-   "no_copy": 1,
-   "options": "EXT-RECO-.YYYY.-",
-   "print_hide": 1,
-   "reqd": 1,
-   "set_only_once": 1
-  },
-  {
-   "fieldname": "company",
-   "fieldtype": "Link",
-   "label": "Company",
-   "options": "Company",
-   "remember_last_selected_value": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "purpose",
-   "fieldtype": "Select",
-   "label": "Purpose",
-   "options": "\nOpening Stock\nStock Reconciliation",
-   "reqd": 1
-  },
-  {
-   "fieldname": "col1",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "Today",
-   "fieldname": "posting_date",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "label": "Posting Date",
-   "reqd": 1
-  },
-  {
-   "default": "Now",
-   "fieldname": "posting_time",
-   "fieldtype": "Time",
-   "in_list_view": 1,
-   "label": "Posting Time",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "set_posting_time",
-   "fieldtype": "Check",
-   "label": "Edit Posting Date and Time"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
-   "label": "Remote ID",
-   "unique": 1
+   "in_list_view": 1,
+   "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
-   "fieldname": "section_break_8",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "set_warehouse",
-   "fieldtype": "Link",
-   "label": "Default Warehouse",
-   "options": "Warehouse"
-  },
-  {
-   "depends_on": "eval:!doc.docstatus",
-   "fieldname": "section_break_22",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "scan_barcode",
-   "fieldtype": "Data",
-   "label": "Scan Barcode",
-   "options": "Barcode"
-  },
-  {
-   "depends_on": "eval: doc.last_scanned_warehouse",
-   "fieldname": "last_scanned_warehouse",
-   "fieldtype": "Data",
-   "is_virtual": 1,
-   "label": "Last Scanned Warehouse"
-  },
-  {
-   "fieldname": "column_break_12",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Disables auto-fetching of existing quantity",
-   "fieldname": "scan_mode",
-   "fieldtype": "Check",
-   "label": "Scan Mode"
-  },
-  {
-   "fieldname": "sb9",
-   "fieldtype": "Section Break"
-  },
-  {
-   "allow_bulk_edit": 1,
-   "fieldname": "items",
-   "fieldtype": "Table",
-   "label": "Items",
-   "options": "Stock Reconciliation Item",
-   "reqd": 1
-  },
-  {
-   "fieldname": "section_break_9",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "expense_account",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Difference Account",
-   "options": "Account"
-  },
-  {
-   "fieldname": "column_break_13",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "difference_amount",
-   "fieldtype": "Currency",
-   "label": "Difference Amount",
-   "options": "Company:company:default_currency",
-   "read_only": 1
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "ignore_user_permissions": 1,
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "External Stock Reconciliation",
-   "print_hide": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "accounting_dimensions_section",
-   "fieldtype": "Section Break",
-   "label": "Accounting Dimensions"
-  },
-  {
-   "fieldname": "cost_center",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Cost Center",
-   "options": "Cost Center"
-  },
-  {
-   "fieldname": "dimension_col_break",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -212,16 +37,9 @@
    "read_only": 1
   }
  ],
- "icon": "fa fa-upload-alt",
- "idx": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2026-07-29 13:11:12.739826",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Stock Reconciliation",
- "naming_rule": "By \"Naming Series\" field",
- "owner": "Administrator",
  "permissions": [
   {
    "amend": 1,
@@ -263,9 +81,6 @@
    "write": 1
   }
  ],
- "row_format": "Dynamic",
- "search_fields": "posting_date",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

@@ -1,6 +1,7 @@
 frappe.ui.form.on('External Site Configuration', {
     refresh: function(frm) {
         add_bulk_insert_listener(frm);
+        add_fetch_listener(frm);
         if (!frm.is_new()) {
             add_sequence_button(
                 frm,
@@ -30,20 +31,7 @@ frappe.ui.form.on('External Site Configuration', {
         }
     },
 
-    site_name: function (frm) {  
-        set_naming_series(frm);
-    },
-
-    site_url: function (frm) {
-        set_naming_series(frm);
-    },
-    // // refresh: function(frm) {
-    // //     frm.add_custom_button(__('Load Doctype Mappings'), function () {
-    // //         load_fetch_data_from_site_config(frm);
-    // //     }, __('Actions'));
-    // },
     after_save: function(frm) {
-        // ✅ Only reload to show rows inserted by Python — no data fetching here
         frm.reload_doc();
     },
 
@@ -152,432 +140,34 @@ function queue_bulk_insert(configuration_name) {
 
 
 frappe.ui.form.on('External Site Configuration CT', {
-    // Trigger when Ref Doctype is selected/changed in the child table
-    ref_doctype: function (frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-        const mapping = get_mapping();
-
-        if (row.ref_doctype && mapping[row.ref_doctype]) {
-            frappe.model.set_value(cdt, cdn, 'exported_doctype', mapping[row.ref_doctype]);
-        } else {
-            frappe.model.set_value(cdt, cdn, 'exported_doctype', "");
-        }
-    },
-
     fetch_data: function (frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-
-        if (!row.ref_doctype) {
-            frappe.msgprint(__('Please select a DocType first.'));
+        const row = locals[cdt][cdn];
+        if (frm.is_dirty()) {
+            frappe.msgprint(__('Save the configuration before fetching data.'));
+            return;
+        }
+        if (!row.ref_doctype || !row.exported_doctype) {
+            frappe.msgprint(__('Select both the source and staging DocTypes first.'));
             return;
         }
 
-        // Per-row guard: prevent overlapping sync clicks for the same row
-        frm._fetch_locks = frm._fetch_locks || {};
-        if (frm._fetch_locks[cdn]) {
-            frappe.show_alert({
-                message: __('A sync for this row is already running - please wait for it to finish.'),
-                indicator: 'orange'
-            });
-            return;
-        }
-        frm._fetch_locks[cdn] = true;
-
-        // Double check mapping before calling backend
-        if (!row.exported_doctype) {
-            const mapping = get_mapping();
-            frappe.model.set_value(cdt, cdn, 'exported_doctype', mapping[row.ref_doctype]);
-        }
-
-        const sync_methods = {
-            "Lead": "emkan_insights.emkan_insights.sync_leads_from_remote.sync_leads_from_remote",
-            "Quotation": "emkan_insights.emkan_insights.sync_quotation_from_remote.sync_quotations_from_remote",
-            "Material Request": "emkan_insights.emkan_insights.sync_material_requests_from_remote.sync_material_requests_from_remote",
-            "Cost Center": "emkan_insights.emkan_insights.sync_cost_centers_from_remote.sync_cost_centers_from_remote",
-            "Purchase Receipt": "emkan_insights.emkan_insights.sync_purchase_receipt_from_remote.sync_purchase_receipts_from_remote",
-            "Purchase Invoice": "emkan_insights.emkan_insights.sync_purchase_invoice_from_remote.sync_purchase_invoices_from_remote",
-            "Stock Entry": "emkan_insights.emkan_insights.sync_stock_entry_from_remote.sync_stock_entries_from_remote",
-            "Stock Reconciliation": "emkan_insights.emkan_insights.sync_stock_reconciliation_from_remote.sync_stock_reconciliations_from_remote",
-            "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
-            "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
-            "Journal Entry":  "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
-            "Purchase Order": "emkan_insights.emkan_insights.sync_purchase_order_from_remote.sync_purchase_orders_from_remote"
-        };
-        const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
-        const sync_method = sync_methods[row.ref_doctype] || generic_method;
-        const base_args = {
-            site_url: frm.doc.site_url,
-            api_key: frm.doc.api_key,
-            api_secret: frm.doc.api_secret,
-            child_docname: cdn,
-            company: frm.doc.company,
-            configuration_name: frm.doc.name
-        };
-        const generic_args = Object.assign({}, base_args, { ref_doctype: row.ref_doctype });
-
-        const show_result = function (r) {
-            frm._fetch_locks[cdn] = false;
-            if (r.message) {
-                console.info('External sync result', row.ref_doctype, r.message);
-                if (typeof r.message === 'object' && r.message.status === 'queued') {
+        frappe.call({
+            method: 'emkan_insights.emkan_insights.external_data_fetch.queue_external_data_fetch',
+            args: { child_docname: cdn },
+            freeze: true,
+            freeze_message: __(`Queueing ${row.ref_doctype} fetch...`),
+            callback: function (response) {
+                if (response.message) {
                     frappe.show_alert({
-                        message: __(r.message.message || 'Sync queued. Please wait for completion before starting again.'),
+                        message: __(response.message.message || 'Fetch queued.'),
                         indicator: 'blue'
                     });
-                    return;
                 }
-                let count = r.message;
-                let errors = [];
-                let missing_parents = [];
-                let fetched_total = null;
-                let not_saved_count = null;
-
-                if (typeof r.message === 'object') {
-                    if (r.message.last_sync) {
-                        frappe.model.set_value(cdt, cdn, 'last_sync', r.message.last_sync);
-                    }
-                    count          = r.message.count;
-                    errors         = r.message.errors || [];
-                    missing_parents = r.message.missing_parent_accounts || [];
-                    fetched_total  = r.message.fetched_total ?? null;
-                    not_saved_count = r.message.not_saved_count ?? null;
-                }
-
-                // ── Summary alert ─────────────────────────────────────────────
-                let summary = __(`Done! Saved ${count} records.`);
-                if (fetched_total !== null) {
-                    summary = __(`Done! Fetched ${fetched_total}, saved ${count}, not saved ${not_saved_count}.`);
-                }
-                frappe.show_alert({ message: summary, indicator: not_saved_count > 0 ? 'orange' : 'green' });
-
-                // ── General errors ────────────────────────────────────────────
-                if (errors.length) {
-                    const lines = errors.slice(0, 10).map(err => {
-                        const ref = err.ref_doctype ? `${err.ref_doctype}` : 'Doc';
-                        const id = err.remote_id ? err.remote_id : `Row ${err.row_index || '?'}`;
-                        return `<li><b>${ref} → ${id}</b><br>${err.error}</li>`;
-                    });
-                    const more = errors.length > 10
-                        ? `<li><i>...and ${errors.length - 10} more errors</i></li>`
-                        : '';
-                    frappe.msgprint({
-                        title: __('Some records failed'),
-                        indicator: 'orange',
-                        message: `<ul>${lines.join('')}${more}</ul>`
-                    });
-                }
-
-                // ── Missing / stubbed parent accounts report ──────────────────
-                if (missing_parents.length) {
-                    show_missing_parents_report(missing_parents, row.ref_doctype, fetched_total);
-                }
-
-                frm.refresh_field('external_site_configuration_ct');
-                frm.refresh();
             }
-        };
-
-        const call_sync = function (method, args) {
-            frappe.call({
-                method: method,
-                args: args,
-                freeze: true,
-                freeze_message: __(`Fetching ${row.ref_doctype}s...`),
-                callback: show_result,
-                error: function () {
-                    frm._fetch_locks[cdn] = false;
-                }
-            });
-        };
-
-        call_sync(sync_method, generic_args);
-    },
-
-    
-    // test: function (frm, cdt, cdn) {
-    //     let row = locals[cdt][cdn];
-
-    //     // Added Location to the allowed list for testing
-    //     const allowed = ["Purchase Receipt", "Stock Entry", "Location"];
-        
-    //     if (!allowed.includes(row.ref_doctype)) {
-    //         frappe.msgprint(__('The "test" button is currently active for: ' + allowed.join(', ')));
-    //         return;
-    //     }
-
-    //     frappe.call({
-    //         method: "emkan_insights.emkan_insights.doctype.external_site_configuration.se_pr_sync.force_sync_transaction",
-    //         args: {
-    //             site_url: frm.doc.site_url,
-    //             api_key: frm.doc.api_key,
-    //             api_secret: frm.doc.api_secret,
-    //             doctype: row.ref_doctype,
-    //             child_docname: cdn
-    //         },
-    //         freeze: true,
-    //         freeze_message: __(`Testing Sync for ${row.ref_doctype}...`),
-    //         callback: function (r) {
-    //             if (r.message && r.message.status === "success") {
-    //                 // This alert now shows both FETCHED and SAVED counts
-    //                 frappe.show_alert({
-    //                     message: __(`Fetched ${r.message.fetched}, Saved/Updated ${r.message.count} records.`),
-    //                     indicator: r.message.fetched > 0 ? 'green' : 'orange'
-    //                 });
-                    
-    //                 frappe.model.set_value(cdt, cdn, 'last_sync', r.message.last_sync);
-    //                 frm.refresh_field('external_site_configuration_ct');
-    //             } else {
-    //                 frappe.msgprint({
-    //                     title: __('Sync Failed'),
-    //                     indicator: 'red',
-    //                     message: r.message ? r.message.error : __("Unknown Error")
-    //                 });
-    //             }
-    //         }
-    //     });
-    // },
+        });
+    }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Missing Parent Accounts Report Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-function show_missing_parents_report(missing_parents, ref_doctype, fetched_total) {
-    const rows_html = missing_parents.map((entry, i) => {
-        return `
-            <tr style="vertical-align:top; border-bottom:1px solid #eee;">
-                <td style="padding:6px 8px; color:#888;">${i + 1}</td>
-                <td style="padding:6px 8px; font-family:monospace;">${entry.account_id || '—'}</td>
-                <td style="padding:6px 8px;">${entry.account_name || '—'}</td>
-                <td style="padding:6px 8px; font-family:monospace; color:#d97706;">${entry.missing_parent_id || '—'}</td>
-                <td style="padding:6px 8px; color:#555; font-size:0.85em;">${entry.reason || '—'}</td>
-                <td style="padding:6px 8px; color:#0369a1; font-size:0.85em;">${entry.action_taken || '—'}</td>
-            </tr>
-        `;
-    }).join('');
-
-    const fetched_label = fetched_total !== null ? ` out of <b>${fetched_total}</b> fetched` : '';
-    const table_html = `
-        <p style="margin-bottom:8px;">
-            <b>${missing_parents.length}</b> account(s)${fetched_label} were <b>not saved</b>
-            during the <b>${ref_doctype}</b> sync.
-            Accounts that had parent issues but <em>still saved successfully</em> are <b>not shown here</b>.
-        </p>
-        <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
-            <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
-                <thead>
-                    <tr style="background:#f3f4f6; text-align:left;">
-                        <th style="padding:6px 8px;">#</th>
-                        <th style="padding:6px 8px;">Account ID (Remote)</th>
-                        <th style="padding:6px 8px;">Account Name</th>
-                        <th style="padding:6px 8px;">Missing Parent ID</th>
-                        <th style="padding:6px 8px;">Reason</th>
-                        <th style="padding:6px 8px;">Action Taken</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows_html}
-                </tbody>
-            </table>
-        </div>
-        <p style="margin-top:10px; font-size:0.85em; color:#888;">
-            Tip: If parent accounts belong to a different company or were deleted on the remote site,
-            they will never appear in this sync. In that case, re-check the remote Chart of Accounts
-            and ensure all parent accounts are accessible via the API.
-        </p>
-    `;
-
-    // Use a frappe Dialog so the user can scroll and copy data
-    const d = new frappe.ui.Dialog({
-        title: __(`Accounts Not Saved (${missing_parents.length} of ${fetched_total !== null ? fetched_total : '?'} fetched)`),
-        size: 'extra-large',
-        fields: [
-            {
-                fieldtype: 'HTML',
-                fieldname: 'report_html',
-                options: table_html
-            }
-        ],
-        primary_action_label: __('Copy as CSV'),
-        primary_action: function () {
-            const csv_header = 'Account ID,Account Name,Missing Parent ID,Reason,Action Taken\n';
-            const csv_rows = missing_parents.map(e => {
-                const escape = (v) => `"${(v || '').replace(/"/g, '""')}"`;
-                return [
-                    escape(e.account_id),
-                    escape(e.account_name),
-                    escape(e.missing_parent_id),
-                    escape(e.reason),
-                    escape(e.action_taken)
-                ].join(',');
-            }).join('\n');
-
-            const blob = new Blob([csv_header + csv_rows], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `missing_parent_accounts_${frappe.datetime.now_datetime().replace(/[: ]/g, '-')}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-            frappe.show_alert({ message: __('CSV downloaded'), indicator: 'green' });
-        },
-        secondary_action_label: __('Close'),
-        secondary_action: function () { d.hide(); }
-    });
-
-    d.show();
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-function set_naming_series(frm) {
-    if (frm.doc.site_name && frm.doc.site_url) {
-        let series = `${frm.doc.site_name}-${frm.doc.site_url}.`;
-        frm.set_value('naming_series', series);
-    }
-}
-
-function get_mapping() {
-    return {
-        "Account": "External Account",
-        "Address": "External Address",
-        "Asset": "External Asset",
-        "Asset Category": "External Asset Category",
-        "Bank": "External Bank",
-        "Bank Account": "External Bank Account",
-        "Contact": "External Contact",
-        "Contract": "External Contract",
-        "Cost Center": "External Cost Center",
-        "Customer": "External Customer",
-        "Item": "External Item",
-        "Item Group": "External Item Group",
-        "Location": "External Location",
-        "Manufacturer": "External Manufacturer",
-        "Price List": "External Price List",
-        "Project Type": "External Project Type",
-        "Supplier": "External Supplier",
-        "Supplier Group": "External Supplier Group",
-        "Territory": "External Territory",
-        "UOM": "External Uom",
-        "Warehouse": "External Warehouse",
-        "Purchase Invoice": "External Purchase Invoice",
-        "Payment Entry": "External Payment Entry",
-        "Purchase Order" : "External Purchase Order",
-        "Sales Order": "External Sales Order",
-        "Stock Entry": "External Stock Entry",
-        "Stock Reconciliation": "External Stock Reconciliation",
-        "Project" : "External Project",
-        "Request for Quotation": "External Request for Quotation",
-        "Supplier Quotation": "External Supplier Quotation",
-        "Item Price" : "External Item Price",
-        "Purchase Receipt": "External Purchase Receipt",
-        "Quotation": "External Quotation",
-        "Delivery Note": "External Delivery Note",
-        "Sales Invoice": "External Sales Invoice",
-        "Sales Taxes and Charges Template": "External Sales Taxes and Charges Template",
-        "Purchase Taxes and Charges Template": "External Purchase Taxes and Charges Template",
-        "Letter Head": "External Letter Head",
-        "Expense Claim": "External Expense Claim",
-        "Payment Terms Template": "External Payment Terms Template",
-        "Sales Person": "External Sales Person",
-        "Terms and Conditions": "External Terms and Conditions",
-        "Journal Entry": "External Journal Entry",
-        "Material Request" : "External Material Request",
-        "Lead" : "External Lead",
-        "Opportunity" : "External Opportunity",
-        "Sales Stage" : "External Sales Stage",
-        "Mode of Payment": "External Mode of Payment",
-        "Payment Term": "External Payment Term",
-        "Email Template": "External Email Template",
-        "Period Closing Voucher": "External Period Closing Voucher",
-        "GL Entry": "External GL Entry",
-        "Payment Ledger Entry": "External Payment Ledger Entry",
-        "Stock Ledger Entry": "External Stock Ledger Entry",
-        "Blanket Order": "External Blanket Order"
-
-    };
-
-}
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ NEW — Load rows from Site Configuration Doctypes CT
-// ─────────────────────────────────────────────────────────────────────────────
-
-// function load_fetch_data_from_site_config(frm) {
-//     if (frm._fetch_in_progress) return;  // guard against double call
-//     frm._fetch_in_progress = true;
-
-//     frappe.call({
-//         method: 'emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.get_site_config_doctypes_rows',
-//         callback: function(res) {
-//             frm._fetch_in_progress = false;
-
-//             if (!res.message || res.message.length === 0) {
-//                 frappe.show_alert({
-//                     message: __('No rows found in Site Configuration Doctypes CT.'),
-//                     indicator: 'orange'
-//                 });
-//                 return;
-//             }
-
-//             frm.clear_table('fetch_data');
-
-//             res.message.forEach(function(row) {
-//                 let child = frm.add_child('fetch_data');
-//                 child.ref_doctype = row.ref_doctype;
-//                 child.exported_doctype = row.exported_doctype;
-//             });
-
-//             frm.refresh_field('fetch_data');
-//             frappe.show_alert({
-//                 message: __(res.message.length + ' rows loaded successfully.'),
-//                 indicator: 'green'
-//             });
-//         },
-//         error: function() {
-//             frm._fetch_in_progress = false;  // always reset on error too
-//         }
-//     });
-// }
-function load_fetch_data_from_site_config(frm) {
-    if (frm._fetch_in_progress) return;
-    frm._fetch_in_progress = true;
-
-    frappe.call({
-        method: 'emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.get_site_config_doctypes_rows',
-        callback: function(res) {
-            frm._fetch_in_progress = false;
-
-            if (!res.message || res.message.length === 0) {
-                frappe.show_alert({
-                    message: __('No rows found in Site Configuration Doctypes CT.'),
-                    indicator: 'orange'
-                });
-                return;
-            }
-
-            frm.clear_table('fetch_data');
-            res.message.forEach(function(row) {
-                let child = frm.add_child('fetch_data');
-                child.ref_doctype = row.ref_doctype;
-                child.exported_doctype = row.exported_doctype;
-                child.abbr_required = row.abbr_required;
-            });
-            frm.refresh_field('fetch_data');
-            // ✅ NO frm.save() here — that was causing the loop
-            frappe.show_alert({
-                message: __(res.message.length + ' rows loaded successfully.'),
-                indicator: 'green'
-            });
-        },
-        error: function() {
-            frm._fetch_in_progress = false;
-        }
-    });
-}
 
 function add_bulk_insert_listener(frm) {
     if (frm._bulk_insert_listener_registered) {
@@ -599,4 +189,24 @@ function add_bulk_insert_listener(frm) {
         });
     });
     frm._bulk_insert_listener_registered = true;
+}
+
+function add_fetch_listener(frm) {
+    if (frm._external_fetch_listener_registered) {
+        return;
+    }
+
+    frappe.realtime.on("external_data_fetch_complete", function (result) {
+        const rows = frm.doc.fetch_data || [];
+        if (!rows.some(row => row.name === result.child_docname)) {
+            return;
+        }
+
+        frappe.show_alert({
+            message: __("Fetched {0} {1} record(s).", [result.count, result.ref_doctype]),
+            indicator: "green"
+        });
+        frm.reload_doc();
+    });
+    frm._external_fetch_listener_registered = true;
 }

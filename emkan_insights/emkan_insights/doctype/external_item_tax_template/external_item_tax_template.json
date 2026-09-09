@@ -1,79 +1,34 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
- "creation": "2022-01-19 01:09:13.297137",
+ "autoname": "hash",
  "doctype": "DocType",
- "document_type": "Setup",
- "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "title",
-  "company",
-  "column_break_3",
-  "disabled",
   "remote_id",
   "source_site",
   "last_synced_on",
-  "section_break_5",
-  "taxes",
   "json"
  ],
  "fields": [
   {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "label": "Title",
-   "no_copy": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "taxes",
-   "fieldtype": "Table",
-   "label": "Tax Rates",
-   "options": "Item Tax Template Detail",
-   "reqd": 1
-  },
-  {
-   "fieldname": "company",
-   "fieldtype": "Link",
-   "in_filter": 1,
-   "in_list_view": 1,
-   "label": "Company",
-   "options": "Company",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_3",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "disabled",
-   "fieldtype": "Check",
-   "label": "Disabled"
-  },
-  {
-   "fieldname": "section_break_5",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "remote_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Remote ID"
   },
   {
    "fieldname": "source_site",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
-   "label": "Last Synced On"
+   "in_list_view": 1,
+   "label": "Last Sync Time"
   },
   {
    "fieldname": "json",
@@ -83,11 +38,8 @@
   }
  ],
  "links": [],
- "modified": "2026-07-29 12:56:02.078598",
- "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Item Tax Template",
- "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -123,11 +75,8 @@
    "share": 1
   }
  ],
- "row_format": "Dynamic",
- "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title",
  "track_changes": 1
 }
