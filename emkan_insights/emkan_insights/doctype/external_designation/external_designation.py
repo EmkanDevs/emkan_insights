@@ -11,6 +11,7 @@ class ExternalDesignation(Document):
 
 import frappe
 import json
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 
 # ==========================================================
@@ -113,13 +114,18 @@ def upsert_designation(src, existing_name):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_designation_docs(source_doctype: str, names):
+def sync_designation_docs(source_doctype: str, names, sync_now=False):
     """
-    Whitelisted entry point to queue designation sync.
-    Called from the list-view Sync button with selected External Designation names.
+    Sync External Designation records to the Designation doctype.
+
+    When called from the sequential pipeline (sync_now=True), runs synchronously.
+    When called from the client, enqueues a background job.
     """
     if isinstance(names, str):
         names = json.loads(names)
+
+    if sync_now:
+        return sync_bulk_designations(names)
 
     frappe.enqueue(
         "emkan_insights.emkan_insights.doctype.external_designation.external_designation.sync_bulk_designations",
@@ -161,19 +167,10 @@ def sync_bulk_designations(names):
                 }
             )
 
-            # NO batch commit every 10 records — the single transaction handles it
+            # Frappe owns the transaction boundary for this job.
 
         except Exception as e:
-            import traceback
-
-            results.append(
-                {
-                    "name": name,
-                    "status": "failed",
-                    "error": str(e),
-                    "traceback": traceback.format_exc(),
-                }
-            )
-            break
+            log_record_failure("Designation", name, str(e))
+            raise
 
     return results

@@ -1,14 +1,21 @@
 # Copyright (c) 2026, Mukesh Variyani and contributors
 # For license information, please see license.txt
 
-import frappe
-from frappe.model.document import Document
-import requests
 import json
 from urllib.parse import quote
+
+import frappe
+import requests
 from frappe import _
-from urllib.parse import quote
+from frappe.model.document import Document
 from frappe.utils import get_datetime_str
+
+from emkan_insights.emkan_insights.fetch_window import (
+    add_fetch_window_end,
+    mark_fetch_completed,
+    mark_fetch_started,
+)
+from emkan_insights.emkan_insights.ledger_fetch import LEDGER_DOCTYPE_MAPPINGS
 from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 
@@ -16,13 +23,24 @@ class ExternalSiteConfiguration(Document):
     pass
 
 
+FETCH_ONLY_DOCTYPE_MAPPINGS = {
+    **LEDGER_DOCTYPE_MAPPINGS,
+    "Blanket Order": "External Blanket Order",
+}
+
+
 def load_doctypes_before_insert(doc, method=None):
-    """Called via hooks before_insert — rows added to doc before it's saved"""
+    """Add configured fetch rows that are missing from a site configuration."""
     fetch_rows = frappe.get_all(
         "Site Configuration Doctypes CT",
-        fields=["ref_doctype", "exported_doctype"],
+        filters={
+            "parent": "Site Configuration Settings",
+            "parentfield": "fetch_data",
+            "parenttype": "Site Configuration Settings",
+        },
+        fields=["ref_doctype", "exported_doctype", "abbr_required"],
         order_by="idx asc",
-        limit=200
+        limit_page_length=0,
     )
 
     if not fetch_rows:
@@ -35,7 +53,8 @@ def load_doctypes_before_insert(doc, method=None):
             continue
         doc.append("fetch_data", {
             "ref_doctype": row.ref_doctype,
-            "exported_doctype": row.exported_doctype
+            "exported_doctype": row.exported_doctype,
+            "abbr_required": row.abbr_required
         })
         existing_ref_doctypes.add(row.ref_doctype)
 
@@ -48,11 +67,21 @@ def get_site_config_doctypes_rows():
     """
     rows = frappe.get_all(
         "Site Configuration Doctypes CT",
-        fields=["ref_doctype", "exported_doctype"],
+        filters={
+            "parent": "Site Configuration Settings",
+            "parentfield": "fetch_data",
+            "parenttype": "Site Configuration Settings",
+        },
+        fields=["ref_doctype", "exported_doctype", "abbr_required"],
         order_by="idx asc",
-        limit=200
+        limit_page_length=0,
     )
     return rows
+
+
+def _serialize_remote_payload(payload):
+    """Serialize the complete remote response for audit and later processing."""
+    return json.dumps(payload, default=str, ensure_ascii=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -652,7 +681,9 @@ COMPANY_PREFIXED_EXTERNAL_DOCTYPES = {
     "External Stock Reconciliation",
     "External Payment Request",
     "External Request for Quotation",
-    "External Journal Entry"
+    "External Journal Entry",
+    "External Department",
+    *FETCH_ONLY_DOCTYPE_MAPPINGS.values(),
 }
 
 
@@ -681,12 +712,20 @@ def _get_legacy_unprefixed_external_doc(local_dt, local_fields, original_remote_
 
 
 def _process_item(local_dt, item, idx, local_fields, company, configuration_name, errors, site_url):
+    original_item = dict(item)
     original_remote_id = item.get('name') or item.get('id')
     remote_id = _get_company_prefixed_remote_id_for_local_dt(local_dt, original_remote_id, company)
     remote_docstatus = frappe.utils.cint(item.get("docstatus", 0))
     deferred_fields = {"amended_from"}
 
     if not remote_id:
+        frappe.log_error(
+            title=f"External Sync — skipped {local_dt}: no remote_id",
+            message=(
+                f"Item was skipped because it has no 'name' or 'id' field.\n"
+                f"Raw item data:\n{json.dumps(item, default=str, indent=2)}"
+            ),
+        )
         return False
 
     if remote_id != original_remote_id:
@@ -699,6 +738,15 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         or frappe.db.get_value(local_dt, {"name": remote_id}, "name")
         or _get_legacy_unprefixed_external_doc(local_dt, local_fields, original_remote_id, company)
     )
+
+    # Skip unchanged records: if the remote doc has not been modified since
+    # we last stored it, re-inserting it would needlessly bump its `modified`
+    # and keep it permanently "dirty" for downstream sync consumers.
+    remote_modified = item.get("modified")
+    if existing_name and remote_modified and "last_synced_on" in local_fields:
+        last_synced_on = frappe.db.get_value(local_dt, existing_name, "last_synced_on")
+        if last_synced_on and frappe.utils.get_datetime(remote_modified) <= frappe.utils.get_datetime(last_synced_on):
+            return True
 
     # Purge moved inside the savepoint block below so deadlocks on the
     # DELETE roll back cleanly instead of crashing before save even starts.
@@ -755,13 +803,14 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
     # ── remote_id & source site ──
     if 'remote_id' in local_fields:
         doc.remote_id = remote_id
+    if 'json' in local_fields:
+        doc.json = _serialize_remote_payload(original_item)
     set_source_site_fields(doc, configuration_name=configuration_name, site_url=site_url)
 
     # ── Flags ──
     doc.flags.ignore_links = True
     doc.flags.ignore_permissions = True
     doc.flags.ignore_mandatory = True
-    doc.flags.ignore_validate = True
 
     _apply_sync_helpers(local_dt, doc, item, local_fields, company, remote_id=remote_id)
     _bypass_address_lock(local_dt, doc)
@@ -797,12 +846,28 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         # Bypass link validation up front (covers child-table links too,
         # which doc.flags.ignore_links alone does not reliably cover).
         frappe.flags.ignore_link_validation = True
+        # Bypass Data-field validation (Phone/Email/Name/URL/IBAN) so remote
+        # values like "'+966 50 330 0419" don't abort the sync.
+        from emkan_insights.emkan_insights.sync_validation import data_field_validation_disabled
+
         try:
-            doc.save()
+            with data_field_validation_disabled():
+                doc.save()
         except Exception as e:
             # Roll back to before this doc's insert attempt so no
             # partial parent/child rows are left behind.
-            frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
+            try:
+                frappe.db.sql(f"ROLLBACK TO SAVEPOINT `{savepoint}`")
+            except Exception:
+                # If a deadlock occurred, InnoDB has already rolled back the
+                # entire transaction and destroyed all savepoints. Fall back to a
+                # full rollback so the connection stays usable. Without this, the
+                # failed ROLLBACK TO SAVEPOINT call would itself raise and
+                # crash the whole chunk.
+                try:
+                    frappe.db.rollback()
+                except Exception:
+                    pass
 
             if _is_duplicate_conflict(e) and doc.is_new():
                 existing = None
@@ -814,6 +879,14 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
                             break
                 if existing:
                     frappe.db.set_value(local_dt, existing, "remote_id", remote_id, update_modified=False)
+                    if "last_synced_on" in local_fields:
+                        frappe.db.set_value(
+                            local_dt,
+                            existing,
+                            "last_synced_on",
+                            remote_modified or frappe.utils.now(),
+                            update_modified=False
+                        )
                     return True
                 else:
                     raise
@@ -829,6 +902,15 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
 
         if doc.docstatus != remote_docstatus:
             frappe.db.set_value(doc.doctype, doc.name, "docstatus", remote_docstatus, update_modified=False)
+
+        if "last_synced_on" in local_fields:
+            frappe.db.set_value(
+                local_dt,
+                doc.name,
+                "last_synced_on",
+                remote_modified or frappe.utils.now(),
+                update_modified=False
+            )
 
         return True
 
@@ -852,9 +934,21 @@ def _process_item(local_dt, item, idx, local_fields, company, configuration_name
         # the entire chunk and lose all items processed after this one.
         if isinstance(e, frappe.QueryDeadlockError):
             errors.append({"remote_id": remote_id, "error": f"Deadlock (will retry): {str(e)}"})
+            frappe.log_error(
+                title=f"External Sync — deadlock on {local_dt} / {remote_id} (will retry)",
+                message=frappe.get_traceback(),
+            )
             return False
 
         errors.append({"remote_id": remote_id, "error": str(e)})
+        frappe.log_error(
+            title=f"External Sync — failed to save {local_dt} / {remote_id}",
+            message=(
+                f"Error: {str(e)}\n\n"
+                f"Traceback:\n{frappe.get_traceback()}\n\n"
+                f"Remote item snapshot:\n{json.dumps(item, default=str, indent=2)}"
+            ),
+        )
         return False
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED SYNC LOOP
@@ -876,7 +970,10 @@ def _run_sync_loop(data, local_dt, local_fields, company, configuration_name, si
             count += 1
         else:
             not_saved.append(item)
-            break
+            # Do NOT break here — continue processing remaining items.
+            # Failed records are collected in `not_saved` and retried by the
+            # caller's retry pass.  Breaking would silently drop every record
+            # that comes after the first failure in the chunk.
 
     return count, errors, not_saved
 
@@ -968,7 +1065,8 @@ def sync__docs(site_url, api_key, api_secret, ref_doctype, child_docname, compan
         "Stock Reconciliation": "emkan_insights.emkan_insights.sync_stock_reconciliation_from_remote.sync_stock_reconciliations_from_remote",
         "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
         "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote", 
-        "Journal Entry":  "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
+        "Journal Entry": "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
+        "Purchase Order": "emkan_insights.emkan_insights.sync_purchase_order_from_remote.sync_purchase_orders_from_remote"
     }
     sync_method = dedicated_sync_methods.get(
         ref_doctype,
@@ -1002,7 +1100,9 @@ def _get_company_abbr_for_sync(company):
 
 
 def _build_company_prefixed_remote_id(company_abbr, remote_id):
-    remote_id = (remote_id or "").strip()
+    # SAP occasionally returns numeric codes (e.g. Department: 1) instead of
+    # strings — coerce first so ``.strip()`` never crashes on an int.
+    remote_id = str(remote_id or "").strip()
     if not remote_id:
         return remote_id
 
@@ -1130,32 +1230,68 @@ def _fetch_remote_names_generic(base_url, headers, remote_dt, filters):
 def _fetch_generic_docs_threaded(base_url, headers, remote_dt, names):
     """
     Threaded per-record GET for a chunk of names.
-    8 concurrent connections are used so chunk HTTP time stays bounded.
+    Each worker reuses its HTTP connection so large fetches avoid a TLS
+    handshake for every document.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from threading import local
 
     docs = []
+    failures = []
+    thread_context = local()
+
+    def _get_session():
+        session = getattr(thread_context, "session", None)
+        if session is None:
+            session = requests.Session()
+            thread_context.session = session
+        return session
 
     def _fetch_one(name):
         encoded_dt = quote(str(remote_dt), safe="")
         encoded_name = quote(str(name), safe="")
         url = f"{base_url}/api/resource/{encoded_dt}/{encoded_name}"
         try:
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = _get_session().get(url, headers=headers, timeout=30)
             resp.raise_for_status()
-            return resp.json().get("data") or {"name": name}
+            return resp.json().get("data") or {"name": name}, None
         except Exception as e:
-            frappe.logger("external_sync").warning(
-                "Failed to fetch full doc for %s/%s: %s", remote_dt, name, str(e)
-            )
-            return {"name": name}
+            return None, {
+                "ref_doctype": remote_dt,
+                "remote_id": name,
+                "error": str(e),
+            }
 
     with ThreadPoolExecutor(max_workers=GENERIC_FETCH_WORKERS) as pool:
         futures = {pool.submit(_fetch_one, name): name for name in names}
         for future in as_completed(futures):
-            docs.append(future.result())
+            doc, failure = future.result()
+            if doc:
+                docs.append(doc)
+            if failure:
+                failures.append(failure)
 
-    return docs
+    if failures:
+        failure_summary = "\n".join(
+            f"{failure['remote_id']}: {failure['error']}"
+            for failure in failures[:20]
+        )
+        frappe.logger("external_sync").warning(
+            "Failed to fetch %s of %s %s documents. First failures:\n%s",
+            len(failures),
+            len(names),
+            remote_dt,
+            failure_summary,
+        )
+        frappe.log_error(
+            title=f"External fetch failures: {remote_dt}"[:140],
+            message=(
+                f"Failed to fetch {len(failures)} of {len(names)} documents.\n"
+                f"First failures:\n{failure_summary}"
+            ),
+        )
+
+    return docs, failures
 
 
 # doctype_map shared between orchestrator and worker (kept as a module-level
@@ -1226,6 +1362,7 @@ _GENERIC_DOCTYPE_MAP = {
     "Vehicle": "External Vehicle",
     "Batch Plant": "External Batch Plant",
     "Payment Request": "External Payment Request",
+    **FETCH_ONLY_DOCTYPE_MAPPINGS,
 }
 
 
@@ -1278,6 +1415,28 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
             "External Site Configuration CT", child_docname, "last_sync"
         )
 
+        if remote_dt in LEDGER_DOCTYPE_MAPPINGS:
+            from emkan_insights.emkan_insights.ledger_fetch import queue_ledger_fetch
+
+            return queue_ledger_fetch(
+                site_url=site_url,
+                api_key=api_key,
+                api_secret=api_secret,
+                company=company,
+                configuration_name=configuration_name,
+                child_docname=child_docname,
+                ref_doctype=remote_dt,
+                window_start=previous_last_sync,
+                window_end=fetch_started_at,
+            )
+
+        previous_last_sync, fetch_started_at = mark_fetch_started(
+            child_docname,
+            ref_doctype,
+            previous_last_sync,
+            fetch_started_at,
+        )
+
         # Tree/master doctypes (Item Group, UOM, Warehouse, etc.) have no
         # docstatus column.  Filtering on it causes the remote Frappe REST API
         # to silently return an empty list — the job registers but fetches
@@ -1296,21 +1455,35 @@ def sync_data_from_remote(site_url, api_key, api_secret, ref_doctype, child_docn
         filters = []
         if remote_dt not in _NON_SUBMITTABLE_REMOTE_DOCTYPES:
             filters.append(["docstatus", "in", [0, 1, 2]])
-        # if previous_last_sync:
-        #     # filters.append([
-        #     #     "modified", ">", frappe.utils.get_datetime_str(previous_last_sync)
-        #     # ])
+        # Incremental fetch: only pull records created/modified since the
+        # last successful fetch recorded on this row. The sync phase uses
+        # `last_synced_on` on the External doctypes, so `last_sync` here is
+        # free to act as the remote-fetch watermark.
+        if previous_last_sync:
+            filters.append([
+                "modified",
+                ">",
+                frappe.utils.get_datetime_str(previous_last_sync)
+            ])
+        add_fetch_window_end(filters, fetch_started_at)
 
         names = _fetch_remote_names_generic(base_url, headers, remote_dt, filters)
 
+        from emkan_insights.emkan_insights.fetch_log import log_fetch_plan
+
+        log_fetch_plan(ref_doctype, configuration_name, filters, len(names))
+
         if not names:
             _release_sync_lock(child_docname)
-            frappe.db.set_value(
-                "External Site Configuration CT", child_docname, "last_sync", fetch_started_at
+            last_sync = mark_fetch_completed(
+                child_docname,
+                ref_doctype,
+                fetch_started_at,
+                record_count=0,
             )
             return {
                 "count": 0, "fetched_total": 0, "not_saved_count": 0,
-                "last_sync": fetch_started_at, "errors": [],
+                "last_sync": last_sync, "errors": [],
             }
 
         chunks = [names[i:i + GENERIC_CHUNK_SIZE] for i in range(0, len(names), GENERIC_CHUNK_SIZE)]
@@ -1370,7 +1543,9 @@ def process_generic_chunk(
 
     try:
         # Phase 1 — fetch full docs for this chunk (threaded HTTP)
-        docs = _fetch_generic_docs_threaded(base_url, headers, remote_dt, remote_names)
+        docs, fetch_errors = _fetch_generic_docs_threaded(
+            base_url, headers, remote_dt, remote_names
+        )
 
         # Phase 2 — hierarchy sort (must happen per-chunk for tree doctypes;
         # stub-parent creation in _process_item handles cross-chunk ordering)
@@ -1391,7 +1566,12 @@ def process_generic_chunk(
             docs, local_dt, local_fields, company, configuration_name, site_url
         )
 
-        state = _update_generic_progress(child_docname, count, len(not_saved), errors)
+        state = _update_generic_progress(
+            child_docname,
+            count,
+            len(not_saved) + len(fetch_errors),
+            errors + fetch_errors,
+        )
 
     except Exception:
         error_message = frappe.get_traceback()
@@ -1442,9 +1622,11 @@ def process_generic_chunk(
                     "External Site Configuration CT", child_docname, "last_sync"
                 )
             else:
-                last_sync = fetch_started_at or frappe.utils.now()
-                frappe.db.set_value(
-                    "External Site Configuration CT", child_docname, "last_sync", last_sync
+                last_sync = mark_fetch_completed(
+                    child_docname,
+                    ref_doctype,
+                    fetch_started_at or frappe.utils.now(),
+                    record_count=state.get("count", 0),
                 )
 
             _release_sync_lock(child_docname)

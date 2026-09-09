@@ -188,7 +188,12 @@ def sync_external_records(names):
 									link_doctype = clean_row.get("link_doctype")
 									link_name = clean_row.get("link_name")
 									resolved_link = _resolve_dynamic_link(link_doctype, link_name)
-									clean_row["link_name"] = resolved_link or link_name
+									if not resolved_link:
+										# The linked doc does not exist locally yet.
+										# Skip this row — Frappe's validate() → set_link_title()
+										# would crash trying to load a missing doc.
+										continue
+									clean_row["link_name"] = resolved_link
 								doc.append(field, clean_row)
 					else:
 						doc.set(field, value)

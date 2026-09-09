@@ -25,7 +25,8 @@
   "discount_validity_based_on",
   "discount_validity",
   "section_break_6",
-  "description"
+  "description",
+  "json"
  ],
  "fields": [
   {
@@ -125,13 +126,20 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "links": [],

@@ -3,6 +3,7 @@ import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom_or_none
 
 # ==========================================================
 # HELPERS
@@ -162,7 +163,7 @@ def sync_single_item_price(source_name):
         "valid_upto": getattr(src, "valid_upto", None),
         
         "batch_no": getattr(src, "batch_no", None),
-        "uom": getattr(src, "uom", None),
+        "uom": resolve_uom_or_none(getattr(src, "uom", None)),
         "packing_unit": flt(getattr(src, "packing_unit", 0)),
         
         "warehouse": getattr(src, "warehouse", None),

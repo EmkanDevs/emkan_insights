@@ -62,7 +62,8 @@
   "payment_order",
   "amended_from",
   "column_break_iiuv",
-  "phone_number"
+  "phone_number",
+  "json"
  ],
  "fields": [
   {
@@ -453,8 +454,15 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

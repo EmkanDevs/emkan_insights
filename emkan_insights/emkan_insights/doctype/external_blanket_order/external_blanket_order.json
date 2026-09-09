@@ -1,0 +1,61 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "remote_id",
+  "source_site",
+  "last_synced_on",
+  "json"
+ ],
+ "fields": [
+  {
+   "fieldname": "remote_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Remote ID"
+  },
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Site",
+   "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "last_synced_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Sync Time"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "module": "Emkan Insights",
+ "name": "External Blanket Order",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

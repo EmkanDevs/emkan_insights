@@ -77,7 +77,8 @@ def sync_external_payment_template(external_name):
             term.set_new_name()
         term.db_insert()
 
-    # 5. Finalize Sync
-    external.db_set("remote_id", ppt.name)
+    # 5. Finalize Sync (update_modified=False keeps modified stable so
+    # last_synced_on correctly suppresses re-sync on the next scheduler run).
+    external.db_set("remote_id", ppt.name, update_modified=False)
 
     return ppt.name

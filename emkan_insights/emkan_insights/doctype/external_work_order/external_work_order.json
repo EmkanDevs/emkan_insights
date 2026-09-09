@@ -27,6 +27,7 @@
   "bom_no",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "sales_order",
   "column_break1",
   "company",
@@ -39,6 +40,8 @@
   "last_synced_on",
   "section_break_ndpq",
   "required_items",
+  "section_break_zouy",
+  "sap_response",
   "work_order_configuration",
   "settings_section",
   "allow_alternative_item",
@@ -89,7 +92,8 @@
   "production_plan_sub_assembly_item",
   "product_bundle_item",
   "amended_from",
-  "connections_tab"
+  "connections_tab",
+  "json"
  ],
  "fields": [
   {
@@ -109,6 +113,12 @@
    "fieldtype": "Link",
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
   },
   {
    "fieldname": "naming_series",
@@ -679,6 +689,21 @@
    "fieldname": "is_synced",
    "fieldtype": "Check",
    "label": "Is Synced"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_zouy",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sap_response",
+   "fieldtype": "JSON",
+   "label": "SAP Response"
   }
  ],
  "icon": "fa fa-cogs",
@@ -686,7 +711,7 @@
  "image_field": "image",
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-30 09:22:51.631544",
+ "modified": "2026-09-08 14:24:52.116661",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Work Order",

@@ -23,6 +23,7 @@
   "department",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "customer_details",
   "customer",
@@ -68,7 +69,10 @@
   "weekly_time_to_send",
   "column_break_45",
   "subject",
-  "message"
+  "message",
+  "json",
+  "section_break_yals",
+  "sap_response"
  ],
  "fields": [
   {
@@ -76,8 +80,7 @@
    "fieldtype": "Data",
    "label": "Project Name",
    "oldfieldtype": "Data",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "default": "Open",
@@ -468,8 +471,9 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fetch_from": "customer.customer_name",
@@ -486,6 +490,27 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "section_break_yals",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sap_response",
+   "fieldtype": "JSON",
+   "label": "SAP Response"
   }
  ],
  "icon": "fa fa-puzzle-piece",
@@ -493,7 +518,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "max_attachments": 4,
- "modified": "2026-07-29 12:49:45.099145",
+ "modified": "2026-09-08 09:51:05.558703",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Project",

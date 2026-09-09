@@ -12,6 +12,7 @@
   "parent_location",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "cb_details",
   "is_container",
   "is_group",
@@ -27,7 +28,8 @@
   "tree_details",
   "lft",
   "rgt",
-  "old_parent"
+  "old_parent",
+  "json"
  ],
  "fields": [
   {
@@ -157,11 +159,23 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "is_tree": 1,
  "links": [],
- "modified": "2026-07-29 12:41:28.847209",
+ "modified": "2026-09-04 14:20:03.345730",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Location",

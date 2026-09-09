@@ -22,6 +22,7 @@
   "source",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "col_break123",
   "lead_owner",
   "status",
@@ -72,6 +73,8 @@
   "disabled",
   "unsubscribed",
   "blog_subscriber",
+  "section_break_jsrl",
+  "sap_response",
   "activities_tab",
   "open_activities_html",
   "all_activities_section",
@@ -79,7 +82,8 @@
   "notes_tab",
   "notes_html",
   "notes",
-  "dashboard_tab"
+  "dashboard_tab",
+  "json"
  ],
  "fields": [
   {
@@ -522,13 +526,35 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "section_break_jsrl",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sap_response",
+   "fieldtype": "JSON",
+   "label": "SAP Response"
   }
  ],
  "grid_page_length": 50,
@@ -536,7 +562,7 @@
  "idx": 5,
  "image_field": "image",
  "links": [],
- "modified": "2026-07-29 12:53:19.726200",
+ "modified": "2026-09-08 11:50:10.706883",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Lead",

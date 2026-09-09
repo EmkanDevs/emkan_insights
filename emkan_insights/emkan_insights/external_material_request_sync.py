@@ -2,10 +2,15 @@ import frappe
 import json
 from frappe.utils import cint
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
     sync_record_guard,
     temporarily_enable_transaction_items,
 )
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 VALID_MATERIAL_REQUEST_STATUSES = {
     "Draft",
@@ -55,7 +60,8 @@ def _enqueue_material_request_target_batch(source_doctype, names, batch_index=0)
         source_doctype=source_doctype,
         batch_index=batch_index,
         timeout=2000,
-        job_name=f"mr_sync_batch_{batch_index + 1}"
+        job_name=f"mr_sync_batch_{batch_index + 1}",
+        enqueue_after_commit=True,
     )
 
 
@@ -74,7 +80,7 @@ def _get_safe_material_request_status(external):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_material_request_docs(source_doctype: str, names):
+def sync_material_request_docs(source_doctype: str, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -90,6 +96,20 @@ def sync_material_request_docs(source_doctype: str, names):
     names = list(dict.fromkeys(names))
     if not names:
         return {"message": "No External Material Request records pending sync", "queued": 0, "batches": 0}
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast with sequential chunks.
+        # The target lock is held for the whole run and released on every exit.
+        if not _acquire_target_sync_lock(source_doctype):
+            frappe.throw(f"{source_doctype} target sync is already running")
+        try:
+            return run_chunks_fail_fast(
+                names,
+                TARGET_BATCH_SIZE,
+                _process_material_request_chunk,
+            )
+        finally:
+            _release_target_sync_lock(source_doctype)
 
     if not _acquire_target_sync_lock(source_doctype):
         return {
@@ -107,15 +127,9 @@ def sync_material_request_docs(source_doctype: str, names):
     }
 
 
-def sync_bulk_material_requests(names, source_doctype="External Material Request", batch_index=0):
-    """
-    Processed as chained background batches so only one batch writes target
-    Material Requests at a time.
-    """
-    batch_index = int(batch_index or 0)
-    chunk = names[batch_index * TARGET_BATCH_SIZE:(batch_index + 1) * TARGET_BATCH_SIZE]
+def _process_material_request_chunk(chunk):
+    """Strict fail-fast record loop for one chunk of External Material Requests."""
     results = []
-    sync_failed = False
 
     for name in chunk:
         savepoint = f"mr_sync_{frappe.generate_hash(length=10)}"
@@ -126,31 +140,41 @@ def sync_bulk_material_requests(names, source_doctype="External Material Request
                 external = frappe.get_doc("External Material Request", name)
 
                 if not external.company:
-                    results.append({
-                        "name": name,
-                        "action": "error",
-                        "error": f"Company missing in External Material Request: {name}"
-                    })
-                    sync_failed = True
-                    break
+                    raise Exception(f"Company missing in External Material Request: {name}")
 
                 res = sync_external_material_request(name, external.company)
                 results.append(res)
-                frappe.db.commit()
 
         except Exception as e:
             try:
                 frappe.db.rollback(save_point=savepoint)
             except Exception:
                 frappe.db.rollback()
-            frappe.log_error(frappe.get_traceback(), f"MR Sync Failed: {name}")
-            results.append({
-                "name": name,
-                "action": "error",
-                "error": str(e)
-            })
-            sync_failed = True
-            break
+            log_record_failure("Material Request", name, str(e))
+            raise
+
+    return results
+
+
+def sync_bulk_material_requests(names, source_doctype="External Material Request", batch_index=0):
+    """
+    Processed as chained background batches so only one batch writes target
+    Material Requests at a time. Strictly fail-fast: the first record failure
+    aborts the chain and releases the target lock.
+    """
+    if isinstance(names, str):
+        names = json.loads(names)
+
+    batch_index = int(batch_index or 0)
+    chunk = names[batch_index * TARGET_BATCH_SIZE:(batch_index + 1) * TARGET_BATCH_SIZE]
+
+    try:
+        results = _process_material_request_chunk(chunk)
+    except Exception:
+        # The chain aborted: release the target lock so a failed run does
+        # not block subsequent runs until TTL expiry.
+        _release_target_sync_lock(source_doctype)
+        raise
 
     created = [r for r in results if r["action"] == "created"]
     updated = [r for r in results if r["action"] == "updated"]
@@ -167,12 +191,12 @@ def sync_bulk_material_requests(names, source_doctype="External Material Request
     )
 
     next_batch_index = batch_index + 1
-    if sync_failed:
-        _release_target_sync_lock(source_doctype)
-    elif next_batch_index * TARGET_BATCH_SIZE < len(names):
+    if next_batch_index * TARGET_BATCH_SIZE < len(names):
         _enqueue_material_request_target_batch(source_doctype, names, next_batch_index)
     else:
-        _release_target_sync_lock(source_doctype)
+        frappe.db.after_commit.add(
+            lambda: _release_target_sync_lock(source_doctype)
+        )
 
     return {"summary": summary, "results": results}
 
@@ -282,7 +306,7 @@ def _build_item_rows(external, project, company):
             "item_name":     row.item_name,
             "description":   row.description,
             "qty":           row.qty,
-            "uom":           row.uom,
+            "uom":           resolve_uom(row.uom),
             "schedule_date": row.schedule_date,
             "warehouse":     warehouse,
             "project":       project,
@@ -362,6 +386,42 @@ def _resolve_local_mr_target(external, company):
     return None
 
 
+def _resolve_local_amendment_parent(remote_amended_from, company):
+    if not remote_amended_from:
+        return None
+
+    remote_amended_from = str(remote_amended_from).strip()
+    if not remote_amended_from:
+        return None
+
+    parent = frappe._dict(name=remote_amended_from, remote_id=None)
+    local_name = _resolve_local_mr_target(parent, company)
+    if not local_name:
+        frappe.throw(
+            f"Cannot sync amendment because its local parent was not found: {remote_amended_from}",
+            title="Amendment Parent Missing",
+        )
+
+    if cint(frappe.db.get_value("Material Request", local_name, "docstatus")) != 2:
+        frappe.throw(
+            f"{local_name} must be cancelled before its amendment can be synced.",
+            title="Amendment Not Allowed",
+        )
+
+    return local_name
+
+
+def _resolve_optional_link(doctype, value):
+    if not value:
+        return None
+
+    value = str(value).strip()
+    if value and frappe.db.exists(doctype, value):
+        return value
+
+    return None
+
+
 def sync_external_material_request(external_name, company):
     external = frappe.get_doc("External Material Request", external_name)
     sync_started_at = external.modified
@@ -369,12 +429,20 @@ def sync_external_material_request(external_name, company):
 
     target_name = _resolve_local_mr_target(external, company)
     expected_name = _build_local_mr_name(company, external.name)
+    amended_from = _resolve_local_amendment_parent(external.get("amended_from"), company)
 
     project = None
     if external.get("project"):
         project = frappe.db.get_value("External Project", external.project, "remote_id")
 
     item_rows, skipped = _build_item_rows(external, project, company)
+    letter_head = _resolve_optional_link("Letter Head", external.get("letter_head"))
+    if external.get("letter_head") and not letter_head:
+        skipped.append({
+            "mr_name": external.name,
+            "field": "letter_head",
+            "reason": f"Letter Head '{external.get('letter_head')}' does not exist locally",
+        })
 
     if target_name:
         header_fields = {
@@ -385,49 +453,92 @@ def sync_external_material_request(external_name, company):
             "status": safe_status,
             "remote_id": external.name,
         }
-        for field in ["buying_price_list", "letter_head", "set_warehouse",
-                      "title", "transfer_status", "amended_from", "source_site"]:
+        for field in ["buying_price_list", "set_warehouse",
+                      "title", "transfer_status", "source_site"]:
             value = external.get(field)
             if value is not None:
                 header_fields[field] = value
+        if amended_from:
+            header_fields["amended_from"] = amended_from
+        if letter_head:
+            header_fields["letter_head"] = letter_head
 
         frappe.db.set_value("Material Request", target_name, header_fields, update_modified=True)
 
-        existing_rows = frappe.db.get_all(
-            "Material Request Item",
-            filters={"parent": target_name, "parenttype": "Material Request"},
-            fields=["name", "custom_remote_id", "item_code", "warehouse", "idx"],
-            order_by="idx"
-        )
+        # Only update child rows when the MR is in draft (docstatus=0).
+        # For already-submitted MRs, Frappe's validate_update_after_submit blocks
+        # changes to fields like UOM, raising UpdateAfterSubmitError. The item
+        # rows are already correct from the initial sync; skip the update.
+        existing_docstatus = frappe.db.get_value("Material Request", target_name, "docstatus")
+        if cint(existing_docstatus) == 0:
+            existing_rows = frappe.db.get_all(
+                "Material Request Item",
+                filters={"parent": target_name, "parenttype": "Material Request"},
+                fields=["name", "custom_remote_id", "item_code", "warehouse", "idx"],
+                order_by="idx"
+            )
 
-        existing_by_remote_id = {}
-        existing_by_item_wh = {}
+            existing_by_remote_id = {}
+            existing_by_item_wh = {}
 
-        for r in existing_rows:
-            if r.get("custom_remote_id"):
-                existing_by_remote_id[r.custom_remote_id] = r
-            key = f"{r.item_code}|{r.warehouse or ''}"
-            existing_by_item_wh[key] = r
+            for r in existing_rows:
+                if r.get("custom_remote_id"):
+                    existing_by_remote_id[r.custom_remote_id] = r
+                key = f"{r.item_code}|{r.warehouse or ''}"
+                existing_by_item_wh[key] = r
 
-        used_existing = set()
-        new_rows = []
+            used_existing = set()
+            new_rows = []
 
-        for idx, item_data in enumerate(item_rows, start=1):
-            remote_row_id = item_data.get("remote_row_id")
-            matched = None
+            for idx, item_data in enumerate(item_rows, start=1):
+                remote_row_id = item_data.get("remote_row_id")
+                matched = None
 
-            if remote_row_id and remote_row_id in existing_by_remote_id:
-                matched = existing_by_remote_id[remote_row_id]
+                if remote_row_id and remote_row_id in existing_by_remote_id:
+                    matched = existing_by_remote_id[remote_row_id]
 
-            if not matched:
-                fallback_key = f"{item_data['item_code']}|{item_data['warehouse'] or ''}"
-                if fallback_key in existing_by_item_wh:
-                    matched = existing_by_item_wh[fallback_key]
+                if not matched:
+                    fallback_key = f"{item_data['item_code']}|{item_data['warehouse'] or ''}"
+                    if fallback_key in existing_by_item_wh:
+                        matched = existing_by_item_wh[fallback_key]
 
-            if matched:
-                used_existing.add(matched.name)
+                if matched:
+                    used_existing.add(matched.name)
 
-                frappe.db.set_value("Material Request Item", matched.name, {
+                    frappe.db.set_value("Material Request Item", matched.name, {
+                        "item_code": item_data["item_code"],
+                        "item_name": item_data["item_name"],
+                        "description": item_data["description"],
+                        "qty": item_data["qty"],
+                        "uom": item_data["uom"],
+                        "schedule_date": item_data["schedule_date"],
+                        "warehouse": item_data["warehouse"],
+                        "project": item_data["project"],
+                        "idx": idx,
+                        "custom_remote_id": remote_row_id,
+                    })
+                else:
+                    new_rows.append({"idx": idx, "data": item_data})
+
+            for new_row in new_rows:
+                idx = new_row["idx"]
+                item_data = new_row["data"]
+                child_name = frappe.generate_hash("", 10)
+
+                frappe.db.sql("""
+                    INSERT INTO `tabMaterial Request Item`
+                    (name, parent, parenttype, parentfield, idx,
+                     item_code, item_name, description,
+                     qty, uom, schedule_date, warehouse, project,
+                     custom_remote_id)
+                    VALUES (%(name)s, %(parent)s, 'Material Request', 'items', %(idx)s,
+                            %(item_code)s, %(item_name)s, %(description)s,
+                            %(qty)s, %(uom)s, %(schedule_date)s, %(warehouse)s, %(project)s,
+                            %(remote_row_id)s)
+                """, {
+                    "name": child_name,
+                    "parent": target_name,
+                    "idx": idx,
                     "item_code": item_data["item_code"],
                     "item_name": item_data["item_name"],
                     "description": item_data["description"],
@@ -436,63 +547,32 @@ def sync_external_material_request(external_name, company):
                     "schedule_date": item_data["schedule_date"],
                     "warehouse": item_data["warehouse"],
                     "project": item_data["project"],
-                    "idx": idx,
-                    "custom_remote_id": remote_row_id,
+                    "remote_row_id": item_data["remote_row_id"] or "",
                 })
-            else:
-                new_rows.append({"idx": idx, "data": item_data})
 
-        for new_row in new_rows:
-            idx = new_row["idx"]
-            item_data = new_row["data"]
-            child_name = frappe.generate_hash("", 10)
+            for r in existing_rows:
+                if r.name not in used_existing:
+                    refs = frappe.db.sql("""
+                        SELECT parenttype, parent FROM `tabStock Entry Detail`
+                        WHERE material_request_item = %s
+                        UNION ALL
+                        SELECT parenttype, parent FROM `tabPurchase Order Item`
+                        WHERE material_request_item = %s
+                        LIMIT 1
+                    """, (r.name, r.name))
 
-            frappe.db.sql("""
-                INSERT INTO `tabMaterial Request Item`
-                (name, parent, parenttype, parentfield, idx,
-                 item_code, item_name, description,
-                 qty, uom, schedule_date, warehouse, project,
-                 custom_remote_id)
-                VALUES (%(name)s, %(parent)s, 'Material Request', 'items', %(idx)s,
-                        %(item_code)s, %(item_name)s, %(description)s,
-                        %(qty)s, %(uom)s, %(schedule_date)s, %(warehouse)s, %(project)s,
-                        %(remote_row_id)s)
-            """, {
-                "name": child_name,
-                "parent": target_name,
-                "idx": idx,
-                "item_code": item_data["item_code"],
-                "item_name": item_data["item_name"],
-                "description": item_data["description"],
-                "qty": item_data["qty"],
-                "uom": item_data["uom"],
-                "schedule_date": item_data["schedule_date"],
-                "warehouse": item_data["warehouse"],
-                "project": item_data["project"],
-                "remote_row_id": item_data["remote_row_id"] or "",
-            })
-
-        for r in existing_rows:
-            if r.name not in used_existing:
-                refs = frappe.db.sql("""
-                    SELECT parenttype, parent FROM `tabStock Entry Detail`
-                    WHERE material_request_item = %s
-                    UNION ALL
-                    SELECT parenttype, parent FROM `tabPurchase Order Item`
-                    WHERE material_request_item = %s
-                    LIMIT 1
-                """, (r.name, r.name))
-
-                if refs:
-                    frappe.db.set_value("Material Request Item", r.name, {
-                        "qty": 0,
-                        "idx": 999,
-                    })
-                else:
-                    frappe.db.delete("Material Request Item", r.name)
+                    if refs:
+                        frappe.db.set_value("Material Request Item", r.name, {
+                            "qty": 0,
+                            "idx": 999,
+                        })
+                    else:
+                        frappe.db.delete("Material Request Item", r.name)
 
         remote_status = cint(external.docstatus)
-        if remote_status == 1:
+        local_docstatus = cint(existing_docstatus)
+        if remote_status == 1 and local_docstatus == 0:
+            # Only submit if the local MR is still in draft.
             try:
                 mr_doc = frappe.get_doc("Material Request", target_name)
                 mr_doc.flags.ignore_permissions = True
@@ -513,9 +593,14 @@ def sync_external_material_request(external_name, company):
                 mr_doc = frappe.get_doc("Material Request", target_name)
                 mr_doc.flags.ignore_permissions = True
                 with temporarily_enable_transaction_items(mr_doc):
-                    mr_doc.submit()  # Must submit first before cancel
-                    mr_doc.reload()
-                    mr_doc.cancel()  # ORM cancel — runs all lifecycle hooks
+                    if local_docstatus == 0:
+                        # Draft → must submit first, then cancel.
+                        mr_doc.submit()
+                        mr_doc.reload()
+                    if local_docstatus in (0, 1):
+                        # Already submitted (or just submitted above) → cancel.
+                        mr_doc.cancel()
+                    # local_docstatus == 2: already cancelled, nothing to do.
             except Exception as lifecycle_err:
                 frappe.log_error(
                     title=f"CRITICAL: MR {target_name} ORM submit/cancel failed — manual intervention required",
@@ -529,7 +614,8 @@ def sync_external_material_request(external_name, company):
 
         frappe.db.set_value(
             "External Material Request", external.name,
-            "remote_id", target_name
+            "remote_id", target_name,
+            update_modified=False,
         )
         external.db_set(
             "last_synced_on",
@@ -551,11 +637,15 @@ def sync_external_material_request(external_name, company):
         mr.status = safe_status
         mr.remote_id = external.name
 
-        for field in ["buying_price_list", "letter_head", "set_warehouse",
-                      "title", "transfer_status", "amended_from", "source_site"]:
+        for field in ["buying_price_list", "set_warehouse",
+                      "title", "transfer_status", "source_site"]:
             value = external.get(field)
             if value is not None:
                 mr.set(field, value)
+        if amended_from:
+            mr.amended_from = amended_from
+        if letter_head:
+            mr.letter_head = letter_head
 
         for item_data in item_rows:
             mr.append("items", {
@@ -616,7 +706,8 @@ def sync_external_material_request(external_name, company):
 
         frappe.db.set_value(
             "External Material Request", external.name,
-            "remote_id", mr.name
+            "remote_id", mr.name,
+            update_modified=False,
         )
         external.db_set(
             "last_synced_on",

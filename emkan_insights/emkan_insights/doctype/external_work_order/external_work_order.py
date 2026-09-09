@@ -3,6 +3,7 @@ from frappe.model.document import Document
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 class ExternalWorkOrder(Document):
     pass
@@ -710,23 +711,27 @@ def _sync_docstatus(target_name, external):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_work_order_docs(source_doctype=None, names=None):
+def sync_external_work_order_docs(source_doctype=None, names=None, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
     if not isinstance(names, (list, tuple)):
         return []
 
-    # De-duplicate incoming names while preserving order. This guarantees
-    # the same record can never end up in two different chunks, which is the
-    # only scenario that could cause a duplicate Work Order to be created
-    # when chunks run in parallel on different workers.
+    # De-duplicate incoming names while preserving order.
     seen = set()
     unique_names = []
     for n in names:
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Synchronous path — called by the sequential pipeline.
+        return _sync_external_work_order_docs_job(
+            source_doctype=source_doctype,
+            names=unique_names,
+        )
 
     # Split into chunks and enqueue one background job per chunk instead
     # of a single job handling all records serially. Each job gets a
@@ -782,15 +787,7 @@ def _sync_external_work_order_docs_job(source_doctype=None, names=None):
             except Exception:
                 frappe.db.rollback()
 
-            frappe.log_error(
-                title=f"Work Order Sync Error: {name}",
-                message=frappe.get_traceback()
-            )
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            break
+            log_record_failure("Work Order", name, str(e))
+            raise
 
     return results

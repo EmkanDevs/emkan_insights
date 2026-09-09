@@ -5,6 +5,12 @@ from frappe.utils import cint, flt
 from contextlib import contextmanager
 from frappe.model.document import Document
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
+from emkan_insights.emkan_insights.sync_guard import temporarily_enable_transaction_items
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 class ExternalDeliveryNote(Document):
     pass
@@ -439,7 +445,8 @@ def sync_external_delivery_note(source_doctype, name):
         if cint(existing_docstatus) != source_docstatus:
             doc = frappe.get_doc("Delivery Note", existing_name)
             doc.flags.ignore_permissions = True
-            _submit_or_cancel_delivery_note(doc, source_docstatus)
+            with temporarily_enable_transaction_items(doc):
+                _submit_or_cancel_delivery_note(doc, source_docstatus)
             doc.reload()
 
         if source_docstatus == 1:
@@ -497,6 +504,10 @@ def sync_external_delivery_note(source_doctype, name):
         for field, value in row.as_dict().items():
             if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                 item_row[field] = value
+
+        # Normalise UOM casing against local master before any further use.
+        if item_row.get("uom"):
+            item_row["uom"] = resolve_uom(item_row["uom"])
 
         so_ref = row.get("against_sales_order") or row.get("sales_order")
         local_so = resolve_local_doc("Sales Order", so_ref, company_abbr) if so_ref else None
@@ -562,10 +573,13 @@ def sync_external_delivery_note(source_doctype, name):
     # FIX: FORCE POSTING DATE TO USE SOURCE DATE
     dn.set_posting_time = 1
 
-    dn.set_missing_values()
-    dn.calculate_taxes_and_totals()
-    
-    dn.insert(ignore_permissions=True)
+    # set_missing_values() calls get_item_details() which raises if an item
+    # is disabled. Guard the whole insert block so disabled items are
+    # temporarily re-enabled for the duration.
+    with temporarily_enable_transaction_items(dn):
+        dn.set_missing_values()
+        dn.calculate_taxes_and_totals()
+        dn.insert(ignore_permissions=True)
 
     clean_duplicate_dn_items(dn.name)
 
@@ -600,12 +614,14 @@ def sync_external_delivery_note(source_doctype, name):
     # DOCSTATUS SYNC (ORM submit / cancel)
     # ------------------------------------------------
     if source_docstatus == 1:
-        _submit_or_cancel_delivery_note(dn, source_docstatus)
+        with temporarily_enable_transaction_items(dn):
+            _submit_or_cancel_delivery_note(dn, source_docstatus)
         dn.reload()
         _verify_and_log_gl_entries(dn, "Submitted")
 
     elif source_docstatus == 2:
-        _submit_or_cancel_delivery_note(dn, source_docstatus)
+        with temporarily_enable_transaction_items(dn):
+            _submit_or_cancel_delivery_note(dn, source_docstatus)
         dn.reload()
         _verify_and_log_gl_entries(dn, "Cancelled")
     
@@ -623,7 +639,7 @@ def sync_external_delivery_note(source_doctype, name):
 # ==========================================================
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_delivery_note_docs(source_doctype, names=None):
+def sync_external_delivery_note_docs(source_doctype, names=None, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -637,6 +653,18 @@ def sync_external_delivery_note_docs(source_doctype, names=None):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_delivery_note_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -682,15 +710,8 @@ def _sync_delivery_note_docs_job(source_doctype, names=None):
                 results.append(result)
 
         except Exception as e:
-            frappe.log_error(
-                title=f"Delivery Note Sync Error: {name}",
-                message=frappe.get_traceback()
-            )
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            break
+            # savepoint_context has already rolled this record back.
+            log_record_failure(source_doctype, name, str(e))
+            raise
 
     return results

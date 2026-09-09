@@ -3,6 +3,10 @@ import json
 from frappe.utils import flt
 from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import sync_record_guard
 
 # ==========================================================
@@ -467,7 +471,7 @@ def _sync_existing_docstatus(existing_name, src):
                 title=f"PE {existing_name} Submitted->Cancelled sync FAILED",
                 message=frappe.get_traceback(),
             )
-            return existing_name
+            raise
 
     if local_docstatus != 0:
         _log(
@@ -500,7 +504,7 @@ def _sync_existing_docstatus(existing_name, src):
             title=f"PE {existing_name} docstatus reconciliation FAILED",
             message=frappe.get_traceback(),
         )
-        return existing_name
+        raise
 
 
 # ==========================================================
@@ -509,7 +513,7 @@ def _sync_existing_docstatus(existing_name, src):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_payment_entry_docs(source_doctype, names):
+def sync_payment_entry_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -523,6 +527,18 @@ def sync_payment_entry_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_payment_entry_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -569,13 +585,9 @@ def _sync_payment_entry_docs_job(source_doctype, names):
                 results.append({"name": name, "status": "synced", "payment_entry": result})
 
         except Exception:
-            error = frappe.get_traceback()
-            _log(title=f"Payment Entry Sync Error: {name}", message=error)
-            results.append({
-                "name": name,
-                "status": "failed"
-            })
-            break
+            # sync_record_guard has already rolled this record back.
+            log_record_failure(source_doctype, name)
+            raise
 
     return results
 

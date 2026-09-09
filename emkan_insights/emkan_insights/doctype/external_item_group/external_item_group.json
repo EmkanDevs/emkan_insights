@@ -17,6 +17,7 @@
   "column_break_5",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "defaults",
   "item_group_defaults",
@@ -24,7 +25,8 @@
   "taxes",
   "lft",
   "old_parent",
-  "rgt"
+  "rgt",
+  "json"
  ],
  "fields": [
   {
@@ -146,6 +148,18 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-sitemap",
@@ -154,7 +168,7 @@
  "is_tree": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2026-07-29 12:36:04.149360",
+ "modified": "2026-09-07 14:17:37.249145",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Item Group",

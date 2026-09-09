@@ -7,6 +7,11 @@ import frappe
 import requests
 from frappe import _
 
+from emkan_insights.emkan_insights.fetch_window import (
+    add_fetch_window_end,
+    mark_fetch_completed,
+    mark_fetch_started,
+)
 from emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration import (
     _build_company_prefixed_remote_id,
     _get_company_abbr_for_sync,
@@ -29,8 +34,7 @@ from emkan_insights.emkan_insights.doctype.external_site_configuration.external_
 # item already processed in the same chunk) is handled inside _run_sync_loop
 # via DB savepoints in _process_item (external_site_configuration.py).
 #
-# DO NOT add frappe.db.commit() calls here -- they would break the savepoint
-# isolation that _run_sync_loop relies on.
+# Explicit commits would break the savepoint isolation used by _run_sync_loop.
 # ---------------------------------------------------------------------------
 
 # Tune these based on remote API rate limits / worker capacity.
@@ -212,8 +216,7 @@ def sync_journal_entries_from_remote(
     - Two-phase fetch (names first, then full docs per chunk) prevents memory
       exhaustion on large datasets and keeps this request fast.
     - Fixed CHUNK_SIZE bounds each worker's runtime regardless of total volume.
-    - No frappe.db.commit() -- Frappe commits automatically on clean return
-      from a whitelisted request or background job.
+    - Frappe commits automatically after a clean request or job return.
     """
     if not _acquire_sync_lock(child_docname):
         frappe.throw(
@@ -236,16 +239,21 @@ def sync_journal_entries_from_remote(
             child_docname,
             "last_sync"
         )
+        previous_last_sync, fetch_started_at = mark_fetch_started(
+            child_docname, REMOTE_DT, previous_last_sync, fetch_started_at
+        )
 
         filters = [
             ["docstatus", "in", [0, 1, 2]]
         ]
-        # if previous_last_sync:
-        #     filters.append([
-        #         "modified",
-        #         ">",
-        #         frappe.utils.get_datetime_str(previous_last_sync)
-        #     ])
+        # Incremental fetch: only pull records modified since last fetch.
+        if previous_last_sync:
+            filters.append([
+                "modified",
+                ">",
+                frappe.utils.get_datetime_str(previous_last_sync)
+            ])
+        add_fetch_window_end(filters, fetch_started_at)
 
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
@@ -254,12 +262,13 @@ def sync_journal_entries_from_remote(
             )
 
         names = _fetch_remote_names(base_url, headers, filters)
+        from emkan_insights.emkan_insights.fetch_log import log_fetch_plan
+        log_fetch_plan(REMOTE_DT, configuration_name, filters, len(names))
 
         if not names:
             _release_sync_lock(child_docname)
-            last_sync = fetch_started_at
-            frappe.db.set_value(
-                "External Site Configuration CT", child_docname, "last_sync", last_sync
+            last_sync = mark_fetch_completed(
+                child_docname, REMOTE_DT, fetch_started_at, record_count=0
             )
             return {
                 "count": 0,
@@ -335,8 +344,7 @@ def process_journal_entry_chunk(
     External Journal Entry before inserting fresh ones from the remote data,
     preventing duplicate or orphaned account rows across re-syncs.
 
-    No frappe.db.commit() is called here -- the background job runner commits
-    automatically on a clean return.
+    The background job runner commits automatically on a clean return.
     """
     base_url = (site_url or "").rstrip("/")
     headers = {
@@ -381,9 +389,11 @@ def process_journal_entry_chunk(
 
     finally:
         if is_last_chunk:
-            last_sync = fetch_started_at or frappe.utils.now()
-            frappe.db.set_value(
-                "External Site Configuration CT", child_docname, "last_sync", last_sync
+            last_sync = mark_fetch_completed(
+                child_docname,
+                REMOTE_DT,
+                fetch_started_at or frappe.utils.now(),
+                record_count=state.get("count", 0),
             )
             _release_sync_lock(child_docname)
             frappe.publish_realtime(

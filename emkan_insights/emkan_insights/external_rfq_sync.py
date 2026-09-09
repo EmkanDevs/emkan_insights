@@ -3,11 +3,16 @@ import json
 from frappe import _
 from frappe.utils import flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    run_chunks_fail_fast,
+    sync_records_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
     set_source_site_fields,
     sync_record_guard,
     temporarily_enable_transaction_items,
 )
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -224,7 +229,7 @@ def _sync_existing_docstatus(existing, external):
 
     except Exception as trans_err:
         _log(f"RFQ {existing} docstatus transition failed", frappe.get_traceback())
-        return {"name": existing, "status": "exists", "error": str(trans_err)}
+        raise
 
 
 def _sync_single_rfq(name):
@@ -247,7 +252,11 @@ def _sync_single_rfq(name):
     # -------------------------------------------------
     company_abbr = frappe.db.get_value("Company", external.company, "abbr") or ""
     remote_id = external.name
-    target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+    # Contract: only the External staging doctype carries the company-abbr prefix.
+    # The actual RFQ uses the same name verbatim — no additional prefix is added.
+    # external.name is already e.g. "CPC-RFQ-2025-00107"; adding the abbr again
+    # would produce "CPC-CPC-RFQ-2025-00107".
+    target_name = remote_id
 
     # -------------------------------------------------
     # CHECK ALREADY SYNCED
@@ -348,12 +357,6 @@ def _sync_single_rfq(name):
             _log(f"RFQ item skip - no local item for {row.item_code}",
                  f"External RFQ {name}, row {row.name}")
             continue
-        if frappe.db.get_value("Item", item_code, "disabled"):
-            _log(
-                f"RFQ item skip - disabled item {item_code}",
-                f"External RFQ {name}, row {row.name}"
-            )
-            continue
 
         # Resolve warehouse
         warehouse = None
@@ -375,19 +378,33 @@ def _sync_single_rfq(name):
         if row.get("material_request"):
             material_request = resolve_local_doc("Material Request", row.material_request, company_abbr)
             if material_request:
-                material_request_item = get_child_detail(
-                    "Material Request Item",
-                    material_request,
-                    item_code,
-                    remote_item_name=row.get("material_request_item")
-                )
+                # Drop the link if the MR is cancelled — ERPNext raises
+                # CancelledLinkError on submit when any linked doc is docstatus=2.
+                mr_docstatus = frappe.db.get_value("Material Request", material_request, "docstatus")
+                if frappe.utils.cint(mr_docstatus) == 2:
+                    frappe.log_error(
+                        title=f"RFQ {name}: MR link cleared (MR cancelled)",
+                        message=(
+                            f"Item '{item_code}': Material Request '{material_request}' "
+                            f"is cancelled (docstatus=2). Clearing the link so the RFQ "
+                            f"can be submitted without CancelledLinkError."
+                        ),
+                    )
+                    material_request = None
+                else:
+                    material_request_item = get_child_detail(
+                        "Material Request Item",
+                        material_request,
+                        item_code,
+                        remote_item_name=row.get("material_request_item")
+                    )
 
         rfq.append("items", {
             "item_code": item_code,
             "item_name": row.item_name,
             "description": row.description,
             "qty": row.qty,
-            "uom": row.uom,
+            "uom": resolve_uom(row.uom),
             "warehouse": warehouse,
             "schedule_date": row.schedule_date,
             "supplier_part_no": row.supplier_part_no,
@@ -395,7 +412,7 @@ def _sync_single_rfq(name):
             "item_group": row.item_group,
             "brand": row.brand,
             "image": row.image,
-            "stock_uom": row.stock_uom,
+            "stock_uom": resolve_uom(row.stock_uom),
             "conversion_factor": row.conversion_factor or 1,
             "stock_qty": row.stock_qty or row.qty,
             "material_request": material_request,
@@ -405,14 +422,12 @@ def _sync_single_rfq(name):
         })
 
     if not rfq.items:
-        frappe.throw(
-            _("RFQ {0} has no valid enabled item rows to sync").format(name)
+        _log(
+            f"RFQ {name} skipped — no valid enabled item rows to sync",
+            f"All item rows were skipped (item not found locally or disabled). "
+            f"External RFQ: {name}"
         )
-
-    _log(f"RFQ {target_name} pre-insert check",
-         f"Suppliers: {len(rfq.suppliers)}, Items: {len(rfq.items)}, "
-         f"Naming Series: {rfq.naming_series}, Company: {rfq.company}, "
-         f"External docstatus: {external.docstatus}")
+        return {"name": name, "status": "skipped", "reason": "no_valid_items"}
 
     # -------------------------------------------------
     # FLAGS
@@ -421,15 +436,13 @@ def _sync_single_rfq(name):
     rfq.flags.ignore_naming_series = True
 
     # -------------------------------------------------
-    # INSERT
+    # INSERT — temporarily enable any disabled items so
+    # Frappe's item-validation does not reject the row.
+    # They are re-disabled automatically on exit.
     # -------------------------------------------------
-    rfq.insert(
-        ignore_permissions=True,
-    )
+    with temporarily_enable_transaction_items(rfq):
+        rfq.insert(ignore_permissions=True)
     _safe_dedupe(rfq.name)
-
-    _log(f"RFQ {rfq.name} inserted successfully",
-         f"Docstatus after insert: {rfq.docstatus}, Status: {rfq.status}")
 
     # -------------------------------------------------
     # NAMING SAFETY NET
@@ -462,34 +475,21 @@ def _sync_single_rfq(name):
     frappe.clear_document_cache("Request for Quotation", rfq.name)
     rfq = frappe.get_doc("Request for Quotation", rfq.name)
 
-    _log(f"RFQ {rfq.name} pre-docstatus-sync",
-         f"External docstatus: {external.docstatus}, "
-         f"Current docstatus: {rfq.docstatus}, "
-         f"Suppliers count: {len(rfq.suppliers)}, "
-         f"Items count: {len(rfq.items)}")
-
     if external.docstatus == 1:
         try:
             rfq.flags.ignore_permissions = True
-            rfq.submit()
+            with temporarily_enable_transaction_items(rfq):
+                rfq.submit()
             _safe_dedupe(rfq.name)
-            _log(f"RFQ {rfq.name} submitted successfully", "")
             result = {"name": rfq.name, "status": "synced", "docstatus": 1}
 
         except Exception as submit_err:
             tb = frappe.get_traceback()
             _log(f"RFQ {rfq.name} SUBMIT FAILED",
                  f"Error: {str(submit_err)}\n\nTraceback:\n{tb}")
-            # Keep the draft that was already inserted; report the submit
-            # failure but don't raise, so this record's savepoint is not
-            # rolled back and the draft still gets committed by the caller.
-            result = {
-                "name": rfq.name,
-                "status": "synced_draft",
-                "error": f"Submit failed: {str(submit_err)}"
-            }
-            external.db_set("remote_id", rfq.name)
-            return result
+            # Re-raise so sync_record_guard rolls back the draft insert and
+            # the job loop records this as a genuine failure.
+            raise
 
     elif external.docstatus == 2:
         try:
@@ -498,7 +498,6 @@ def _sync_single_rfq(name):
             # Submit first (required before ORM cancel)
             with temporarily_enable_transaction_items(rfq):
                 rfq.submit()
-            _log(f"RFQ {rfq.name} submitted (step 1 of cancel)", "")
 
             rfq = frappe.get_doc("Request for Quotation", rfq.name)
             with temporarily_enable_transaction_items(rfq):
@@ -506,43 +505,34 @@ def _sync_single_rfq(name):
             _safe_dedupe(rfq.name)
 
             final_docstatus = frappe.db.get_value("Request for Quotation", rfq.name, "docstatus")
-            _log(f"RFQ {rfq.name} cancel complete", f"Final docstatus: {final_docstatus}")
 
             if final_docstatus == 2:
                 result = {"name": rfq.name, "status": "synced", "docstatus": 2}
             else:
                 _log(f"RFQ {rfq.name} CANCEL VERIFICATION FAILED",
                      f"Expected docstatus=2, got docstatus={final_docstatus}")
-                result = {
-                    "name": rfq.name,
-                    "status": "sync_error",
-                    "error": f"Cancel verification failed - docstatus is {final_docstatus}"
-                }
+                raise Exception(
+                    f"RFQ {rfq.name}: cancel verification failed - "
+                    f"docstatus is {final_docstatus}"
+                )
 
         except Exception as cancel_err:
-            # ORM cancel failed. Do NOT fall back to raw SQL — that would bypass
-            # lifecycle hooks and leave data inconsistent. Leave the RFQ at
-            # docstatus=1 (Submitted); _sync_existing_docstatus will retry
-            # cancel on the next sync run.
+            # ORM cancel failed. Re-raise so sync_record_guard rolls back the
+            # partial write and the job loop counts this record as failed.
+            # _sync_existing_docstatus will retry the cancel on the next run.
             _log(
                 f"RFQ {rfq.name} CANCEL FAILED — CRITICAL, manual intervention may be required",
                 f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
                 f"The RFQ is stuck at docstatus=1. Cancel manually via ERPNext or "
                 f"investigate the validation error blocking cancel()."
             )
-            result = {
-                "name": rfq.name,
-                "status": "synced_submitted",
-                "error": f"Cancel failed: {str(cancel_err)}"
-            }
-            external.db_set("remote_id", rfq.name)
-            return result
+            raise
 
     else:
         # docstatus = 0 (Draft) - already in correct state
         result = {"name": rfq.name, "status": "synced", "docstatus": 0}
 
-    external.db_set("remote_id", rfq.name)
+    external.db_set("remote_id", rfq.name, update_modified=False)
     external.db_set(
         "last_synced_on",
         sync_started_at,
@@ -557,7 +547,7 @@ def _sync_single_rfq(name):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_rfq_docs(source_doctype: str, names):
+def sync_rfq_docs(source_doctype: str, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -582,7 +572,16 @@ def sync_rfq_docs(source_doctype: str, names):
             seen.add(n)
             unique_names.append(n)
 
-    job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_0"
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_rfq_docs_job(names=chunk),
+        )
+
+    job_name = f"rfq_fetch_chunk_{frappe.generate_hash(length=8)}_0"
     frappe.enqueue(
         "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",
         queue="long",
@@ -611,28 +610,16 @@ def _sync_rfq_docs_job(names, batch_index=0):
 
     batch_index = int(batch_index or 0)
     chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
-    results = []
-    sync_failed = False
 
-    for name in chunk:
-        try:
-            with sync_record_guard("External Request for Quotation", name):
-                result = _sync_single_rfq(name)
-                results.append(result)
-
-        except Exception as e:
-            error = frappe.get_traceback()
-            _log(f"RFQ Sync Error: {name}", error)
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            sync_failed = True
-            break
+    results = sync_records_fail_fast(
+        chunk,
+        _sync_single_rfq,
+        source_doctype="External Request for Quotation",
+        record_context=lambda name: sync_record_guard("External Request for Quotation", name),
+    )
 
     next_batch_index = batch_index + 1
-    if not sync_failed and next_batch_index * CHUNK_SIZE < len(names):
+    if next_batch_index * CHUNK_SIZE < len(names):
         job_name = f"rfq_sync_chunk_{frappe.generate_hash(length=8)}_{next_batch_index}"
         frappe.enqueue(
             "emkan_insights.emkan_insights.external_rfq_sync._sync_rfq_docs_job",

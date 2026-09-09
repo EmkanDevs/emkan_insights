@@ -1,5 +1,6 @@
 frappe.ui.form.on('External Site Configuration', {
     refresh: function(frm) {
+        add_bulk_insert_listener(frm);
         if (!frm.is_new()) {
             add_sequence_button(
                 frm,
@@ -19,6 +20,7 @@ frappe.ui.form.on('External Site Configuration', {
                 "emkan_insights.emkan_insights.scheduler.fetch_and_sync_external_site_configuration_sequence",
                 __('Queueing sequential fetch and sync...')
             );
+            add_bulk_insert_button(frm);
             add_sequence_button(
                 frm,
                 __('Stop Jobs'),
@@ -113,6 +115,40 @@ function get_sequence_indicator(status) {
     return 'blue';
 }
 
+function add_bulk_insert_button(frm) {
+    frm.add_custom_button(__('Bulk Insert'), function () {
+        if (frm.is_dirty()) {
+            frappe.msgprint(__('Save the configuration and its DocType order before starting bulk insert.'));
+            return;
+        }
+
+        const rows = (frm.doc.fetch_data || []).filter(row => row.ref_doctype && row.name);
+        if (!rows.length) {
+            frappe.msgprint(__('Add and save at least one Fetch Data row first.'));
+            return;
+        }
+
+        queue_bulk_insert(frm.doc.name);
+    }, __('Sequential Sync'));
+}
+
+function queue_bulk_insert(configuration_name) {
+    frappe.call({
+        method: "emkan_insights.emkan_insights.external_data_bulk_insert.queue_external_data_bulk_insert",
+        args: { configuration_name: configuration_name },
+        freeze: true,
+        freeze_message: __("Queueing bulk insert..."),
+        callback: function (r) {
+            if (r.message) {
+                frappe.show_alert({
+                    message: __(r.message.message || "Bulk insert queued."),
+                    indicator: "blue"
+                });
+            }
+        }
+    });
+}
+
 
 
 frappe.ui.form.on('External Site Configuration CT', {
@@ -165,6 +201,7 @@ frappe.ui.form.on('External Site Configuration CT', {
             "Payment Request": "emkan_insights.emkan_insights.sync_payment_request_from_remote.sync_payment_requests_from_remote",
             "Request for Quotation": "emkan_insights.emkan_insights.sync_request_for_quotation_from_remote.sync_request_for_quotation_from_remote",
             "Journal Entry":  "emkan_insights.emkan_insights.sync_journal_entry_from_remote.sync_journal_entries_from_remote",
+            "Purchase Order": "emkan_insights.emkan_insights.sync_purchase_order_from_remote.sync_purchase_orders_from_remote"
         };
         const generic_method = "emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration.sync__docs";
         const sync_method = sync_methods[row.ref_doctype] || generic_method;
@@ -455,7 +492,12 @@ function get_mapping() {
         "Sales Stage" : "External Sales Stage",
         "Mode of Payment": "External Mode of Payment",
         "Payment Term": "External Payment Term",
-        "Email Template": "External Email Template"
+        "Email Template": "External Email Template",
+        "Period Closing Voucher": "External Period Closing Voucher",
+        "GL Entry": "External GL Entry",
+        "Payment Ledger Entry": "External Payment Ledger Entry",
+        "Stock Ledger Entry": "External Stock Ledger Entry",
+        "Blanket Order": "External Blanket Order"
 
     };
 
@@ -522,6 +564,7 @@ function load_fetch_data_from_site_config(frm) {
                 let child = frm.add_child('fetch_data');
                 child.ref_doctype = row.ref_doctype;
                 child.exported_doctype = row.exported_doctype;
+                child.abbr_required = row.abbr_required;
             });
             frm.refresh_field('fetch_data');
             // ✅ NO frm.save() here — that was causing the loop
@@ -534,4 +577,26 @@ function load_fetch_data_from_site_config(frm) {
             frm._fetch_in_progress = false;
         }
     });
+}
+
+function add_bulk_insert_listener(frm) {
+    if (frm._bulk_insert_listener_registered) {
+        return;
+    }
+
+    frappe.realtime.on("external_data_bulk_insert_complete", function (result) {
+        if (result.configuration !== frm.doc.name) {
+            return;
+        }
+
+        frappe.msgprint({
+            title: __("Bulk Insert Complete"),
+            indicator: "green",
+            message: __(
+                "Processed {0} DocTypes. Inserted {1} records and updated {2} existing records.",
+                [result.processed_doctypes, result.inserted, result.updated]
+            )
+        });
+    });
+    frm._bulk_insert_listener_registered = true;
 }

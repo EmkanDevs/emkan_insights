@@ -1,7 +1,9 @@
-import frappe
 import time
+from collections import deque
 from contextlib import contextmanager
 from inspect import signature
+
+import frappe
 from frappe.model.document import Document
 
 from emkan_insights.emkan_insights.registry.fetch_registry import (
@@ -12,6 +14,8 @@ from emkan_insights.emkan_insights.registry.fetch_registry import (
 from emkan_insights.emkan_insights.registry.sync_registry import (
     SYNC_METHODS,
 )
+
+from emkan_insights.emkan_insights.sync_validation import data_field_validation_disabled
 
 SYNC_SEQUENCE = [
     "UOM",
@@ -60,9 +64,9 @@ SYNC_SEQUENCE = [
     "Production Plan",
     "Work Order",
     "Material Request",
-    "Stock Entry",
     "Request for Quotation",
     "Supplier Quotation",
+    "Blanket Order",
     "Purchase Order",
     "Purchase Receipt",
     "Purchase Invoice",
@@ -70,10 +74,15 @@ SYNC_SEQUENCE = [
     "Sales Order",
     "Delivery Note",
     "Sales Invoice",
+    "Stock Entry",
     "Expense Claim",
     "Payment Entry",
     "Journal Entry",
     "Stock Reconciliation",
+    "Period Closing Voucher",
+    "GL Entry",
+    "Payment Ledger Entry",
+    "Stock Ledger Entry",
 ]
 
 
@@ -147,9 +156,16 @@ LINK_AUDIT_MAX_DOCS_PER_DOCTYPE = 500
 
 
 def _log_sync_event(title, message=None):
+    frappe.logger("external_sync").info("%s | %s", title, message or title)
+
+
+def _log_sync_progress(title, message=None):
+    """Write a bounded progress checkpoint that is visible from Desk."""
+    detail = message or title
+    _log_sync_event(title, detail)
     frappe.log_error(
-        title=title[:140],
-        message=message or title,
+        title=f"External Sync Progress: {title}"[:140],
+        message=detail,
     )
 
 
@@ -185,6 +201,59 @@ def _acquire_site_pipeline_lock(config_name):
 
 def _release_site_pipeline_lock(config_name):
     frappe.cache().delete(_site_pipeline_lock_key(config_name))
+
+
+def _force_release_target_sync_lock(external_doctype):
+    """Best-effort removal of a module-owned target sync lock.
+
+    Called on the pipeline failure path so one aborted run does not leave
+    `external_target_sync_lock:*` held until TTL expiry and block subsequent
+    runs. Idempotent; never masks the original exception.
+    """
+    try:
+        frappe.cache().delete(_target_sync_lock_key(external_doctype))
+    except Exception:
+        pass
+
+
+@frappe.whitelist()
+def get_site_pipeline_lock_status(site_config):
+    """Return whether the pipeline lock is currently held and how long until it expires.
+
+    Useful for diagnosing 'already syncing' errors when no RQ job is visible.
+    """
+    key = _site_pipeline_lock_key(site_config)
+    cache = frappe.cache()
+    exists = bool(cache.execute_command("EXISTS", key))
+    ttl = cache.execute_command("TTL", key) if exists else -2
+    return {
+        "site_config": site_config,
+        "locked": exists,
+        # TTL in seconds; -1 means no expiry set, -2 means key does not exist
+        "ttl_seconds": ttl,
+    }
+
+
+@frappe.whitelist()
+def force_release_site_pipeline_lock(site_config):
+    """Force-release a stuck pipeline lock for a site configuration.
+
+    Only use this when you are certain no sync job is actually running
+    (e.g. the worker was restarted and no RQ job appears in the queue).
+    """
+    frappe.only_for("System Manager")
+    key = _site_pipeline_lock_key(site_config)
+    was_locked = bool(frappe.cache().execute_command("EXISTS", key))
+    _release_site_pipeline_lock(site_config)
+    _log_sync_event(
+        "Pipeline Lock Force-Released",
+        f"Operator manually released the pipeline lock for {site_config}. "
+        f"Lock was {'present' if was_locked else 'already absent'}.",
+    )
+    return {
+        "site_config": site_config,
+        "released": was_locked,
+    }
 
 
 def _wait_for_redis_lock_to_clear(lock_key, timeout=ROW_WAIT_TIMEOUT):
@@ -317,6 +386,62 @@ def _link_validation_disabled():
         Document._validate_links = original_validate_links
 
 
+@contextmanager
+def _synchronous_enqueue():
+    """Run enqueued jobs immediately instead of sending them to RQ.
+
+    The pipeline parent job occupies the only worker, so chunk jobs enqueued
+    onto the same queue would sit queued until the parent exits — starving
+    them and starting the sync phase before any data was fetched. Drain nested
+    enqueues iteratively so completed chunks can release their payloads instead
+    of remaining on a recursive call stack. Standalone button fetches are
+    unaffected.
+    """
+    original_enqueue = frappe.enqueue
+    pending_jobs = deque()
+    draining = False
+
+    def _run_inline(method, *args, **kwargs):
+        nonlocal draining
+
+        for key in (
+            "queue",
+            "timeout",
+            "job_name",
+            "enqueue_after",
+            "at_front",
+            "deduplicate",
+            "now",
+            "enqueue_after_commit",
+        ):
+            kwargs.pop(key, None)
+        pending_jobs.append((method, args, kwargs))
+
+        if draining:
+            return None
+
+        draining = True
+        first_result = None
+        try:
+            while pending_jobs:
+                queued_method, queued_args, queued_kwargs = pending_jobs.popleft()
+                fn = queued_method if callable(queued_method) else frappe.get_attr(queued_method)
+                result = fn(*queued_args, **queued_kwargs)
+                frappe.db.commit()
+                if first_result is None:
+                    first_result = result
+            return first_result
+        finally:
+            pending_jobs.clear()
+            draining = False
+
+    frappe.enqueue = _run_inline
+    try:
+        yield
+    finally:
+        frappe.enqueue = original_enqueue
+
+
 def _sync_inline_generic_records(ref_doctype, external_doctype, names):
     from emkan_insights.emkan_insights.external_sync import (
         _sync_external_docs_worker,
@@ -352,6 +477,34 @@ def _sync_records_for_sequence_row(sync_method, row, external_doctype, names, co
     return result
 
 
+def _get_synced_record_count(ref_doctype, names, result):
+    if isinstance(result, list):
+        is_chunk_summary = bool(result) and all(
+            isinstance(row, dict)
+            and isinstance(row.get("success"), int)
+            and not isinstance(row.get("success"), bool)
+            for row in result
+        )
+        synced_count = (
+            sum(row["success"] for row in result)
+            if is_chunk_summary
+            else len(result)
+        )
+        if synced_count != len(names):
+            frappe.throw(
+                f"Incomplete {ref_doctype} sync: {synced_count} of {len(names)} record(s) completed"
+            )
+        return synced_count
+
+    if ref_doctype in GENERIC_INLINE_SYNC_REFS:
+        frappe.throw(
+            f"Failed to verify {ref_doctype} sync: expected a list of synced records, "
+            f"got {type(result).__name__}"
+        )
+
+    return len(names)
+
+
 def _throw_if_sync_result_failed(ref_doctype, result):
     if isinstance(result, list):
         failed = [
@@ -359,17 +512,37 @@ def _throw_if_sync_result_failed(ref_doctype, result):
             if isinstance(row, dict) and str(row.get("status") or "").lower() in {"failed", "error"}
         ]
         if failed:
+            details = "\n".join(
+                f"- {row.get('name')}: {row.get('error')}"
+                + (f"\n  traceback: {str(row.get('traceback'))[:1000]}" if row.get("traceback") else "")
+                for row in failed
+            )
+            frappe.log_error(
+                title=f"Sync record failures: {ref_doctype}"[:140],
+                message=f"{len(failed)} record(s) failed:\n{details}",
+            )
             frappe.throw(f"Failed to sync {ref_doctype}: {len(failed)} failed record(s)")
         return
 
     if not isinstance(result, dict):
         return
 
-    failed_count = frappe.utils.cint(result.get("failed_count") or result.get("failed"))
+    failed_value = result.get("failed_count")
+    if failed_value is None:
+        failed_value = result.get("failed")
+
+    # Containers count as failures when non-empty; cint() of a list is
+    # always 0, which previously hid list-valued "failed" results.
+    if isinstance(failed_value, (list, tuple, set, dict)):
+        failed_count = len(failed_value)
+    else:
+        failed_count = frappe.utils.cint(failed_value)
+
+    status = str(result.get("status") or "").lower()
+
     if failed_count:
         frappe.throw(f"Failed to sync {ref_doctype}: {failed_count} failed record(s)")
 
-    status = str(result.get("status") or "").lower()
     if status in {"failed", "error"}:
         frappe.throw(f"Failed to sync {ref_doctype}: {result}")
 
@@ -670,8 +843,6 @@ def clean_external_site_configuration_staging(site_config, dry_run=1, confirm=0,
         )
         if count:
             deleted_by_doctype[external_doctype] = count
-            if not dry_run and fast:
-                frappe.db.commit()
 
     reset_fetch_rows = len(config.fetch_data or [])
     if not dry_run:
@@ -683,7 +854,6 @@ def clean_external_site_configuration_staging(site_config, dry_run=1, confirm=0,
                 None,
                 update_modified=False,
             )
-        frappe.db.commit()
 
     return {
         "status": "dry_run" if dry_run else "deleted",
@@ -780,12 +950,14 @@ def stop_external_site_configuration_jobs(site_config):
     from rq import cancel_job
     from rq.command import send_stop_job_command
     from rq.exceptions import InvalidJobOperation, NoSuchJobError
+    from rq.job import Job
 
-    from frappe.core.doctype.rq_job.rq_job import RQJob
     from frappe.utils.background_jobs import get_redis_conn
+    from frappe.core.doctype.rq_job.rq_job import RQJob, serialize_job
 
     conn = get_redis_conn()
     stopped_job_ids = []
+
     matching_job_ids = RQJob.get_matching_job_ids(
         {
             "filters": {
@@ -795,11 +967,19 @@ def stop_external_site_configuration_jobs(site_config):
         }
     )
 
-    for job_id in matching_job_ids:
-        job = frappe.get_doc("RQ Job", job_id)
-        job_name = job.job_name or ""
-        arguments = job.arguments or ""
-        description = getattr(job.job, "description", "") or ""
+    # Fetch all jobs in one round-trip; missing jobs are returned as None
+    jobs = Job.fetch_many(job_ids=matching_job_ids, connection=conn)
+
+    for rq_job in jobs:
+        if rq_job is None:
+            # Job disappeared between listing and fetching — skip silently
+            continue
+
+        job_id = rq_job.id
+        job_data = serialize_job(rq_job)
+        job_name = job_data.get("job_name") or ""
+        arguments = str(rq_job.kwargs) or ""
+        description = getattr(rq_job, "description", "") or ""
 
         if "emkan_insights" not in job_name and "emkan_insights" not in description:
             continue
@@ -812,16 +992,16 @@ def stop_external_site_configuration_jobs(site_config):
         ):
             continue
 
-        if job.status == "started":
-            try:
+        try:
+            if rq_job.get_status() == "started":
                 send_stop_job_command(connection=conn, job_id=job_id)
-            except (InvalidJobOperation, NoSuchJobError):
-                pass
-        else:
-            cancel_job(job_id, connection=conn)
+            else:
+                cancel_job(job_id, connection=conn)
+        except (InvalidJobOperation, NoSuchJobError):
+            pass
 
         try:
-            job.job.delete()
+            rq_job.delete()
         except Exception:
             pass
         stopped_job_ids.append(job_id)
@@ -974,12 +1154,22 @@ def _fetch_configuration_sequentially(config_name):
         config_name,
     )
 
-    _log_sync_event("Sequential Fetch Started", f"Processing {config.name}")
+    logger = frappe.logger("external_sync")
+    logger.info("Sequential Fetch Started: %s", config.name)
+    _log_sync_progress(
+        f"Fetch Started: {config.name}",
+        f"Sequential fetch started for {config.name}.",
+    )
 
     for row in _ordered_fetch_rows(config):
-        _log_sync_event(
+        logger.info(
+            "Fetching %s from %s",
+            row.ref_doctype,
+            config.name,
+        )
+        _log_sync_progress(
             f"Fetching {row.ref_doctype}",
-            f"Fetching {row.ref_doctype} from External Site Configuration {config.name}",
+            f"Site: {config.name}",
         )
         _wait_for_redis_lock_to_clear(_row_fetch_lock_key(row.name))
 
@@ -989,24 +1179,31 @@ def _fetch_configuration_sequentially(config_name):
         )
 
         try:
-            fetch_method(
-                site_url=config.site_url,
-                api_key=config.api_key,
-                api_secret=config.api_secret,
-                ref_doctype=row.ref_doctype,
-                child_docname=row.name,
-                company=config.company,
-                configuration_name=config.name,
-            )
+            with _synchronous_enqueue():
+                fetch_method(
+                    site_url=config.site_url,
+                    api_key=config.api_key,
+                    api_secret=config.api_secret,
+                    ref_doctype=row.ref_doctype,
+                    child_docname=row.name,
+                    company=config.company,
+                    configuration_name=config.name,
+                )
             _wait_for_redis_lock_to_clear(_row_fetch_lock_key(row.name))
+            _log_sync_progress(
+                f"Fetched {row.ref_doctype}",
+                f"Site: {config.name}",
+            )
+            frappe.db.commit()
 
         except Exception:
             _log_sync_failure(f"Failed to fetch {row.ref_doctype} from {config.name}")
             raise
 
-    _log_sync_event(
-        "Sequential Fetch Completed",
-        f"Completed sequential fetch for {config.name}",
+    logger.info("Sequential Fetch Completed: %s", config.name)
+    _log_sync_progress(
+        f"Fetch Completed: {config.name}",
+        f"Sequential fetch completed for {config.name}.",
     )
 
 
@@ -1016,48 +1213,61 @@ def _sync_configuration_sequentially(config_name):
         config_name,
     )
 
+    logger = frappe.logger("external_sync")
+    logger.info("Sequential Sync Started: %s", config.name)
+    _log_sync_progress(
+        f"Sync Started: {config.name}",
+        f"Sequential sync started for {config.name}.",
+    )
+
     for row in _ordered_fetch_rows(config):
 
         sync_method = SYNC_METHODS.get(row.ref_doctype)
 
         if not sync_method:
-            _log_sync_event(
-                "Sequential Sync Skipped",
-                f"No sync method configured for '{row.ref_doctype}'"
-            )
+            logger.info("Sequential Sync Skipped: no sync method for '%s'", row.ref_doctype)
             continue
 
         external_doctype = _external_doctype_for_ref(row.ref_doctype)
 
         if not frappe.db.exists("DocType", external_doctype):
+            logger.info(
+                "Sequential Sync Skipped: missing external doctype '%s' for '%s'",
+                external_doctype,
+                row.ref_doctype,
+            )
             continue
-
-        _log_sync_event(
-            title="Sync Debug",
-            message=f"Looking for pending {external_doctype} records"
-        )
 
         names = get_external_doc_names_to_sync(
             external_doctype,
             config=config,
         )
 
+        filter_clauses, filter_values = _external_doc_sync_filters(external_doctype, config)
+        sync_filter_description = (
+            "(last_synced_on IS NULL OR modified > last_synced_on)"
+            + (f" AND {' AND '.join(filter_clauses)}" if filter_clauses else "")
+        )
+        if filter_values:
+            sync_filter_description += f" | values: {filter_values}"
+
+        from emkan_insights.emkan_insights.fetch_log import log_sync_plan
+
+        log_sync_plan(row.ref_doctype, config.name, sync_filter_description, len(names))
+
         if not names:
-            _log_sync_event(
-                f"No {row.ref_doctype} Records Pending",
-                f"No {row.ref_doctype} records pending sync."
-            )
+            logger.info("No %s records pending sync.", row.ref_doctype)
             continue
 
-        _log_sync_event(
+        logger.info("Syncing %d %s record(s).", len(names), row.ref_doctype)
+        _log_sync_progress(
             f"Syncing {row.ref_doctype}",
-            f"Syncing {len(names)} {row.ref_doctype} record(s)."
+            f"Site: {config.name} | Records pending: {len(names)} | Filters: {sync_filter_description}",
         )
-
         try:
             _wait_for_redis_lock_to_clear(_target_sync_lock_key(external_doctype))
-            with _link_validation_disabled():
-                _sync_records_for_sequence_row(
+            with data_field_validation_disabled(), _link_validation_disabled(), _synchronous_enqueue():
+                result = _sync_records_for_sequence_row(
                     sync_method,
                     row=row,
                     external_doctype=external_doctype,
@@ -1065,13 +1275,31 @@ def _sync_configuration_sequentially(config_name):
                     config=config,
                 )
             _wait_for_redis_lock_to_clear(_target_sync_lock_key(external_doctype))
+            synced_count = _get_synced_record_count(row.ref_doctype, names, result)
+
+            _log_sync_progress(
+                f"Synced {row.ref_doctype}",
+                f"Site: {config.name} | Records synced: {synced_count}",
+            )
+            frappe.db.commit()
 
         except Exception:
+            logger.info("Sync Failed: %s from %s", row.ref_doctype, config.name)
             _log_sync_failure(f"Failed to sync {row.ref_doctype}")
+            _force_release_target_sync_lock(external_doctype)
             raise
+
+        logger.info("Synced %d %s record(s) from %s.", synced_count, row.ref_doctype, config.name)
+
+    logger.info("Sequential Sync Completed: %s", config.name)
+    _log_sync_progress(
+        f"Sync Completed: {config.name}",
+        f"Sequential sync completed for {config.name}.",
+    )
 
 
 def fetch_scheduler(site_config=None):
+    logger = frappe.logger("external_sync")
     try:
         filters = {}
         if site_config:
@@ -1081,13 +1309,13 @@ def fetch_scheduler(site_config=None):
             filters=filters,
             pluck="name",
         )
-        _log_sync_event("Fetch Scheduler Configs", f"Configs: {configs}")
+        logger.info("Fetch Scheduler: configs=%s", configs)
 
         for config_name in configs:
             if not _acquire_site_pipeline_lock(config_name):
-                _log_sync_event(
-                    "Sequential Sync Skipped",
-                    f"External Site Configuration {config_name} is already syncing.",
+                logger.info(
+                    "Sequential Fetch Skipped: %s is already syncing.",
+                    config_name,
                 )
                 continue
 
@@ -1096,10 +1324,7 @@ def fetch_scheduler(site_config=None):
             finally:
                 _release_site_pipeline_lock(config_name)
 
-        _log_sync_event(
-            "Fetch Scheduler Completed",
-            "All fetches completed. Fetch phase enqueued; sync will run in the next scheduled job."
-        )
+        logger.info("Fetch Scheduler Completed")
     except Exception:
         _log_sync_failure("fetch_scheduler failed")
         raise
@@ -1125,11 +1350,13 @@ def sync_external_docs_scheduler(site_config=None):
         pluck="name",
     )
 
+    logger = frappe.logger("external_sync")
+
     for config_name in configs:
         if not _acquire_site_pipeline_lock(config_name):
-            _log_sync_event(
-                "Sequential Target Sync Skipped",
-                f"External Site Configuration {config_name} is already syncing.",
+            logger.info(
+                "Sequential Target Sync Skipped: %s is already syncing.",
+                config_name,
             )
             continue
 

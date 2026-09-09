@@ -5,6 +5,10 @@ from frappe.model.document import Document
 import json
 import frappe
 from frappe.utils import cint, flt
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 
 
 SYSTEM_FIELDS = {
@@ -425,7 +429,7 @@ def sync_external_bom(external_name, company):
 # ==========================================================
 
 @frappe.whitelist()
-def sync_external_bom_docs(source_doctype=None, names=None, company=None):
+def sync_external_bom_docs(source_doctype=None, names=None, company=None, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -439,6 +443,19 @@ def sync_external_bom_docs(source_doctype=None, names=None, company=None):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Synchronous path — called by the sequential pipeline. Strict
+        # fail-fast: each chunk is completed before the next starts and the
+        # first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_external_bom_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -493,15 +510,7 @@ def _sync_external_bom_docs_job(source_doctype=None, names=None):
             )
 
         except Exception as e:
-            frappe.log_error(
-                title=f"BOM Sync Error: {name}",
-                message=frappe.get_traceback()
-            )
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            break
+            log_record_failure("BOM", name, str(e))
+            raise
 
     return results

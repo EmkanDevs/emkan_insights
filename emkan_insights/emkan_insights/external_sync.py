@@ -4,16 +4,16 @@ from frappe import _
 from frappe.utils import flt, cint
 from typing import Union, List  # This fixes the NameError: Union
 
+from emkan_insights.emkan_insights.account_resolver import resolve_company_account
+from emkan_insights.emkan_insights.tree_sync import order_tree_sync_names
+
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
     "docstatus", "idx", "__last_sync_on"
 }
 
 COMPANY_PREFIXED_TARGETS = {
-    "Customer",
     "Customer Group",
-    "Item Group",
-    "Supplier",
     "Supplier Group",
 }
 
@@ -101,6 +101,14 @@ def sync_doc_by_key(
         # Fallback: if the remote key already exists as document name, update it.
         existing_name = key_value
 
+    # Tax ID matching for Customer/Supplier: merge if same tax_id exists
+    if not existing_name and target_doctype in ("Customer", "Supplier"):
+        src_tax_id = src.get("tax_id")
+        if src_tax_id:
+            existing_name = frappe.db.get_value(
+                target_doctype, {"tax_id": src_tax_id}, "name"
+            )
+
     # Additional fallback for doctypes where naming is based on title/source field
     # (for example UOM.name from uom_name), while remote_id is different.
     if not existing_name and title_field_source and target_doctype not in ({"Asset"} | COMPANY_PREFIXED_TARGETS):
@@ -130,7 +138,7 @@ def sync_doc_by_key(
     if target_doctype == "Item Group" and _is_root_item_group_doc(
         tgt=tgt, src=src, title_field_source=title_field_source
     ):
-        root_name = _build_company_prefixed_name(company_abbr, "All Item Groups")
+        root_name = "All Item Groups"
 
         if not frappe.db.exists("Item Group", root_name):
             root = frappe.get_doc({
@@ -211,12 +219,23 @@ def sync_doc_by_key(
             root.insert(ignore_permissions=True)
 
         else:
-            root = frappe.get_doc("Territory", "All Territories")
-            root.parent_territory = None
-            root.is_group = 1
+            # Use db.set_value to bypass ERPNext's nested-set validate_loop,
+            # which raises "Item cannot be added to its own descendants" when
+            # root.save() triggers a nestedset rebuild.  This mirrors the
+            # Supplier Group root-update pattern exactly.
+            values = {
+                "parent_territory": None,
+                "old_parent": None,
+                "is_group": 1,
+            }
             if actual_target_key:
-                root.set(actual_target_key, key_value)
-            root.save(ignore_permissions=True)
+                values[actual_target_key] = key_value
+            frappe.db.set_value(
+                "Territory",
+                "All Territories",
+                values,
+                update_modified=False,
+            )
 
         return {
             "doctype": target_doctype,
@@ -229,7 +248,7 @@ def sync_doc_by_key(
         # Never map nested-set internals from external payloads.
         ignore |= {"lft", "rgt", "old_parent"}
 
-    _sync_child_tables(src, tgt, target_meta)
+    _sync_child_tables(src, tgt, target_meta, company_abbr=company_abbr)
 
     for field, value in src.as_dict().items():
         # Sync child tables
@@ -363,6 +382,13 @@ def sync_doc_by_key(
             key_field=key_field,
             title_field_source=title_field_source,
         )
+    elif target_doctype == "Location":
+        _apply_location_sync_rules(
+            src=src,
+            tgt=tgt,
+            key_field=key_field,
+            title_field_source=title_field_source,
+        )
     elif target_doctype == "Supplier Group":
         _apply_supplier_group_sync_rules(
             src=src,
@@ -452,7 +478,25 @@ def _apply_sales_person_sync_rules(tgt):
     tgt.set("targets", [])
 
 def _apply_asset_category_sync_rules(src, tgt):
-	pass
+    account_fields = (
+        "fixed_asset_account",
+        "accumulated_depreciation_account",
+        "depreciation_expense_account",
+        "capital_work_in_progress_account",
+    )
+
+    for row in tgt.get("accounts", []):
+        if not row.company_name:
+            continue
+
+        company_abbr = frappe.db.get_value("Company", row.company_name, "abbr")
+        for fieldname in account_fields:
+            account = row.get(fieldname)
+            if account:
+                row.set(
+                    fieldname,
+                    resolve_company_account(account, row.company_name, company_abbr),
+                )
 
 
 def _apply_contact_sync_rules(tgt):
@@ -566,12 +610,25 @@ def _sync_external_docs_worker(
     Background worker — does the actual per-record sync loop.
     Called exclusively via frappe.enqueue from sync_external_docs.
     """
+    # Tree ordering can add ancestors, but callers validate against their original plan.
+    requested_names = set(names)
+    target_meta = frappe.get_meta(target_doctype)
+    parent_field = getattr(target_meta, "nsm_parent_field", None)
+    if frappe.utils.cint(getattr(target_meta, "is_tree", 0)) and parent_field:
+        names = order_tree_sync_names(
+            source_doctype,
+            names,
+            parent_field,
+            key_field=key_field,
+        )
+
     # 🔥 Ensure Territory Root before syncing
     if target_doctype == "Territory":
         ensure_territory_root()
 
     results = []
     errors = []
+    synced_source_names = []
     for source_name in names:
         savepoint = f"external_sync_{frappe.generate_hash(length=10)}"
         try:
@@ -584,7 +641,9 @@ def _sync_external_docs_worker(
                 title_field_source=title_field_source,
                 mandatory_defaults=mandatory_defaults,
             )
-            results.append(res["name"])
+            synced_source_names.append(source_name)
+            if source_name in requested_names:
+                results.append(res["name"])
         except Exception as e:
             try:
                 frappe.db.rollback(save_point=savepoint)
@@ -596,6 +655,8 @@ def _sync_external_docs_worker(
                 source_doctype, source_name, frappe.get_traceback(),
             )
             break
+
+    _mark_external_docs_synced(source_doctype, synced_source_names)
 
     if errors:
         _safe_log_error(
@@ -611,6 +672,17 @@ def _sync_external_docs_worker(
     return results
 
 
+def _mark_external_docs_synced(source_doctype: str, source_names: List[str]) -> None:
+    """Clear successfully processed staging records from the pending-sync query."""
+    if not source_names or not frappe.get_meta(source_doctype).has_field("last_synced_on"):
+        return
+
+    source = frappe.qb.DocType(source_doctype)
+    (
+        frappe.qb.update(source)
+        .set(source.last_synced_on, source.modified)
+        .where(source.name.isin(source_names))
+    ).run()
 
 
 def get_external_sync_info(source_doctype: str):
@@ -733,7 +805,13 @@ def resolve_link_value(doctype: str, value: str, company_abbr: str | None = None
         if name:
             return name
 
+    if doctype == "User":
+        # Remote user emails almost never exist on the target site.
+        # Fall back to Administrator so link validation never blocks a sync.
+        return "Administrator"
+
     return value if frappe.db.exists(doctype, value) else None
+
 
 
 def _apply_account_sync_rules(src, tgt, key_field: str) -> None:
@@ -1206,7 +1284,7 @@ def _apply_asset_sync_rules(src, tgt, key_field: str) -> None:
 
     # 4. FIX: Sync finance_books child table for Asset BEFORE depreciation check
     target_meta = frappe.get_meta("Asset")
-    _sync_child_tables(src, tgt, target_meta)
+    _sync_child_tables(src, tgt, target_meta, company_abbr=_get_source_company_abbr(src))
 
     # 5. FIX: Only disable calculate_depreciation if finance_books is STILL empty
     #    after the child table sync above
@@ -1277,6 +1355,50 @@ def _save_and_sync_docstatus(doc, target_docstatus: int) -> None:
         )
 
 
+def _sanitize_supplier_accounts(tgt) -> None:
+    """Remove Supplier.accounts rows that would fail ERPNext's validate_party_accounts.
+
+    ERPNext checks: ``Account.company == SupplierAccount.company`` for every row.
+    When syncing from an external site the company or account values may not map
+    cleanly, so we drop invalid rows silently instead of aborting the whole sync.
+    """
+    accounts = tgt.get("accounts") or []
+    if not accounts:
+        return
+
+    valid_rows = []
+    for row in accounts:
+        account = row.get("account")
+        company = row.get("company")
+
+        if not account or not company:
+            # Skip incomplete rows — ERPNext would also reject them.
+            continue
+
+        # Resolve company name: use the target-site company if it exists.
+        if not frappe.db.exists("Company", company):
+            _safe_log_external_sync_error(
+                "Supplier accounts row skipped — Company %r not found on target site "
+                "(supplier: %s, account: %s)",
+                company, tgt.name or "(new)", account,
+            )
+            continue
+
+        # Validate that the account belongs to the stated company.
+        account_company = frappe.db.get_value("Account", account, "company")
+        if account_company != company:
+            _safe_log_external_sync_error(
+                "Supplier accounts row skipped — Account %r belongs to %r, not %r "
+                "(supplier: %s)",
+                account, account_company, company, tgt.name or "(new)",
+            )
+            continue
+
+        valid_rows.append(row)
+
+    tgt.set("accounts", valid_rows)
+
+
 def _apply_supplier_sync_rules(tgt) -> None:
     # Supplier.on_update auto-creates Contact when supplier_primary_contact is empty
     # and mobile/email exists. For long supplier names this can overflow Contact.name.
@@ -1284,6 +1406,18 @@ def _apply_supplier_sync_rules(tgt) -> None:
     if not tgt.get("supplier_primary_contact"):
         tgt.mobile_no = None
         tgt.email_id = None
+
+    # Clear portal_users so ERPNext's add_role_for_user() validate hook never calls
+    # frappe.get_doc("User", email) with remote-site emails that don't exist locally.
+    # Portal users are site-specific and must not be replicated during data sync.
+    tgt.set("portal_users", [])
+
+    # Validate the accounts child table: ERPNext's validate_party_accounts checks that
+    # each account row's `account` field belongs to the company in the same row.
+    # Because External Supplier accounts may reference accounts or companies that don't
+    # map cleanly to the target site, we drop any invalid rows rather than failing the
+    # entire sync. Valid rows are kept as-is.
+    _sanitize_supplier_accounts(tgt)
 
 
 def _resolve_target_item_from_external(external_item_name: str, key_field: str) -> str | None:
@@ -1459,12 +1593,9 @@ def _apply_item_group_sync_rules(
 
     if not tgt.is_new():
         db_parent = tgt.get("parent_item_group")
-        if db_parent and not _matches_company_prefixed_name(db_parent, company_abbr):
-            pass
-        else:
-            if hasattr(tgt, "old_parent"):
-                tgt.old_parent = db_parent
-            return
+        if hasattr(tgt, "old_parent"):
+            tgt.old_parent = db_parent
+        return
 
     parent_external = src.get("parent_item_group")
     if not parent_external:
@@ -1477,11 +1608,6 @@ def _apply_item_group_sync_rules(
         src.get(key_field),
         src.get(title_field_source) if title_field_source else None,
         tgt.name,
-        _build_company_prefixed_name(company_abbr, src.get(key_field)),
-        _build_company_prefixed_name(
-            company_abbr,
-            src.get(title_field_source) if title_field_source else None,
-        ),
     }
     if parent_external in {v for v in self_markers if v}:
         return
@@ -1624,17 +1750,15 @@ def _resolve_target_item_group_from_external(
     if not external_item_group_name:
         return None
 
-    prefixed_name = _build_company_prefixed_name(company_abbr, external_item_group_name)
-    if prefixed_name and frappe.db.exists("Item Group", prefixed_name):
-        return prefixed_name
-
-    if not company_abbr and frappe.db.exists("Item Group", external_item_group_name):
+    # Direct name match
+    if frappe.db.exists("Item Group", external_item_group_name):
         return external_item_group_name
 
+    # Match by key field (remote_id)
     target_key_field = _get_actual_target_key("Item Group", key_field)
     if target_key_field:
         name = frappe.db.get_value("Item Group", {target_key_field: external_item_group_name}, "name")
-        if name and _matches_company_prefixed_name(name, company_abbr):
+        if name:
             return name
 
     # Parent is commonly an External Item Group row name.
@@ -1644,15 +1768,13 @@ def _resolve_target_item_group_from_external(
     parent_remote_id = frappe.db.get_value("External Item Group", external_item_group_name, key_field)
     if target_key_field and parent_remote_id:
         name = frappe.db.get_value("Item Group", {target_key_field: parent_remote_id}, "name")
-        if name and _matches_company_prefixed_name(name, company_abbr):
+        if name:
             return name
 
+    # Match by item_group_name (title field)
     if title_field_source:
         parent_title = frappe.db.get_value("External Item Group", external_item_group_name, title_field_source)
-        prefixed_title = _build_company_prefixed_name(company_abbr, parent_title)
-        if prefixed_title and frappe.db.exists("Item Group", prefixed_title):
-            return prefixed_title
-        if not company_abbr and parent_title and frappe.db.exists("Item Group", parent_title):
+        if parent_title and frappe.db.exists("Item Group", parent_title):
             return parent_title
 
     # On-demand parent sync if still unresolved.
@@ -1683,15 +1805,12 @@ def _resolve_target_item_group_from_external(
 
     if target_key_field and parent_remote_id:
         name = frappe.db.get_value("Item Group", {target_key_field: parent_remote_id}, "name")
-        if name and _matches_company_prefixed_name(name, company_abbr):
+        if name:
             return name
 
     if title_field_source:
         parent_title = frappe.db.get_value("External Item Group", external_item_group_name, title_field_source)
-        prefixed_title = _build_company_prefixed_name(company_abbr, parent_title)
-        if prefixed_title and frappe.db.exists("Item Group", prefixed_title):
-            return prefixed_title
-        if not company_abbr and parent_title and frappe.db.exists("Item Group", parent_title):
+        if parent_title and frappe.db.exists("Item Group", parent_title):
             return parent_title
 
     return None
@@ -2071,6 +2190,152 @@ def _supplier_group_has_children(src, tgt, key_field: str, title_field_source: s
     return False
 
 
+def _territory_has_children(src, tgt, key_field: str, title_field_source: str | None) -> bool:
+    """Return True when the Territory node already has child records in the DB."""
+    candidate_parents = {
+        v
+        for v in {
+            src.name,
+            tgt.name,
+            src.get(key_field),
+            src.get(title_field_source) if title_field_source else None,
+        }
+        if v
+    }
+
+    for parent in candidate_parents:
+        if frappe.db.exists("Territory", {"parent_territory": parent}):
+            return True
+        if frappe.db.exists("External Territory", {"parent_territory": parent}):
+            return True
+
+    return False
+
+
+def _location_has_children(src, tgt, key_field: str, title_field_source: str | None) -> bool:
+    """Return True when the Location node already has child records in the DB."""
+    candidate_parents = {
+        v
+        for v in {
+            src.name,
+            tgt.name,
+            src.get(key_field),
+            src.get(title_field_source) if title_field_source else None,
+        }
+        if v
+    }
+
+    for parent in candidate_parents:
+        if frappe.db.exists("Location", {"parent_location": parent}):
+            return True
+        if frappe.db.exists("External Location", {"parent_location": parent}):
+            return True
+
+    return False
+
+
+def _apply_location_sync_rules(src, tgt, key_field: str, title_field_source: str | None) -> None:
+    """
+    Apply Location-specific sync rules.
+
+    Mirrors _apply_territory_sync_rules:
+    - Force is_group=1 when the node already has DB children.
+    - Pin parent_location and old_parent from the DB for existing nodes to
+      prevent ERPNext's nested-set validator from raising
+      "Item cannot be added to its own descendants".
+    - For new nodes, resolve and set parent_location safely.
+    """
+    ROOT = "All Locations"
+
+    # Ensure the root node exists.
+    if not frappe.db.exists("Location", ROOT):
+        frappe.get_doc({
+            "doctype": "Location",
+            "location_name": ROOT,
+            "is_group": 1,
+        }).insert(ignore_permissions=True)
+
+    # Force is_group when this node already has children in the DB.
+    if _location_has_children(src=src, tgt=tgt, key_field=key_field, title_field_source=title_field_source):
+        tgt.is_group = 1
+
+    # For existing nodes: read parent from DB and pin both fields so the
+    # nested-set validator does not see a spurious parent change.
+    if not tgt.is_new():
+        db_parent = frappe.db.get_value("Location", tgt.name, "parent_location")
+        tgt.parent_location = db_parent
+        if hasattr(tgt, "old_parent"):
+            tgt.old_parent = db_parent
+        _safe_log(
+            "debug",
+            f"Location {tgt.name} already exists with parent {db_parent}, skipping parent assignment",
+        )
+        return
+
+    # Root node itself — no parent.
+    title_value = src.get(title_field_source) if title_field_source else None
+    is_root = (tgt.name == ROOT or title_value == ROOT or src.name == ROOT)
+    if is_root:
+        tgt.parent_location = None
+        tgt.is_group = 1
+        return
+
+    parent_external = src.get("parent_location")
+
+    # No parent specified — attach to ROOT.
+    if not parent_external:
+        tgt.parent_location = ROOT
+        return
+
+    # Prevent self-parenting.
+    self_markers = {
+        src.name,
+        src.get(key_field),
+        title_value,
+        tgt.name,
+    }
+    if parent_external in {v for v in self_markers if v}:
+        tgt.parent_location = ROOT
+        return
+
+    # Resolve the parent to an actual Location name.
+    parent_name = None
+    if frappe.db.exists("Location", parent_external):
+        parent_name = parent_external
+    else:
+        target_key_field = _get_actual_target_key("Location", key_field)
+        if target_key_field:
+            parent_name = frappe.db.get_value(
+                "Location", {target_key_field: parent_external}, "name"
+            )
+        if not parent_name and title_field_source:
+            parent_title = frappe.db.get_value(
+                "External Location", parent_external, title_field_source
+            ) if frappe.db.exists("External Location", parent_external) else None
+            if parent_title and frappe.db.exists("Location", parent_title):
+                parent_name = parent_title
+
+    if not parent_name:
+        tgt.parent_location = ROOT
+        return
+
+    # Prevent self-reference after resolution.
+    if tgt.name and parent_name == tgt.name:
+        tgt.parent_location = ROOT
+        return
+
+    # Prevent moving a node under its own descendant (loop guard).
+    if tgt.name and frappe.db.exists("Location", tgt.name):
+        node = frappe.db.get_value("Location", tgt.name, ["lft", "rgt"], as_dict=True)
+        parent = frappe.db.get_value("Location", parent_name, ["lft", "rgt"], as_dict=True)
+        if node and parent and parent.lft > node.lft and parent.rgt < node.rgt:
+            _safe_log("warning", f"Prevented Location loop: {tgt.name} -> {parent_name}")
+            tgt.parent_location = ROOT
+            return
+
+    tgt.parent_location = parent_name
+
+
 def _apply_customer_group_sync_rules(
     src,
     tgt,
@@ -2219,10 +2484,26 @@ def _apply_territory_sync_rules(src, tgt, key_field: str, title_field_source: st
             "is_group": 1
         }).insert(ignore_permissions=True)
 
+    # ✅ Force is_group when this node already has children in the DB.
+    # ERPNext rejects saving a leaf node that has children with:
+    # "cannot be a leaf node as it has children".
+    if _territory_has_children(src=src, tgt=tgt, key_field=key_field, title_field_source=title_field_source):
+        tgt.is_group = 1
+
     # ✅ Never re-parent existing nodes (VERY IMPORTANT)
+    # Read the current parent from the DB (not the in-memory doc) and pin both
+    # parent_territory and old_parent to it.  This mirrors the Supplier Group
+    # fix and prevents ERPNext's nested-set validator from seeing a spurious
+    # parent change that triggers "Item cannot be added to its own descendants".
     if not tgt.is_new():
+        db_parent = frappe.db.get_value("Territory", tgt.name, "parent_territory")
+        tgt.parent_territory = db_parent
         if hasattr(tgt, "old_parent"):
-            tgt.old_parent = tgt.get("parent_territory")
+            tgt.old_parent = db_parent
+        _safe_log(
+            "debug",
+            f"Territory {tgt.name} already exists with parent {db_parent}, skipping parent assignment",
+        )
         return
 
     # ✅ If this is ROOT itself → don’t set parent
@@ -2359,7 +2640,7 @@ def _is_root_territory_doc(tgt, src, title_field_source: str | None) -> bool:
     return "All Territories" in {v for v in candidates if v}
 
 
-def _sync_child_tables(src, tgt, target_meta):
+def _sync_child_tables(src, tgt, target_meta, company_abbr: str | None = None):
     table_fields = [df for df in target_meta.fields if df.fieldtype == "Table"]
 
     for df in table_fields:
@@ -2372,6 +2653,7 @@ def _sync_child_tables(src, tgt, target_meta):
 
         child_meta = frappe.get_meta(df.options)
         child_fields = {f.fieldname for f in child_meta.fields}
+        child_field_map = {f.fieldname: f for f in child_meta.fields}
 
         for row in source_rows:
             if hasattr(row, "as_dict"):
@@ -2381,8 +2663,28 @@ def _sync_child_tables(src, tgt, target_meta):
             for key, value in row.items():
                 if key == "name" or key in SYSTEM_FIELDS:
                     continue
-                if key in child_fields:
-                    child.set(key, value)
+                if key not in child_fields:
+                    continue
+                # Resolve Link fields so values are valid on the target site.
+                # This mirrors the main field loop in sync_doc_by_key and prevents
+                # cross-company account validation errors (e.g. Supplier.accounts).
+                cdf = child_field_map.get(key)
+                if cdf and cdf.fieldtype == "Link" and value:
+                    if cdf.options == "Account" and tgt.get("company"):
+                        resolved = resolve_company_account(
+                            value,
+                            tgt.company,
+                            company_abbr,
+                        )
+                    else:
+                        resolved = resolve_link_value(
+                            cdf.options,
+                            value,
+                            company_abbr=company_abbr,
+                        )
+                    if resolved:
+                        value = resolved
+                child.set(key, value)
 # def _sync_child_tables(src, tgt, target_meta):
 #     ROW_LINK_FIELDS = {
 #     "po_detail",

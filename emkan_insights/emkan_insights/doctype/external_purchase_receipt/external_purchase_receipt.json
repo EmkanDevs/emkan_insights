@@ -159,7 +159,8 @@
   "amended_from",
   "is_old_subcontracting_flow",
   "other_details",
-  "connections_tab"
+  "connections_tab",
+  "json"
  ],
  "fields": [
   {
@@ -1307,8 +1308,9 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
@@ -1320,6 +1322,12 @@
    "fieldname": "is_synced",
    "fieldtype": "Check",
    "label": "Is Synced"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

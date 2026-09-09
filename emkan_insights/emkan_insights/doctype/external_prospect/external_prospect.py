@@ -15,6 +15,7 @@ import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 
 SYSTEM_FIELDS = {
@@ -47,13 +48,16 @@ HANDLED_SEPARATELY = {
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_prospects(names=None):
+def sync_external_prospects(names=None, sync_now=False):
 
 	if isinstance(names, str):
 		names = json.loads(names)
 
 	if not names:
 		names = frappe.get_all("External Prospect", pluck="name")
+
+	if sync_now:
+		return sync_prospect_batch(names)
 
 	batch_size = 200
 
@@ -86,14 +90,9 @@ def sync_prospect_batch(names):
 			sync_single_prospect(source_name)
 			success += 1
 
-		except Exception:
-
-			failed += 1
-
-			frappe.log_error(
-				title=f"External Prospect Sync Failed: {source_name}",
-				message=frappe.get_traceback()
-			)
+		except Exception as e:
+			log_record_failure("Prospect", source_name, str(e))
+			raise
 
 	return {
 		"success": success,

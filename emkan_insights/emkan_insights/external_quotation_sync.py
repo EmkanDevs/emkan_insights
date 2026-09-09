@@ -1,6 +1,11 @@
 import frappe
 import json
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -37,7 +42,7 @@ CHUNK_SIZE = 300
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_quotation_docs(source_doctype, names):
+def sync_external_quotation_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -61,6 +66,18 @@ def sync_external_quotation_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_quotation_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -137,12 +154,13 @@ def _sync_quotation_docs_job(source_doctype, names):
             else:
                 created.append(doc.name)
 
-        except Exception:
+        except Exception as e:
+            # Preserve this module's existing transaction behavior: a full
+            # rollback clears the failed record's partial writes (no
+            # per-record savepoint in this module).
             frappe.db.rollback()
-            error = frappe.get_traceback()
-            frappe.log_error(title=f"Quotation Sync Error: {name}", message=error)
-            failed.append({"name": name, "error": error})
-            break
+            log_record_failure(source_doctype, name, str(e))
+            raise
 
     return {
         "created": created,
@@ -317,7 +335,7 @@ def upsert_quotation(src, target_name, existing_name=None):
             "item_name": row.item_name,
             "description": row.description,
             "qty": qty,
-            "uom": row.uom,
+            "uom": resolve_uom(row.uom),
             "rate": rate,
             "amount": qty * rate,
             "base_rate": rate,

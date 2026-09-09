@@ -13,6 +13,7 @@ import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -43,13 +44,16 @@ HANDLED_SEPARATELY = {"company", "docstatus", "notes", "lead_name", "title", "cu
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_leads(names=None):
+def sync_external_leads(names=None, sync_now=False):
 
     if isinstance(names, str):
         names = json.loads(names)
 
     if not names:
         names = frappe.get_all("External Lead", pluck="name")
+
+    if sync_now:
+        return sync_lead_batch(names)
 
     batch_size = 200
 
@@ -86,14 +90,9 @@ def sync_lead_batch(names):
             sync_single_lead(source_name)
             success += 1
 
-        except Exception:
-
-            failed += 1
-
-            frappe.log_error(
-                title=f"External Lead Sync Failed: {source_name}",
-                message=frappe.get_traceback()
-            )
+        except Exception as e:
+            log_record_failure("Lead", source_name, str(e))
+            raise
 
     return {
         "success": success,

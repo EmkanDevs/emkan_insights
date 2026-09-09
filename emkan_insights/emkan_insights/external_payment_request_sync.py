@@ -2,6 +2,10 @@ import frappe
 import json
 from frappe.utils import flt, getdate
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 SYSTEM_FIELDS = {
@@ -59,7 +63,7 @@ def resolve_local_reference(reference_doctype, reference_name, company_abbr=None
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_payment_request_docs(source_doctype, names):
+def sync_payment_request_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -73,6 +77,18 @@ def sync_payment_request_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_payment_request_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -125,10 +141,9 @@ def _sync_payment_request_docs_job(source_doctype, names):
                 sync_started_at,
                 update_modified=False
             )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"Payment Request Sync Failed: {name}")
-            results.append({"name": name, "status": "failed"})
-            break
+        except Exception as e:
+            log_record_failure(source_doctype, name, str(e))
+            raise
 
     return results
 
@@ -219,7 +234,8 @@ def sync_external_payment_request(source_doctype, external_name):
         pr.submit()
         pr.cancel()
 
-    # Update external with local name
-    external.db_set("remote_id", pr.name)
+    # Update external with local name (update_modified=False keeps modified stable
+    # so last_synced_on correctly suppresses re-sync on the next scheduler run).
+    external.db_set("remote_id", pr.name, update_modified=False)
 
     return pr.name

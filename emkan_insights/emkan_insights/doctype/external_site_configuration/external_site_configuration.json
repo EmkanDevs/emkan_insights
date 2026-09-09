@@ -16,7 +16,8 @@
   "api_secret",
   "check_connection",
   "section_break_qfew",
-  "fetch_data"
+  "fetch_data",
+  "json"
  ],
  "fields": [
   {
@@ -94,6 +95,12 @@
    "read_only": 1,
    "report_hide": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

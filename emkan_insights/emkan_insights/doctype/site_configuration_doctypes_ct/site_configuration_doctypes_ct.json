@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "ref_doctype",
-  "exported_doctype"
+  "exported_doctype",
+  "abbr_required"
  ],
  "fields": [
   {
@@ -25,13 +26,20 @@
    "label": "Exported Doctype",
    "options": "DocType",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "abbr_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Abbr Required"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-06 14:17:30.538103",
+ "modified": "2026-09-07 15:30:33.032495",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "Site Configuration Doctypes CT",

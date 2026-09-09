@@ -1,9 +1,18 @@
 import frappe
 import json
-from frappe.utils import flt, cint
+from frappe.utils import cint, flt, getdate
+from erpnext.accounts.party import get_due_date_from_template
 from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
+from emkan_insights.emkan_insights.override.accounts_controller import (
+    custom_validate_company_linked_addresses,
+)
 from emkan_insights.emkan_insights.sync_guard import (
+    copied_link_validation_disabled,
     set_source_site_fields,
     sync_record_guard,
     temporarily_enable_transaction_items,
@@ -132,6 +141,33 @@ def _build_company_prefixed_name(company_abbr, document_name):
     return f"{company_abbr}-{document_name}"
 
 
+def _external_pi_candidates(remote_name):
+    remote_name = (remote_name or "").strip()
+    if not remote_name:
+        return []
+    abbr = frappe.db.get_value("Company", frappe.db.get_default("company"), "abbr") or ""
+    candidates = [remote_name]
+    if not remote_name.startswith(f"{abbr}-"):
+        candidates.insert(0, f"{abbr}-{remote_name}")
+    return candidates
+
+
+def _resolve_external_purchase_invoice(remote_name):
+    for candidate in _external_pi_candidates(remote_name):
+        if frappe.db.exists("External Purchase Invoice", candidate):
+            return candidate
+
+    meta = frappe.get_meta("External Purchase Invoice")
+    if meta.has_field("remote_id"):
+        return frappe.db.get_value(
+            "External Purchase Invoice",
+            {"remote_id": ["in", _external_pi_candidates(remote_name)]},
+            "name",
+        )
+
+    return None
+
+
 def resolve_local_po(remote_or_local_po):
     if not remote_or_local_po:
         return None
@@ -200,30 +236,94 @@ def resolve_local_pinv(remote_or_local_pinv, company_abbr=None):
     if not remote_or_local_pinv:
         return None
 
-    local_name = frappe.db.get_value(
-        "Purchase Invoice", {"remote_id": remote_or_local_pinv}, "name"
-    )
-    if local_name:
-        return local_name
+    candidates = _external_pi_candidates(remote_or_local_pinv)
+    candidates.append(remote_or_local_pinv)
 
-    if frappe.db.exists("Purchase Invoice", remote_or_local_pinv):
-        return remote_or_local_pinv
+    for candidate in dict.fromkeys(candidates):
+        local_name = frappe.db.get_value(
+            "Purchase Invoice", {"remote_id": candidate}, "name"
+        )
+        if local_name:
+            return local_name
 
-    if company_abbr and not remote_or_local_pinv.startswith(f"{company_abbr}-"):
-        prefixed = f"{company_abbr}-{remote_or_local_pinv}"
-        if frappe.db.exists("Purchase Invoice", prefixed):
+        if frappe.db.exists("Purchase Invoice", candidate):
+            return candidate
+
+        prefixed = _build_company_prefixed_name(company_abbr, candidate)
+        if prefixed != candidate and frappe.db.exists("Purchase Invoice", prefixed):
             return prefixed
 
     return None
 
-def get_po_detail(purchase_order, item_code):
+
+def _resolve_submitted_local_pinv(remote_name, company_abbr):
+    local_name = resolve_local_pinv(remote_name, company_abbr)
+    if local_name and cint(
+        frappe.db.get_value("Purchase Invoice", local_name, "docstatus")
+    ) == 1:
+        return local_name
+    return None
+
+
+def _resolve_cancelled_local_pinv(remote_name, company_abbr):
+    local_name = resolve_local_pinv(remote_name, company_abbr)
+    if local_name and cint(
+        frappe.db.get_value("Purchase Invoice", local_name, "docstatus")
+    ) == 2:
+        return local_name
+    return None
+
+def get_po_detail(purchase_order, item_code, remote_po_item=None):
     if not purchase_order:
         return None
+
+    if remote_po_item:
+        if frappe.db.exists(
+            "Purchase Order Item",
+            {"name": remote_po_item, "parent": purchase_order},
+        ):
+            return remote_po_item
+
+        po_item_meta = frappe.get_meta("Purchase Order Item")
+        if po_item_meta.has_field("custom_remote_id"):
+            local_po_item = frappe.db.get_value(
+                "Purchase Order Item",
+                {
+                    "parent": purchase_order,
+                    "custom_remote_id": remote_po_item,
+                },
+                "name",
+            )
+            if local_po_item:
+                return local_po_item
+
     return frappe.db.get_value(
         "Purchase Order Item",
         {"parent": purchase_order, "item_code": item_code},
-        "name"
+        "name",
     )
+
+
+def _sync_pi_item_with_po_reference(item_row):
+    """Copy fields that ERPNext validates against the linked PO item."""
+    po_detail = item_row.get("po_detail")
+    if not po_detail:
+        return
+
+    po_values = frappe.db.get_value(
+        "Purchase Order Item",
+        po_detail,
+        ["project", "item_code", "uom"],
+        as_dict=True,
+    )
+    if not po_values:
+        return
+
+    item_row["project"] = po_values.get("project")
+    if po_values.get("item_code"):
+        item_row["item_code"] = po_values.item_code
+    if po_values.get("uom"):
+        item_row["uom"] = po_values.uom
 
 
 def get_pr_detail(purchase_receipt, item_code, remote_pr_item=None):
@@ -504,13 +604,217 @@ def _copy_header_fields(source_doc, target_doc):
     for field, value in source_doc.as_dict().items():
         if field in SYSTEM_FIELDS:
             continue
-        if field == "remote_id":
+        if field in {
+            "remote_id",
+            "is_return",
+            "return_against",
+            "amended_from",
+        }:
             continue
         if field in target_table_fields:
             continue
         if hasattr(target_doc, field):
             # Preserve exact value including negative for returns
             target_doc.set(field, value)
+
+
+def _sanitize_purchase_invoice_header(pi):
+    """Clear copied tree values that do not exist on the target site."""
+    abbr = frappe.db.get_value("Company", pi.company, "abbr") or ""
+    if pi.get("supplier_group") and not pi.supplier_group.startswith(f"{abbr}-"):
+        pi.supplier_group = f"{abbr}-{pi.supplier_group}"
+
+    if pi.get("supplier_group") and not frappe.db.exists(
+        "Supplier Group", pi.supplier_group
+    ):
+        _log(
+            f"PI {pi.name}: invalid supplier group cleared",
+            f"Supplier Group '{pi.supplier_group}' does not exist locally.",
+        )
+        pi.supplier_group = None
+
+
+def _clear_invalid_company_addresses(pi):
+    """Clear copied billing/shipping addresses not linked to this company."""
+    custom_validate_company_linked_addresses(pi)
+
+
+def _set_source_posting_datetime(pi, ext_pi):
+    """Preserve the source accounting date and time during ORM validation."""
+    if not ext_pi.get("posting_date"):
+        frappe.throw(f"External Purchase Invoice {ext_pi.name} has no posting date")
+
+    pi.set_posting_time = 1
+    pi.posting_date = ext_pi.posting_date
+    if ext_pi.get("posting_time"):
+        pi.posting_time = ext_pi.posting_time
+
+
+def _normalize_payment_schedule_dates(pi):
+    """Cap copied due dates at the limit allowed by the local template."""
+    template = pi.get("payment_terms_template")
+    if not template:
+        return
+
+    allowed_due_date = get_due_date_from_template(
+        template,
+        pi.get("posting_date"),
+        pi.get("bill_date"),
+    )
+    if not allowed_due_date:
+        return
+
+    allowed_due_date = getdate(allowed_due_date)
+    for row in pi.get("payment_schedule") or []:
+        if row.get("due_date") and getdate(row.due_date) > allowed_due_date:
+            row.due_date = allowed_due_date
+
+    schedule_dates = [
+        getdate(row.due_date)
+        for row in pi.get("payment_schedule") or []
+        if row.get("due_date")
+    ]
+    pi.due_date = max(schedule_dates) if schedule_dates else allowed_due_date
+
+
+def _order_purchase_invoices_for_sync(names):
+    """Order originals, amendments, then returns while preserving each group."""
+    if not names:
+        return []
+
+    rows = frappe.get_all(
+        "External Purchase Invoice",
+        filters={"name": ["in", names]},
+        fields=["name", "is_return", "return_against", "amended_from"],
+    )
+    row_by_name = {row.name: row for row in rows}
+
+    originals = []
+    amendments = []
+    returns = []
+    for name in names:
+        row = row_by_name.get(name)
+        if row and (cint(row.is_return) or row.return_against):
+            returns.append(name)
+        elif row and row.amended_from:
+            amendments.append(name)
+        else:
+            originals.append(name)
+
+    return originals + amendments + returns
+
+
+def _resolve_effective_external_pi_return_parent(ext_return, external_parent):
+    """Use an active matching amendment instead of its cancelled original."""
+    if not external_parent:
+        return None
+
+    current_parent = external_parent
+    visited = set()
+    while current_parent and current_parent not in visited:
+        visited.add(current_parent)
+        amendments = frappe.get_all(
+            "External Purchase Invoice",
+            filters={"amended_from": current_parent},
+            fields=["name", "docstatus", "supplier", "company", "currency"],
+            order_by="creation desc",
+        )
+        if not amendments:
+            break
+
+        for amendment in amendments:
+            if (
+                cint(amendment.docstatus) != 2
+                and amendment.supplier == ext_return.get("supplier")
+                and amendment.company == ext_return.get("company")
+                and (
+                    not amendment.currency
+                    or not ext_return.get("currency")
+                    or amendment.currency == ext_return.get("currency")
+                )
+            ):
+                return amendment.name
+
+        current_parent = amendments[0].name
+
+    return external_parent
+
+
+def _has_pending_cancelled_pi_return(remote_parent):
+    return bool(
+        frappe.db.exists(
+            "External Purchase Invoice",
+            {
+                "return_against": ["in", _external_pi_candidates(remote_parent)],
+                "docstatus": 2,
+            },
+        )
+    )
+
+
+def _sync_pi_amendment_parent(
+    source_doctype, ext_pi, company_abbr, dependency_stack
+):
+    remote_parent = ext_pi.get("amended_from")
+    local_parent = _resolve_cancelled_local_pinv(remote_parent, company_abbr)
+    if local_parent:
+        return local_parent
+
+    external_parent = _resolve_external_purchase_invoice(remote_parent)
+    if not external_parent or external_parent in dependency_stack:
+        return None
+
+    _sync_single_purchase_invoice(
+        source_doctype,
+        external_parent,
+        dependency_stack=(*dependency_stack, ext_pi.name),
+        force_cancellation=True,
+    )
+    return _resolve_cancelled_local_pinv(remote_parent, company_abbr)
+
+
+def _sync_pi_return_parent(source_doctype, ext_pi, company_abbr, dependency_stack):
+    external_parent = _resolve_external_purchase_invoice(ext_pi.get("return_against"))
+    effective_parent = _resolve_effective_external_pi_return_parent(
+        ext_pi, external_parent
+    )
+    parent_to_resolve = effective_parent or ext_pi.get("return_against")
+    local_parent = _resolve_submitted_local_pinv(parent_to_resolve, company_abbr)
+
+    if not local_parent:
+        if not effective_parent or effective_parent in dependency_stack:
+            return None, False
+        _sync_single_purchase_invoice(
+            source_doctype,
+            effective_parent,
+            dependency_stack=(*dependency_stack, ext_pi.name),
+            defer_cancellation=True,
+        )
+        local_parent = _resolve_submitted_local_pinv(
+            parent_to_resolve, company_abbr
+        )
+
+    cancel_parent_after = bool(
+        local_parent
+        and cint(ext_pi.docstatus) == 2
+        and cint(
+            frappe.db.get_value(
+                "External Purchase Invoice", effective_parent, "docstatus"
+            )
+        ) == 2
+    )
+    return local_parent, cancel_parent_after
+
+
+def _cancel_submitted_pi_parent(parent_name, return_name):
+    if cint(frappe.db.get_value("Purchase Invoice", parent_name, "docstatus")) != 1:
+        return
+
+    parent = frappe.get_doc("Purchase Invoice", parent_name)
+    _safe_cancel_doc(
+        parent,
+        log_prefix=f"PI {parent_name} after cancelled return {return_name}",
+    )
 
 
 def _copy_child_row_fields(row, target_child_doctype):
@@ -551,11 +855,53 @@ def _recalculate_totals(pi):
         )
 
 
+def _normalize_payment_fields(pi, ext_pi):
+    """Keep copied payment fields consistent with the recalculated total."""
+    if not flt(ext_pi.get("write_off_amount")):
+        pi.write_off_amount = 0
+        pi.base_write_off_amount = 0
+        pi.write_off_account = None
+        pi.write_off_cost_center = None
+
+    if not cint(pi.get("is_paid")):
+        pi.paid_amount = 0
+        pi.base_paid_amount = 0
+        return
+
+    source_total = flt(
+        ext_pi.get("rounded_total") or ext_pi.get("grand_total")
+    )
+    source_paid = flt(ext_pi.get("paid_amount"))
+    source_precision = ext_pi.precision("paid_amount")
+    source_tolerance = 1 / (10 ** source_precision)
+
+    # A fully-paid source invoice must remain fully paid after ERPNext
+    # recalculates local item and tax totals. Otherwise a rounding difference
+    # can make paid_amount alone exceed grand_total and validate_cash() reports
+    # the misleading "Paid amount + Write Off Amount" error.
+    if source_total and abs(source_paid - source_total) <= source_tolerance:
+        target_total = flt(
+            pi.get("rounded_total") or pi.get("grand_total"),
+            pi.precision("paid_amount"),
+        )
+        pi.paid_amount = target_total
+        pi.base_paid_amount = flt(
+            target_total * flt(pi.get("conversion_rate") or 1),
+            pi.precision("base_paid_amount"),
+        )
+
+
 # -----------------------------------------------------
 # INSERT ITEMS ONE-BY-ONE WITH ERROR ISOLATION
 # -----------------------------------------------------
 
-def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
+def _insert_pi_items_safely(
+    pi_name,
+    ext_pi,
+    company_abbr=None,
+    is_return=None,
+    local_return_against=None,
+):
     ...
     success_count = 0
     errors = []
@@ -565,8 +911,7 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
     else:
         is_return = cint(is_return)
 
-    local_return_against = None
-    if is_return and ext_pi.get("return_against"):
+    if not local_return_against and is_return and ext_pi.get("return_against"):
         local_return_against = resolve_local_pinv(ext_pi.return_against, company_abbr)
 
     for idx, row in enumerate(ext_pi.items, start=1):
@@ -635,7 +980,19 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
             if row.purchase_order:
                 local_po = resolve_local_po(row.purchase_order)
                 item_row["purchase_order"] = local_po
-                item_row["po_detail"] = get_po_detail(local_po, row.item_code) if local_po else None
+                item_row["po_detail"] = (
+                    get_po_detail(
+                        local_po,
+                        row.item_code,
+                        remote_po_item=(
+                            row.get("po_detail")
+                            or row.get("purchase_order_item")
+                        ),
+                    )
+                    if local_po
+                    else None
+                )
+                _sync_pi_item_with_po_reference(item_row)
             else:
                 item_row["purchase_order"] = None
                 item_row["po_detail"] = None
@@ -738,7 +1095,7 @@ def _insert_pi_items_safely(pi_name, ext_pi, company_abbr=None, is_return=None):
 # HANDLE EXISTING DOC DOCSTATUS SYNC
 # -----------------------------------------------------
 
-def _sync_existing_docstatus(existing_name, ext_pi):
+def _sync_existing_docstatus(existing_name, ext_pi, defer_cancellation=False):
     """
     Handle docstatus sync for already-existing Purchase Invoice documents.
     Uses doc.submit() / doc.cancel() (ORM) — no explicit commits.
@@ -770,6 +1127,8 @@ def _sync_existing_docstatus(existing_name, ext_pi):
         if target_docstatus == 1:
             if local_docstatus == 0:
                 _recalculate_totals(pi)
+                _normalize_payment_fields(pi, ext_pi)
+                _normalize_payment_schedule_dates(pi)
                 with temporarily_enable_transaction_items(pi):
                     pi.submit()
                 _safe_dedupe(pi.name)
@@ -786,10 +1145,19 @@ def _sync_existing_docstatus(existing_name, ext_pi):
             if local_docstatus == 0:
                 # Draft -> need to submit first, then cancel
                 _recalculate_totals(pi)
+                _normalize_payment_fields(pi, ext_pi)
+                _normalize_payment_schedule_dates(pi)
                 with temporarily_enable_transaction_items(pi):
                     pi.submit()
                 pi = frappe.get_doc("Purchase Invoice", existing_name)
-            
+
+            if defer_cancellation:
+                return {
+                    "name": pi.name,
+                    "status": "synced_pending_cancel",
+                    "docstatus": 1,
+                }
+
             # Now cancel (whether it was 0 or 1 before)
             _safe_cancel_doc(pi, log_prefix=f"PI {existing_name}")
             _safe_dedupe(pi.name)
@@ -812,14 +1180,20 @@ def _sync_existing_docstatus(existing_name, ext_pi):
 
     except Exception as trans_err:
         _log(f"PI {existing_name} docstatus transition failed", frappe.get_traceback())
-        return {"name": existing_name, "status": "exists", "error": str(trans_err)}
+        raise
 
 
 # -----------------------------------------------------
 # SINGLE DOCUMENT SYNC
 # -----------------------------------------------------
 
-def _sync_single_purchase_invoice(source_doctype, name):
+def _sync_single_purchase_invoice(
+    source_doctype,
+    name,
+    dependency_stack=(),
+    defer_cancellation=False,
+    force_cancellation=False,
+):
     """
     Process a single Purchase Invoice sync.
     All database writes (insert/save/submit/cancel/db_set/sql) happen within
@@ -828,6 +1202,14 @@ def _sync_single_purchase_invoice(source_doctype, name):
     ext_pi = frappe.get_doc(source_doctype, name)
     sync_started_at = ext_pi.modified
     remote_id = ext_pi.name
+    target_docstatus = cint(ext_pi.docstatus)
+    defer_source_cancellation = target_docstatus == 2 and (
+        not force_cancellation
+        and (
+            defer_cancellation
+            or _has_pending_cancelled_pi_return(remote_id)
+        )
+    )
 
     # Defensive reload if items empty
     if not ext_pi.items:
@@ -906,17 +1288,16 @@ def _sync_single_purchase_invoice(source_doctype, name):
                 f"External docstatus: {target_docstatus}, local docstatus: {local_docstatus}. "
                 f"External items: {expected_items}, local items: {actual_items}."
             )
-            return {
-                "name": existing,
-                "status": "sync_error",
-                "docstatus": local_docstatus,
-                "expected_docstatus": target_docstatus,
-                "items_synced": actual_items,
-                "items_expected": expected_items,
-                "error": "Item count mismatch on non-draft Purchase Invoice; manual rebuild needed."
-            }
+            raise Exception(
+                f"PI {existing}: item count mismatch on non-draft Purchase Invoice "
+                "(manual rebuild needed)."
+            )
         else:
-            result = _sync_existing_docstatus(existing, ext_pi)
+            result = _sync_existing_docstatus(
+                existing,
+                ext_pi,
+                defer_cancellation=defer_source_cancellation,
+            )
 
             if result.get("status") in ("exists", "docstatus_synced"):
                 ext_pi.db_set(
@@ -941,9 +1322,11 @@ def _sync_single_purchase_invoice(source_doctype, name):
 
     # Copy scalar header fields only
     _copy_header_fields(ext_pi, pi)
+    _sanitize_purchase_invoice_header(pi)
+    _clear_invalid_company_addresses(pi)
     if pi.get("credit_to"):
         pi.credit_to = resolve_company_account(pi.credit_to, ext_pi.company, company_abbr)
-    pi.set_posting_time = 1
+    _set_source_posting_datetime(pi, ext_pi)
 
     # Fix currency
     if not pi.currency:
@@ -955,6 +1338,21 @@ def _sync_single_purchase_invoice(source_doctype, name):
         flt(row.get("qty")) < 0 for row in (ext_pi.get("items") or [])
     )
     is_return_effective = cint(ext_pi.get("is_return", 0)) or items_have_negative_qty
+
+    if ext_pi.get("amended_from"):
+        pi.amended_from = _sync_pi_amendment_parent(
+            source_doctype,
+            ext_pi,
+            company_abbr,
+            dependency_stack,
+        )
+        if not pi.amended_from:
+            frappe.throw(
+                f"Cannot sync amendment '{name}' because cancelled Purchase "
+                f"Invoice '{ext_pi.amended_from}' is unavailable."
+            )
+    else:
+        pi.amended_from = None
 
     # ---------------------------------------------------------------
     # Defer is_return / return_against until AFTER the parent insert.
@@ -971,9 +1369,23 @@ def _sync_single_purchase_invoice(source_doctype, name):
     # ---------------------------------------------------------------
     deferred_is_return = 0
     deferred_return_against = None
+    cancel_return_parent_after_sync = False
     if is_return_effective:
         deferred_is_return = 1
-        deferred_return_against = resolve_local_pinv(ext_pi.return_against, company_abbr)
+        (
+            deferred_return_against,
+            cancel_return_parent_after_sync,
+        ) = _sync_pi_return_parent(
+            source_doctype,
+            ext_pi,
+            company_abbr,
+            dependency_stack,
+        )
+        if not deferred_return_against:
+            frappe.throw(
+                f"Cannot sync return '{name}' because submitted Purchase Invoice "
+                f"'{ext_pi.return_against}' is unavailable."
+            )
 
     # Clear any is_return/return_against that _copy_header_fields may have
     # copied from the remote doc so the insert() validate hook doesn't trip.
@@ -1036,6 +1448,8 @@ def _sync_single_purchase_invoice(source_doctype, name):
             }
             pi.append("payment_schedule", pay_row)
 
+    _normalize_payment_schedule_dates(pi)
+
     # FLAGS
     # items is mandatory (reqd=1) on Purchase Invoice, but we insert the
     # parent first and attach item rows via db_insert() afterwards. Without
@@ -1065,7 +1479,11 @@ def _sync_single_purchase_invoice(source_doctype, name):
 
     # INSERT ITEMS ONE-BY-ONE WITH ERROR ISOLATION
     success_count, item_errors = _insert_pi_items_safely(
-        pi.name, ext_pi, company_abbr, is_return=is_return_effective
+        pi.name,
+        ext_pi,
+        company_abbr,
+        is_return=is_return_effective,
+        local_return_against=deferred_return_against,
     )
 
     if item_errors:
@@ -1098,15 +1516,10 @@ def _sync_single_purchase_invoice(source_doctype, name):
                 f"directly on the remote site."
             ),
         )
-        return {
-            "name": pi.name,
-            "status": "sync_error",
-            "docstatus": 0,
-            "expected_docstatus": cint(ext_pi.docstatus),
-            "items_synced": 0,
-            "items_expected": 0,
-            "error": "External document has zero items; submit skipped to avoid 'Data missing in table: Items'.",
-        }
+        raise Exception(
+            f"PI {pi.name}: external document has zero items; submit skipped "
+            "to avoid 'Data missing in table: Items'."
+        )
 
     if actual_item_count != expected_item_count:
         _log(
@@ -1117,20 +1530,14 @@ def _sync_single_purchase_invoice(source_doctype, name):
                     f"Errors: {len(item_errors)}. "
                     f"Aborting submit to prevent GL entry count divergence."
         )
-        # Return a sync_error so the caller knows this PI needs attention.
+        # Aborting submit to prevent GL entry count divergence.
         # Do NOT submit — submitting with partial items creates the wrong
         # number of GL entries (root cause of the 2875 vs 2847 mismatch).
-        return {
-            "name": pi.name,
-            "status": "sync_error",
-            "docstatus": 0,
-            "expected_docstatus": cint(ext_pi.docstatus),
-            "items_synced": actual_item_count,
-            "items_expected": expected_item_count,
-            "error": f"Item count mismatch ({actual_item_count}/{expected_item_count}); "
-                     f"submit aborted to prevent GL entry divergence. "
-                     f"Item errors: {'; '.join(item_errors) if item_errors else 'none'}.",
-        }
+        raise Exception(
+            f"PI {pi.name}: item count mismatch ({actual_item_count}/{expected_item_count}); "
+            f"submit aborted to prevent GL entry divergence. "
+            f"Item errors: {'; '.join(item_errors) if item_errors else 'none'}."
+        )
 
     # Clean duplicates
     _safe_dedupe(pi.name)
@@ -1180,15 +1587,13 @@ def _sync_single_purchase_invoice(source_doctype, name):
     # -------------------------------------------------
     # DOCSTATUS SYNC FOR NEW DOCUMENTS
     # -------------------------------------------------
-    target_docstatus = cint(ext_pi.docstatus)
-
-    _log(f"PI {pi.name} pre-docstatus-sync",
-         f"External docstatus: {target_docstatus}, Current docstatus: {pi.docstatus}")
 
     if target_docstatus == 1:
         # Submit via ORM
         try:
             _recalculate_totals(pi)
+            _normalize_payment_fields(pi, ext_pi)
+            _normalize_payment_schedule_dates(pi)
             with temporarily_enable_transaction_items(pi):
                 pi.submit()
             _safe_dedupe(pi.name)
@@ -1207,26 +1612,27 @@ def _sync_single_purchase_invoice(source_doctype, name):
             tb = frappe.get_traceback()
             _log(f"PI {pi.name} SUBMIT FAILED",
                  f"Error: {str(submit_err)}\n\nTraceback:\n{tb}")
-            
-            actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
-            return {
-                "name": pi.name,
-                "status": "sync_error",
-                "docstatus": frappe.db.get_value("Purchase Invoice", pi.name, "docstatus"),
-                "expected_docstatus": 1,
-                "error": f"Submit failed: {str(submit_err)}",
-                "items_synced": actual_item_count,
-                "items_expected": expected_item_count
-            }
+            raise
 
     elif target_docstatus == 2:
         # Submit first via ORM, then cancel
         try:
             _recalculate_totals(pi)
+            _normalize_payment_fields(pi, ext_pi)
+            _normalize_payment_schedule_dates(pi)
             with temporarily_enable_transaction_items(pi):
                 pi.submit()
             _safe_dedupe(pi.name)
             _log(f"PI {pi.name} submitted (step 1 of cancel)", "")
+
+            if defer_source_cancellation:
+                return {
+                    "name": pi.name,
+                    "status": "synced_pending_cancel",
+                    "docstatus": 1,
+                    "items_synced": actual_item_count,
+                    "items_expected": expected_item_count,
+                }
 
             # Re-fetch fresh doc and cancel
             pi = frappe.get_doc("Purchase Invoice", pi.name)
@@ -1244,6 +1650,10 @@ def _sync_single_purchase_invoice(source_doctype, name):
             actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
             
             if final_docstatus == 2:
+                if cancel_return_parent_after_sync and deferred_return_against:
+                    _cancel_submitted_pi_parent(
+                        deferred_return_against, pi.name
+                    )
                 return {
                     "name": pi.name,
                     "status": "synced",
@@ -1254,29 +1664,15 @@ def _sync_single_purchase_invoice(source_doctype, name):
             else:
                 _log(f"PI {pi.name} CANCEL VERIFICATION FAILED",
                      f"Expected docstatus=2, got {final_docstatus}")
-                return {
-                    "name": pi.name,
-                    "status": "sync_error",
-                    "error": f"Cancel verification failed - docstatus is {final_docstatus}",
-                    "items_synced": actual_item_count,
-                    "items_expected": expected_item_count
-                }
+                raise Exception(
+                    f"PI {pi.name}: cancel verification failed - docstatus is {final_docstatus}"
+                )
 
         except Exception as cancel_err:
             tb = frappe.get_traceback()
             _log(f"PI {pi.name} SUBMIT+CANCEL FAILED",
                  f"Error: {str(cancel_err)}\n\nTraceback:\n{tb}")
-
-            actual_item_count = _get_child_count("Purchase Invoice Item", pi.name, "Purchase Invoice")
-            return {
-                "name": pi.name,
-                "status": "sync_error",
-                "docstatus": frappe.db.get_value("Purchase Invoice", pi.name, "docstatus"),
-                "expected_docstatus": 2,
-                "error": f"Submit+cancel failed: {str(cancel_err)}",
-                "items_synced": actual_item_count,
-                "items_expected": expected_item_count
-            }
+            raise
 
 
 # ==========================================================
@@ -1285,7 +1681,7 @@ def _sync_single_purchase_invoice(source_doctype, name):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_purchase_invoice_docs(source_doctype, names):
+def sync_external_purchase_invoice_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -1300,24 +1696,32 @@ def sync_external_purchase_invoice_docs(source_doctype, names):
             seen.add(n)
             unique_names.append(n)
 
-    # Split into chunks and enqueue one background job per chunk
-    chunks = [
-        unique_names[i:i + CHUNK_SIZE]
-        for i in range(0, len(unique_names), CHUNK_SIZE)
-    ]
+    ordered_names = _order_purchase_invoices_for_sync(unique_names)
 
-    queued_chunks = 0
-    for idx, chunk in enumerate(chunks):
-        job_name = f"pi_sync_chunk_{frappe.generate_hash(length=8)}_{idx}"
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            ordered_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_purchase_invoice_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
+
+    queued_chunks = (len(ordered_names) + CHUNK_SIZE - 1) // CHUNK_SIZE
+    if ordered_names:
         frappe.enqueue(
             "emkan_insights.emkan_insights.external_pi_sync._sync_purchase_invoice_docs_job",
             queue="long",
-            job_name=job_name,
+            job_name=f"pi_sync_chunk_{frappe.generate_hash(length=8)}_0",
             timeout=6000,
             source_doctype=source_doctype,
-            names=chunk,
+            names=ordered_names,
+            batch_index=0,
+            enqueue_after_commit=True,
         )
-        queued_chunks += 1
 
     return (
         f"Sync Queued: {len(unique_names)} record(s) split into "
@@ -1329,30 +1733,47 @@ def sync_external_purchase_invoice_docs(source_doctype, names):
 # BACKGROUND WORKER
 # ==========================================================
 
-def _sync_purchase_invoice_docs_job(source_doctype, names):
+def _sync_purchase_invoice_docs_job(source_doctype, names, batch_index=0):
     if isinstance(names, str):
         names = json.loads(names)
 
     if not isinstance(names, (list, tuple)):
         return []
 
+    batch_index = cint(batch_index)
+    if batch_index == 0:
+        names = _order_purchase_invoices_for_sync(list(names))
+    chunk = names[batch_index * CHUNK_SIZE:(batch_index + 1) * CHUNK_SIZE]
     results = []
 
-    for name in names:
-        try:
-            with sync_record_guard(source_doctype, name):
-                result = _sync_single_purchase_invoice(source_doctype, name)
-                results.append(result)
-        except Exception as e:
-            frappe.log_error(
-                title=f"Purchase Invoice Sync Error: {name}",
-                message=frappe.get_traceback()
-            )
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            break
+    # Copied header links (address / contact / terms) reference remote
+    # records that may not exist here or belong to a different local party.
+    # Skip those validators for the whole chunk so insert/submit/cancel
+    # don't abort on them.
+    with copied_link_validation_disabled():
+        for name in chunk:
+            try:
+                with sync_record_guard(source_doctype, name):
+                    result = _sync_single_purchase_invoice(source_doctype, name)
+                    results.append(result)
+            except Exception as e:
+                log_record_failure(source_doctype, name, str(e))
+                raise
+
+    next_batch_index = batch_index + 1
+    if next_batch_index * CHUNK_SIZE < len(names):
+        frappe.enqueue(
+            "emkan_insights.emkan_insights.external_pi_sync._sync_purchase_invoice_docs_job",
+            queue="long",
+            job_name=(
+                f"pi_sync_chunk_{frappe.generate_hash(length=8)}_"
+                f"{next_batch_index}"
+            ),
+            timeout=6000,
+            source_doctype=source_doctype,
+            names=names,
+            batch_index=next_batch_index,
+            enqueue_after_commit=True,
+        )
 
     return results

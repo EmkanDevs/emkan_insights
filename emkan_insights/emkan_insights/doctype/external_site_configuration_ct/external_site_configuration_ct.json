@@ -9,8 +9,12 @@
   "ref_doctype",
   "exported_doctype",
   "last_sync",
+  "fetch_started_at",
+  "fetch_completed_at",
   "fetch_data",
-  "test"
+  "test",
+  "abbr_required",
+  "json"
  ],
  "fields": [
   {
@@ -26,6 +30,20 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Last Sync"
+  },
+  {
+   "fieldname": "fetch_started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Fetch Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fetch_completed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Fetch Completed At",
+   "read_only": 1
   },
   {
    "fieldname": "fetch_data",
@@ -47,13 +65,27 @@
    "hidden": 1,
    "in_list_view": 1,
    "label": "Test"
+  },
+  {
+   "default": "0",
+   "fieldname": "abbr_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Abbr Required"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-27 07:29:49.609721",
+ "modified": "2026-09-07 15:29:40.045348",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Site Configuration CT",

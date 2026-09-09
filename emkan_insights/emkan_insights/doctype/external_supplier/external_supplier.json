@@ -15,6 +15,7 @@
   "country",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "is_mapped",
   "column_break0",
   "supplier_group",
@@ -78,7 +79,8 @@
   "release_date",
   "portal_users_tab",
   "portal_users",
-  "column_break_1mqv"
+  "column_break_1mqv",
+  "json"
  ],
  "fields": [
   {
@@ -487,8 +489,9 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "cr_number",
@@ -505,6 +508,18 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-user",
@@ -517,7 +532,7 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-07-29 12:45:18.569685",
+ "modified": "2026-09-07 09:53:11.278543",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Supplier",

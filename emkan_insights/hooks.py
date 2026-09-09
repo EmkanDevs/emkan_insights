@@ -5,6 +5,23 @@ app_description = "Emkan"
 app_email = "info@finbyz.tech"
 app_license = "mit"
 
+# Install the sync data-field validation bypass (Phone/Email/Name/URL/IBAN)
+# so external sync jobs are not aborted by malformed remote values.
+from emkan_insights.emkan_insights import sync_validation  # noqa: E402,F401
+from erpnext.controllers import accounts_controller as _accounts_controller  # noqa: E402
+
+from emkan_insights.emkan_insights.override.accounts_controller import (  # noqa: E402
+	custom_validate_company_linked_addresses,
+	custom_validate_party_address_and_contact,
+)
+
+_accounts_controller.AccountsController.validate_company_linked_addresses = (
+	custom_validate_company_linked_addresses
+)
+_accounts_controller.AccountsController.validate_party_address_and_contact = (
+	custom_validate_party_address_and_contact
+)
+
 # Apps
 # ------------------
 
@@ -135,8 +152,8 @@ app_include_js = [
 
 override_doctype_class = {
 	"Contact": "emkan_insights.emkan_insights.override.contact.Contact",
-    "Lead": "emkan_insights.emkan_insights.override.lead.Lead"
-
+	"Lead": "emkan_insights.emkan_insights.override.lead.Lead",
+	"Stock Entry": "emkan_insights.emkan_insights.override.stock_entry.StockEntry",
 }
 
 # Document Events
@@ -159,19 +176,30 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-#     "cron": {
-#         # Phase 1 – fetch from remote site (enqueues background API calls)
-#         "0 * * * *": [
-#             "emkan_insights.emkan_insights.scheduler.fetch_scheduler"
-#         ],
-#         # Phase 2 – sync External Warehouse → Warehouse (runs after background
-#         # workers have finished writing the fetched data to the DB)
-#         "30 * * * *": [
-#             "emkan_insights.emkan_insights.scheduler.sync_external_docs_scheduler"
-#         ],
-#     }
-# }
+scheduler_events = {
+	"cron": {
+		"0 0 * * *": [
+			"emkan_insights.emkan_insights.scheduler.external_site_configuration_scheduler.enqueue_external_site_configuration_scheduler"
+		],
+        # Keep every SAP Service Layer session warm. SAP sessions expire after
+        # ~30 minutes of inactivity; pinging every 10 minutes ensures sessions
+        # never idle long enough to drop. heartbeat_all_configs iterates every
+        # External SAP Configuration doc so one scheduler entry covers all
+        # SAP connections on the site.
+        "*/10 * * * *": [
+            "emkan_insights.sap.fetch_from_sap.sap_heartbeat.heartbeat_all_configs"
+        ],
+        # # Phase 1 – fetch from remote site (enqueues background API calls)
+        # "0 * * * *": [
+        #     "emkan_insights.emkan_insights.scheduler.fetch_scheduler"
+        # ],
+        # # Phase 2 – sync External Warehouse → Warehouse (runs after background
+        # # workers have finished writing the fetched data to the DB)
+        # "30 * * * *": [
+        #     "emkan_insights.emkan_insights.scheduler.sync_external_docs_scheduler"
+        # ],
+    }
+}
 
 
 # 	"all": [
@@ -271,4 +299,3 @@ doc_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

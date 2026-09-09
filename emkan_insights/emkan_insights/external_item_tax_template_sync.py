@@ -2,6 +2,7 @@ import json
 import frappe
 from frappe import _
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 @frappe.whitelist()
 @filter_kwargs
@@ -81,14 +82,12 @@ def sync_item_tax_templates(names):
                 update_modified=False
             )
 
-        except Exception:
+        except Exception as e:
+            # Preserve this module's existing full-rollback behavior, then
+            # propagate the failure.
             frappe.db.rollback()
-
-            failed.append({
-                "external_doc": name,
-                "error": frappe.get_traceback()
-            })
-            break
+            log_record_failure("Item Tax Template", name, str(e))
+            raise
 
     return {
         "status": "Completed",

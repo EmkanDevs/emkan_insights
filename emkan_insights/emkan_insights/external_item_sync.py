@@ -2,7 +2,15 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
-from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
+from emkan_insights.emkan_insights.sync_guard import (
+    active_item_during_opening_stock,
+    set_source_site_fields,
+)
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom, resolve_uom_or_none
 
 # Chunk size for splitting large bulk syncs into multiple background jobs
 CHUNK_SIZE = 300
@@ -61,7 +69,7 @@ def _build_company_prefixed_name(company_abbr, name):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_items(names=None):
+def sync_external_items(names=None, sync_now=False):
     """
     Dedicated bulk sync for External Item -> Item
 
@@ -96,6 +104,15 @@ def sync_external_items(names=None):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: sync_item_batch(names=chunk),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -149,15 +166,9 @@ def sync_item_batch(names):
 
             # NO periodic commit — the single transaction handles it safely
 
-        except Exception:
-
-            failed += 1
-
-            frappe.log_error(
-                title=f"External Item Sync Failed: {source_name}",
-                message=frappe.get_traceback()
-            )
-
+        except Exception as e:
+            log_record_failure("Item", source_name, str(e))
+            raise
 
     return {
         "success": success,
@@ -189,13 +200,19 @@ def sync_single_item(source_name):
 
     if existing:
         item = frappe.get_doc("Item", existing)
+
+        # Skip only when updating an already-synced Item that is newer than the
+        # source External Item. Do NOT apply this to new Items: a fresh doc's
+        # `modified` is empty, and get_datetime(None) returns "now", which is
+        # always newer than src.modified — that would silently skip every item
+        # that does not already exist locally (e.g. FA-4020054).
+        if frappe.utils.get_datetime(item.modified) > frappe.utils.get_datetime(sync_started_at):
+            return
     else:
         item = frappe.new_doc("Item")
-
         if target_name:
             item.name = target_name
             item.flags.name_set = True
-
     # ------------------------------------------------------
     # BASIC FIELDS
     # ------------------------------------------------------
@@ -212,7 +229,7 @@ def sync_single_item(source_name):
         "item_code": target_name,
         "item_name": getattr(src, "item_name", None) or getattr(src, "item_code", None) or src.name,
         "item_group": item_group,
-        "stock_uom": getattr(src, "stock_uom", None) or "Nos",
+        "stock_uom": resolve_uom(getattr(src, "stock_uom", None) or "Nos"),
         "description": getattr(src, "description", None),
 
         "disabled": cint(getattr(src, "disabled", 0)),
@@ -253,7 +270,7 @@ def sync_single_item(source_name):
         "end_of_life": getattr(src, "end_of_life", None),
 
         "weight_per_unit": flt(getattr(src, "weight_per_unit", 0)),
-        "weight_uom": getattr(src, "weight_uom", None),
+        "weight_uom": resolve_uom_or_none(getattr(src, "weight_uom", None)),
         "warranty_period": cint(getattr(src, "warranty_period_in_days", 0)),
 
         "allow_negative_stock": cint(getattr(src, "allow_negative_stock", 0)),
@@ -321,10 +338,25 @@ def sync_single_item(source_name):
     # 1. UOMs
     # ------------------------------------------------------
 
-    sync_child_table("uoms", "uoms", {
-        "uom": "uom",
-        "conversion_factor": "conversion_factor"
-    })
+    # Rebuild the UOM table from the source, deduplicating by UOM. The source
+    # External Item may list the same UOM more than once (e.g. two rows with
+    # "m3"), which ERPNext's Item.validate_conversion_factor() rejects with
+    # "Unit of Measure X has been entered more than once". Keep the first
+    # occurrence of each UOM.
+    item.set("uoms", [])
+    seen_uoms = set()
+    for row in getattr(src, "uoms", []) or []:
+        uom_value = getattr(row, "uom", None)
+        if not uom_value:
+            continue
+        uom_value = resolve_uom(uom_value)
+        if uom_value in seen_uoms:
+            continue
+        seen_uoms.add(uom_value)
+        item.append("uoms", {
+            "uom": uom_value,
+            "conversion_factor": flt(getattr(row, "conversion_factor", 1)) or 1,
+        })
 
     # ERPNext requires the Stock UOM to exist in the UOM table with factor 1.0
     stock_uom_exists = any(
@@ -426,7 +458,8 @@ def sync_single_item(source_name):
 
     item.flags.ignore_permissions = True
 
-    item.save()
+    with active_item_during_opening_stock(item):
+        item.save()
 
     src.db_set(
         "last_synced_on",

@@ -34,11 +34,19 @@ def resolve_company_account(account, company, company_abbr=None):
     candidates = []
     if company_abbr and not account.startswith(f"{company_abbr}-"):
         candidates.append(f"{company_abbr}-{account}")
-    candidates.append(account)
+    candidates.extend((account, f"{account}-{company_abbr}", f"{account} - {company_abbr}"))
 
     for candidate in candidates:
-        if frappe.db.exists("Account", candidate) and _account_company(candidate) == company:
+        if _account_company(candidate) == company:
             return candidate
+
+    by_account_name = frappe.db.get_value(
+        "Account",
+        {"account_name": account, "company": company},
+        "name",
+    )
+    if by_account_name:
+        return by_account_name
 
     account_number = _extract_account_number(account)
     if account_number:
@@ -60,7 +68,11 @@ def resolve_company_account(account, company, company_abbr=None):
                 name
             LIMIT 1
             """,
-            (company, f"%{account_number}%", f"{company_abbr}-{account_number}%" if company_abbr else f"{account_number}%"),
+            (
+                company,
+                f"%{account_number}%",
+                f"{company_abbr}-{account_number}%" if company_abbr else f"{account_number}%",
+            ),
         )
         if by_name:
             return by_name[0][0]

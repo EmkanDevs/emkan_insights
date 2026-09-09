@@ -36,7 +36,8 @@
   "valid_upto",
   "section_break_24",
   "note",
-  "reference"
+  "reference",
+  "json"
  ],
  "fields": [
   {
@@ -228,8 +229,15 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-flag",

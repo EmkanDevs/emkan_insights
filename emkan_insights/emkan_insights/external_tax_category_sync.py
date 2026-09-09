@@ -1,6 +1,7 @@
 import frappe
 import json
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 @frappe.whitelist()
@@ -71,12 +72,9 @@ def sync_bulk_tax_categories(names):
 
             success += 1
 
-        except Exception:
-            failed += 1
-            frappe.log_error(
-                frappe.get_traceback(),
-                f"Tax Category Sync Failed - {row.name}"
-            )
+        except Exception as e:
+            log_record_failure("Tax Category", row.name, str(e))
+            raise
 
     return {
         "success": success,

@@ -21,6 +21,7 @@ from emkan_insights.emkan_insights.external_sales_order_sync import sync_externa
 from emkan_insights.emkan_insights.external_si_sync import sync_external_sales_invoice_docs
 from emkan_insights.emkan_insights.external_stock_entry_sync import sync_stock_entry_docs
 from emkan_insights.emkan_insights.external_stock_reconciliation_sync import sync_stock_reconciliation_docs
+from emkan_insights.emkan_insights.external_sync import sync_external_docs
 from emkan_insights.emkan_insights.external_supplier_quotation_sync import sync_supplier_quotation_docs
 from emkan_insights.emkan_insights.external_tax_category_sync import sync_tax_category_docs
 
@@ -44,7 +45,7 @@ from emkan_insights.emkan_insights.doctype.external_price_list.external_price_li
 from emkan_insights.emkan_insights.doctype.external_production_plan.external_production_plan import sync_external_production_plan_docs
 from emkan_insights.emkan_insights.doctype.external_project_type.external_project_type import sync_external_records as sync_external_project_type_records
 from emkan_insights.emkan_insights.doctype.external_prospect.external_prospect import sync_external_prospects
-from emkan_insights.emkan_insights.doctype.external_supplier.external_supplier import sync_external_records
+from emkan_insights.emkan_insights.doctype.external_supplier.external_supplier import sync_external_records as sync_external_supplier_records
 from emkan_insights.emkan_insights.doctype.external_supplier_group.external_supplier_group import sync_external_records as sync_external_supplier_group_records
 from emkan_insights.emkan_insights.doctype.external_territory.external_territory import sync_external_records as sync_external_territory_records
 from emkan_insights.emkan_insights.doctype.external_uom.external_uom import sync_external_records as sync_external_uom_records
@@ -78,7 +79,7 @@ SYNC_METHODS = {
     "Price List": sync_external_price_list_records,
     "Project": sync_project_docs,
     "Project Type": sync_external_project_type_records,
-    "Supplier": sync_external_records,
+    "Supplier": sync_external_supplier_records,
     "Supplier Group": sync_external_supplier_group_records,
     "Territory": sync_external_territory_records,
     "UOM": sync_external_uom_records,
@@ -106,6 +107,7 @@ SYNC_METHODS = {
     # Accounts
     "Payment Entry": sync_payment_entry_docs,
     "Journal Entry": sync_external_journal_entries,
+    "Payment Term": sync_external_docs,
     "Payment Terms Template": sync_payment_template_docs,
     "Tax Category": sync_tax_category_docs,
 
@@ -115,4 +117,6 @@ SYNC_METHODS = {
     "Work Order": sync_external_work_order_docs,
     "Stock Entry": sync_stock_entry_docs,
     "Stock Reconciliation": sync_stock_reconciliation_docs,
+    "Purchase Taxes and Charges Template": sync_external_docs,
+    "Sales Taxes and Charges Template": sync_external_docs,
 }

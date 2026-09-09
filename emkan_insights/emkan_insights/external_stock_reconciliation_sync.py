@@ -1,10 +1,19 @@
 import json
 from contextlib import contextmanager
+from time import sleep
 
 import frappe
+from erpnext.stock.doctype.stock_reconciliation.stock_reconciliation import (
+    EmptyStockReconciliationItemsError,
+)
 from frappe.utils import cint
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
+    active_item_during_opening_stock,
     set_source_site_fields,
     sync_record_guard,
     temporarily_enable_transaction_items,
@@ -42,6 +51,9 @@ ITEM_LINKS = {
 
 # ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
 CHUNK_SIZE = 300
+DEADLOCK_RETRY_ATTEMPTS = 3
+DEADLOCK_RETRY_DELAY_SECONDS = 2
+RETRYABLE_DB_ERRORS = (frappe.QueryDeadlockError, frappe.QueryTimeoutError)
 
 
 @contextmanager
@@ -77,6 +89,89 @@ def _build_target_name(company_abbr, base_id):
         return base_id
 
     return f"{company_abbr}-{base_id}"
+
+
+def _find_existing_stock_reconciliation(source_id, company_abbr):
+    target_name = _build_target_name(company_abbr, source_id)
+    if _doctype_has_field("Stock Reconciliation", "remote_id"):
+        existing = frappe.db.get_value(
+            "Stock Reconciliation",
+            {"remote_id": source_id},
+            "name",
+        )
+        if existing:
+            return existing
+
+    return target_name if frappe.db.exists("Stock Reconciliation", target_name) else None
+
+
+def _resolve_external_stock_reconciliation(remote_name):
+    if frappe.db.exists("External Stock Reconciliation", remote_name):
+        return remote_name
+
+    if _doctype_has_field("External Stock Reconciliation", "remote_id"):
+        return frappe.db.get_value(
+            "External Stock Reconciliation",
+            {"remote_id": remote_name},
+            "name",
+        )
+
+    return None
+
+
+def _ensure_cancelled_amendment_parent(
+    external,
+    company_abbr,
+    dependency_stack,
+):
+    remote_parent = external.get("amended_from")
+    if not remote_parent:
+        return None
+
+    local_parent = _find_existing_stock_reconciliation(remote_parent, company_abbr)
+    if local_parent and cint(
+        frappe.db.get_value("Stock Reconciliation", local_parent, "docstatus")
+    ) == 2:
+        return local_parent
+
+    # Opening Stock is an absolute balance snapshot. A cancelled amendment
+    # parent has no stock effect and does not need to be recreated on a fresh
+    # target site. Import the active opening balance as a standalone document;
+    # otherwise a no-change cancelled parent can block the entire stock sync.
+    if external.get("purpose") == "Opening Stock" and not local_parent:
+        return None
+
+    external_parent = _resolve_external_stock_reconciliation(remote_parent)
+    if not external_parent:
+        frappe.throw(
+            f"Cannot create amendment '{external.name}': source parent "
+            f"'{remote_parent}' was not found."
+        )
+    if external_parent in dependency_stack:
+        frappe.throw(
+            f"Cannot sync Stock Reconciliation '{external.name}': cyclic "
+            f"amendment dependency through '{external_parent}'."
+        )
+
+    with sync_record_guard("External Stock Reconciliation", external_parent):
+        parent_doc = frappe.get_doc("External Stock Reconciliation", external_parent)
+        _sync_external_stock_reconciliation(
+            external_parent,
+            parent_doc.company,
+            dependency_stack,
+        )
+
+    local_parent = _find_existing_stock_reconciliation(remote_parent, company_abbr)
+    parent_docstatus = cint(
+        frappe.db.get_value("Stock Reconciliation", local_parent, "docstatus")
+    ) if local_parent else 0
+    if not local_parent or parent_docstatus != 2:
+        frappe.throw(
+            f"Cannot create amendment '{external.name}': parent "
+            f"'{remote_parent}' was not cancelled by its source sync."
+        )
+
+    return local_parent
 
 
 def _prefix_reference(company_abbr, value):
@@ -258,48 +353,58 @@ def _force_submit_doc(doctype, docname):
 
 def _safe_submit_doc(doc, log_prefix=""):
     """
-    Submit a document using the ORM (doc.submit()), which correctly creates
-    Stock Ledger Entries, GL Entries, and updates Bin quantities.
+    Submit a Stock Reconciliation synchronously through the ORM.
 
-    If the ORM submit fails, the exception is logged as CRITICAL and re-raised.
-    Force-submission via raw SQL is intentionally NOT used as a fallback
-    because it leaves SLEs, GL Entries, and Bin updates uncreated, resulting
-    in a document that appears Submitted but has zero stock/accounting effect.
+    StockReconciliation.submit() queues documents with more than 100 rows.
+    This sync must finish ledger creation before it continues, so call the
+    framework's synchronous action directly.
+
+    Transient database lock errors propagate to the batch retry. Other failures
+    are logged as CRITICAL and re-raised. Force-submission via raw SQL is not
+    used because it would skip SLE, GL Entry, and Bin creation.
     """
     try:
         doc.flags.ignore_permissions = True
-        with temporarily_enable_transaction_items(doc):
-            doc.submit()
+        with (
+            active_item_during_opening_stock(doc),
+            temporarily_enable_transaction_items(doc),
+        ):
+            doc._submit()
         return True
+    except RETRYABLE_DB_ERRORS:
+        raise
     except Exception as submit_err:
-        current = cint(frappe.db.get_value(doc.doctype, doc.name, "docstatus"))
-        if current == 1:
-            return True
         _log(
             f"CRITICAL: {log_prefix} ORM submit failed — manual intervention required",
             f"Error: {str(submit_err)}\n\n{frappe.get_traceback()}\n\n"
-            f"The document has NOT been force-submitted. No Stock Ledger Entries, "
-            f"GL Entries, or Bin updates have been created. Investigate why "
-            f"submit() failed and submit the document manually via ERPNext to "
-            f"ensure stock balance integrity.",
+            f"The failed transaction will be rolled back. The document has NOT "
+            f"been force-submitted. Investigate why submit() failed and submit "
+            f"the document manually via ERPNext to ensure stock balance integrity.",
         )
         raise
 
 
 def _safe_cancel_doc(doc, log_prefix=""):
     """
-    Cancel a document using the ORM (doc.cancel()), which correctly reverses
-    Stock Ledger Entries.
+    Cancel a Stock Reconciliation synchronously through the ORM.
 
-    If the ORM cancel fails, the exception is logged as CRITICAL and re-raised.
-    Force-cancellation via raw SQL is intentionally NOT used as a fallback
-    because it leaves SLEs unreversed (phantom inventory / stock balance drift).
+    StockReconciliation.cancel() also queues documents with more than 100
+    rows. Amendment dependencies require cancellation to finish immediately.
+
+    Transient database lock errors propagate to the batch retry. Other failures
+    are logged as CRITICAL and re-raised. Force-cancellation via raw SQL is not
+    used because it would leave SLEs unreversed.
     """
     try:
         doc.flags.ignore_permissions = True
-        with temporarily_enable_transaction_items(doc):
-            doc.cancel()
+        with (
+            active_item_during_opening_stock(doc),
+            temporarily_enable_transaction_items(doc),
+        ):
+            doc._cancel()
         return True
+    except RETRYABLE_DB_ERRORS:
+        raise
     except Exception as cancel_err:
         _log(
             f"CRITICAL: {log_prefix} ORM cancel failed — manual intervention required",
@@ -340,12 +445,9 @@ def _sync_existing_docstatus(existing_name, external):
             "warning": "unhandled transition",
             "docstatus": local_docstatus,
         }
-    except Exception as e:
-        final = cint(frappe.db.get_value("Stock Reconciliation", existing_name, "docstatus"))
-        if final == target_docstatus:
-            return {"name": existing_name, "status": "docstatus_synced", "docstatus": final}
+    except Exception:
         _log(f"Stock Reconciliation {existing_name} docstatus transition failed", frappe.get_traceback())
-        return {"name": existing_name, "status": "exists", "error": str(e)}
+        raise
 
 
 def _build_item_rows(external, company_abbr):
@@ -379,68 +481,20 @@ def _build_item_rows(external, company_abbr):
     return rows
 
 
-def sync_external_stock_reconciliation(external_name, company):
-    external = frappe.get_doc("External Stock Reconciliation", external_name)
-
-    company_abbr = _get_company_abbr(company)
-    source_id = (external.remote_id or external.name or "").strip()
-    target_name = _build_target_name(company_abbr, source_id)
-
-    existing = None
-    if _doctype_has_field("Stock Reconciliation", "remote_id"):
-        existing = frappe.db.get_value("Stock Reconciliation", {"remote_id": source_id}, "name")
-    if not existing:
-        existing = target_name if frappe.db.exists("Stock Reconciliation", target_name) else None
-
-    if existing:
-        return _sync_existing_docstatus(existing, external)
-
-    sr = frappe.new_doc("Stock Reconciliation")
-    sr.name = target_name
-    sr.flags.name_set = True
-    sr.flags.ignore_naming_series = True
-
-    if _doctype_has_field("Stock Reconciliation", "remote_id"):
-        sr.remote_id = source_id
-    set_source_site_fields(sr, site_url=getattr(external, "source_site", None))
-
-    sr.company = company
-    sr.purpose = external.purpose or "Stock Reconciliation"
-    sr.posting_date = external.posting_date
-    sr.posting_time = external.posting_time
-    sr.set_posting_time = cint(getattr(external, "set_posting_time", 0))
-    sr.scan_mode = cint(getattr(external, "scan_mode", 0))
-    sr.difference_amount = getattr(external, "difference_amount", None)
-
-    for fieldname, linked_doctype in PARENT_LINKS.items():
-        raw = getattr(external, fieldname, None)
-        if not raw:
-            continue
-        if fieldname == "amended_from":
-            
-            candidate = _build_target_name(company_abbr, raw)
-            if frappe.db.exists("Stock Reconciliation", candidate):
-                sr.amended_from = candidate
-            elif _doctype_has_field("Stock Reconciliation", "remote_id"):
-                found = frappe.db.get_value("Stock Reconciliation", {"remote_id": raw}, "name")
-                sr.amended_from = found or candidate
-            else:
-                sr.amended_from = candidate
-        else:
-            resolved = _resolve_link_with_prefix(linked_doctype, raw, company_abbr)
-            setattr(sr, fieldname, resolved or raw)
-
-    item_rows = _build_item_rows(external, company_abbr)
-    if not item_rows:
-        frappe.throw(f"External Stock Reconciliation {external_name} has no item rows")
-
-    sr.set("items", item_rows)
-
-    sr.flags.ignore_permissions = True
-    sr.flags.ignore_link_validation = True
-    sr.flags.ignore_naming_series = True
-    with temporarily_enable_transaction_items(sr):
+def _insert_and_sync_reconciliation(sr, target_name, source_id, target_docstatus):
+    """Insert and apply docstatus while transaction items remain enabled."""
+    try:
         sr.insert(ignore_permissions=True)
+    except EmptyStockReconciliationItemsError:
+        _log(
+            f"Stock Reconciliation skipped with no changes: {target_name}",
+            "None of the items change the local stock quantity or value.",
+        )
+        return {
+            "name": target_name,
+            "status": "skipped",
+            "reason": "No change in quantity or value",
+        }
 
     if sr.name != target_name and not frappe.db.exists("Stock Reconciliation", target_name):
         old_name = sr.name
@@ -463,7 +517,6 @@ def sync_external_stock_reconciliation(external_name, company):
             "Stock Reconciliation", sr.name, "remote_id", source_id, update_modified=False
         )
 
-    target_docstatus = cint(external.docstatus)
     frappe.clear_document_cache("Stock Reconciliation", sr.name)
     sr = frappe.get_doc("Stock Reconciliation", sr.name)
 
@@ -486,29 +539,121 @@ def sync_external_stock_reconciliation(external_name, company):
     }
 
 
+def sync_external_stock_reconciliation(external_name, company):
+    return _sync_external_stock_reconciliation(external_name, company, ())
+
+
+def _sync_external_stock_reconciliation(external_name, company, dependency_stack):
+    if external_name in dependency_stack:
+        frappe.throw(
+            f"Cannot sync Stock Reconciliation '{external_name}': cyclic "
+            "amendment dependency."
+        )
+    dependency_stack = (*dependency_stack, external_name)
+    external = frappe.get_doc("External Stock Reconciliation", external_name)
+
+    company_abbr = _get_company_abbr(company)
+    source_id = (external.remote_id or external.name or "").strip()
+    target_name = _build_target_name(company_abbr, source_id)
+
+    existing = _find_existing_stock_reconciliation(source_id, company_abbr)
+
+    if existing:
+        return _sync_existing_docstatus(existing, external)
+
+    amendment_parent = _ensure_cancelled_amendment_parent(
+        external,
+        company_abbr,
+        dependency_stack,
+    )
+
+    sr = frappe.new_doc("Stock Reconciliation")
+    sr.name = target_name
+    sr.flags.name_set = True
+    sr.flags.ignore_naming_series = True
+
+    if _doctype_has_field("Stock Reconciliation", "remote_id"):
+        sr.remote_id = source_id
+    set_source_site_fields(sr, site_url=getattr(external, "source_site", None))
+
+    sr.company = company
+    sr.purpose = external.purpose or "Stock Reconciliation"
+    sr.posting_date = external.posting_date
+    sr.posting_time = external.posting_time
+    # Historical opening balances must retain their source timestamp so they
+    # establish valuation before the Stock Entries that consume that stock.
+    sr.set_posting_time = 1
+    sr.scan_mode = cint(getattr(external, "scan_mode", 0))
+    sr.difference_amount = getattr(external, "difference_amount", None)
+
+    for fieldname, linked_doctype in PARENT_LINKS.items():
+        raw = getattr(external, fieldname, None)
+        if not raw:
+            continue
+        if fieldname == "amended_from":
+            sr.amended_from = amendment_parent
+        else:
+            resolved = _resolve_link_with_prefix(linked_doctype, raw, company_abbr)
+            setattr(sr, fieldname, resolved or raw)
+
+    item_rows = _build_item_rows(external, company_abbr)
+    if not item_rows:
+        frappe.throw(f"External Stock Reconciliation {external_name} has no item rows")
+
+    sr.set("items", item_rows)
+
+    sr.flags.ignore_permissions = True
+    sr.flags.ignore_link_validation = True
+    sr.flags.ignore_naming_series = True
+    target_docstatus = cint(external.docstatus)
+
+    # Keep disabled items enabled continuously across validate, insert and
+    # submit. Restoring them between insert and submit can make the second ORM
+    # validation fail for large Opening Stock reconciliations.
+    with (
+        active_item_during_opening_stock(sr),
+        temporarily_enable_transaction_items(sr),
+    ):
+        return _insert_and_sync_reconciliation(
+            sr,
+            target_name,
+            source_id,
+            target_docstatus,
+        )
+
+
 # ==========================================================
 # WHITELIST ENTRY POINT (CHUNKED)
 # ==========================================================
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_stock_reconciliation_docs(source_doctype=None, names=None):
+def sync_stock_reconciliation_docs(source_doctype=None, names=None, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
     if not isinstance(names, (list, tuple)):
         return []
 
-    # De-duplicate incoming names while preserving order. This guarantees
-    # the same record can never end up in two different chunks, which is the
-    # only scenario that could cause a duplicate Stock Reconciliation to be created
-    # when chunks run in parallel on different workers.
+    # De-duplicate incoming names while preserving order.
     seen = set()
     unique_names = []
     for n in names:
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Synchronous path — called by the sequential pipeline. Strict
+        # fail-fast: each chunk is completed before the next starts.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_stock_reconciliation_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk instead
     # of a single job handling all records serially. Each job gets a
@@ -548,34 +693,54 @@ def _sync_stock_reconciliation_docs_job(source_doctype=None, names=None):
     if not isinstance(names, (list, tuple)):
         return []
 
+    source_doctype = source_doctype or "External Stock Reconciliation"
+    for attempt in range(DEADLOCK_RETRY_ATTEMPTS):
+        try:
+            return _sync_stock_reconciliation_batch(source_doctype, names)
+        except RETRYABLE_DB_ERRORS as error:
+            # InnoDB rolls back the complete transaction after a deadlock.
+            # Rebuild every document in this batch from the source on retry.
+            frappe.db.rollback()
+            if attempt == DEADLOCK_RETRY_ATTEMPTS - 1:
+                log_record_failure(
+                    source_doctype,
+                    ", ".join(str(name) for name in names[:3]),
+                    str(error),
+                )
+                raise
+            sleep(DEADLOCK_RETRY_DELAY_SECONDS * (attempt + 1))
+
+
+def _sync_stock_reconciliation_batch(source_doctype, names):
     results = []
 
     for name in names:
         try:
-            with sync_record_guard(source_doctype or "External Stock Reconciliation", name):
-                external_doc = frappe.get_doc(source_doctype or "External Stock Reconciliation", name)
+            with sync_record_guard(source_doctype, name):
+                external_doc = frappe.get_doc(source_doctype, name)
                 sync_started_at = external_doc.modified
 
-                result = sync_external_stock_reconciliation(name, external_doc.company)
+                # Keep disabled items active for the complete worker operation,
+                # including target insert, submit, and ledger creation.
+                with temporarily_enable_transaction_items(external_doc):
+                    result = sync_external_stock_reconciliation(name, external_doc.company)
                 results.append(result)
 
                 frappe.db.set_value(
-                    source_doctype or "External Stock Reconciliation",
+                    source_doctype,
                     name,
                     "last_synced_on",
                     sync_started_at,
                     update_modified=False
                 )
+        except RETRYABLE_DB_ERRORS:
+            raise
         except Exception as e:
-            frappe.log_error(
-                title=f"Stock Reconciliation Sync Error: {name}",
-                message=frappe.get_traceback(),
+            log_record_failure(
+                source_doctype,
+                name,
+                str(e),
             )
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e),
-            })
-            break
+            raise
 
     return results

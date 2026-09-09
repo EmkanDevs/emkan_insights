@@ -2,11 +2,16 @@ import frappe
 import json
 from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
     set_source_site_fields,
     sync_record_guard,
     temporarily_enable_transaction_items,
 )
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -252,22 +257,18 @@ def _sync_existing_docstatus(existing_name, external):
             final_docstatus = cint(frappe.db.get_value("Sales Order", existing_name, "docstatus"))
             if final_docstatus == 2:
                 return {"name": existing_name, "status": "docstatus_synced", "docstatus": 2}
-            return {
-                "name": existing_name,
-                "status": "exists",
-                "warning": f"cancel verification failed - docstatus={final_docstatus}",
-            }
+            raise Exception(
+                f"Sales Order {existing_name}: cancel verification failed - docstatus={final_docstatus}"
+            )
 
         if target_docstatus == 1 and local_docstatus == 0:
             _safe_submit_doc(so, log_prefix=f"Sales Order {existing_name}")
             final_docstatus = cint(frappe.db.get_value("Sales Order", existing_name, "docstatus"))
             if final_docstatus == 1:
                 return {"name": existing_name, "status": "docstatus_synced", "docstatus": 1}
-            return {
-                "name": existing_name,
-                "status": "exists",
-                "warning": f"submit verification failed - docstatus={final_docstatus}",
-            }
+            raise Exception(
+                f"Sales Order {existing_name}: submit verification failed - docstatus={final_docstatus}"
+            )
 
         _log(
             f"Sales Order {existing_name} unhandled docstatus transition",
@@ -287,7 +288,7 @@ def _sync_existing_docstatus(existing_name, external):
             return {"name": existing_name, "status": "docstatus_synced", "docstatus": final_docstatus}
 
         _log(f"Sales Order {existing_name} docstatus transition failed", frappe.get_traceback())
-        return {"name": existing_name, "status": "exists", "error": str(trans_err)}
+        raise
 
 
 # ==========================================================
@@ -296,7 +297,7 @@ def _sync_existing_docstatus(existing_name, external):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_sales_order_docs(source_doctype, names):
+def sync_external_sales_order_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -310,6 +311,19 @@ def sync_external_sales_order_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Submit/cancel failures
+        # are fatal here (no synced_draft downgrades), and chunks run in order.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_sales_order_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+                strict=True,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -340,7 +354,7 @@ def sync_external_sales_order_docs(source_doctype, names):
 # BACKGROUND WORKER
 # ==========================================================
 
-def _sync_sales_order_docs_job(source_doctype, names):
+def _sync_sales_order_docs_job(source_doctype, names, strict=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -457,7 +471,7 @@ def _sync_sales_order_docs_job(source_doctype, names):
                             if prefixed_item_group and frappe.db.exists("Item Group", prefixed_item_group)
                             else "All Item Groups"
                         ),
-                        "stock_uom": row.get("uom") or "Nos"
+                        "stock_uom": resolve_uom(row.get("uom") or "Nos")
                     }).insert(ignore_permissions=True)
 
                 item_name = (
@@ -503,8 +517,8 @@ def _sync_sales_order_docs_job(source_doctype, names):
                     "discount_percentage":  flt(row.get("discount_percentage")),
                     "discount_amount":      flt(row.get("discount_amount")),
                     "item_tax_rate":        row.get("item_tax_rate") or "{}",
-                    "uom":                  row.get("uom") or "Nos",
-                    "stock_uom":            row.get("stock_uom") or row.get("uom") or "Nos",
+                    "uom":                  resolve_uom(row.get("uom") or "Nos"),
+                    "stock_uom":            resolve_uom(row.get("stock_uom") or row.get("uom") or "Nos"),
                     "conversion_factor":    row.get("conversion_factor") or 1,
                     "warehouse":            _resolve_usable_warehouse(row.get("warehouse"), ext_so.company) or DEFAULT_WAREHOUSE,
                     "delivery_date":        row.get("delivery_date"),
@@ -625,6 +639,10 @@ def _sync_sales_order_docs_job(source_doctype, names):
                 except Exception as submit_err:
                     _log(f"Sales Order {target_name} SUBMIT FAILED",
                          frappe.get_traceback())
+                    if strict:
+                        # Pipeline mode: a failed submit is a real failure —
+                        # re-raise so the record stays retryable.
+                        raise
                     results.append({
                         "name": target_name,
                         "status": "synced_draft",
@@ -646,6 +664,11 @@ def _sync_sales_order_docs_job(source_doctype, names):
                         "docstatus": final_status,
                         "items_count": actual_item_count,
                     })
+                    if strict and final_status != 2:
+                        raise Exception(
+                            f"Sales Order {target_name}: cancel verification failed - "
+                            f"docstatus is {final_status}"
+                        )
                 except Exception as cancel_err:
                     # ORM submit/cancel failed. Do NOT fall back to raw SQL.
                     # Leave the SO at its current docstatus; _sync_existing_docstatus
@@ -655,6 +678,8 @@ def _sync_sales_order_docs_job(source_doctype, names):
                         f"Error: {str(cancel_err)}\n\n{frappe.get_traceback()}\n\n"
                         f"The SO may be stuck at docstatus=1. Cancel manually via ERPNext."
                     )
+                    if strict:
+                        raise
                     results.append({
                         "name": target_name,
                         "status": "synced_submitted",
@@ -678,10 +703,10 @@ def _sync_sales_order_docs_job(source_doctype, names):
         except Exception as e:
             frappe.db.rollback()
 
-            frappe.log_error(
-                title=f"SO Sync Fail: {name}",
-                message=frappe.get_traceback()
-            )
+            log_record_failure("Sales Order", name, str(e))
+
+            if strict:
+                raise
 
             results.append({
                 "name": name,

@@ -167,7 +167,8 @@
   "column_break5",
   "excise_page",
   "instructions",
-  "connections_tab"
+  "connections_tab",
+  "json"
  ],
  "fields": [
   {
@@ -1410,13 +1411,20 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-truck",

@@ -10,6 +10,10 @@ SYSTEM_FIELDS = {
 CHUNK_SIZE = 300
 
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.doctype.external_address.external_address import (
     _resolve_dynamic_link,
 )
@@ -21,7 +25,7 @@ from emkan_insights.emkan_insights.doctype.external_address.external_address imp
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_contact_docs(source_doctype, names):
+def sync_external_contact_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -35,6 +39,18 @@ def sync_external_contact_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_external_contact_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -186,14 +202,7 @@ def _sync_external_contact_docs_job(source_doctype, names):
             )
 
         except Exception as e:
-            error_msg = f"Contact Sync Error for {name}: {str(e)}\n{frappe.get_traceback()}"
-            frappe.log_error("Contact Sync Error", error_msg)
-            # Return error in response so you can debug
-            results.append({
-                "name": name, 
-                "status": "error", 
-                "error": str(e)
-            })
-            break
+            log_record_failure(source_doctype, name, str(e))
+            raise
 
     return results

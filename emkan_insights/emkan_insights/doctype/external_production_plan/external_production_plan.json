@@ -66,7 +66,8 @@
   "column_break_32",
   "status",
   "warehouses",
-  "amended_from"
+  "amended_from",
+  "json"
  ],
  "fields": [
   {
@@ -453,6 +454,12 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-calendar",

@@ -5,7 +5,6 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder.functions import Sum
 from frappe.utils import flt, nowdate
-from frappe.utils.background_jobs import enqueue
 
 from erpnext import get_company_currency
 from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
@@ -426,7 +425,9 @@ class ExternalPaymentRequest(Document):
 				)
 			],
 		}
-		enqueue(method=frappe.sendmail, queue="short", timeout=300, is_async=True, **email_args)
+		# Use frappe.enqueue (attribute access) so the pipeline's
+		# _synchronous_enqueue monkeypatch is respected.
+		frappe.enqueue(method=frappe.sendmail, queue="short", timeout=300, is_async=True, **email_args)
 
 	def get_message(self):
 		"""return message with payment gateway link"""

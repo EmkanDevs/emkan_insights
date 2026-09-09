@@ -1,12 +1,17 @@
 import frappe
 import json
-from frappe.utils import flt
+from frappe.utils import cint, flt
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
     set_source_site_fields,
     sync_record_guard,
     temporarily_enable_transaction_items,
 )
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 # ⭐ NEW: Chunk size for splitting large bulk syncs into multiple background jobs.
 CHUNK_SIZE = 300
@@ -17,7 +22,7 @@ CHUNK_SIZE = 300
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotation", names=None):
+def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotation", names=None, sync_now: bool = False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -43,6 +48,19 @@ def sync_supplier_quotation_docs(source_doctype: str = "External Supplier Quotat
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    # When called from the sequential scheduler (sync_now=True), run inline so
+    # the pipeline waits for completion before moving on to the next doctype.
+    # When called directly from the UI or other callers, enqueue as usual so
+    # the request returns immediately.
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: sync_bulk_supplier_quotations(chunk),
+        )
 
     job_name = f"sq_sync_chunk_{frappe.generate_hash(length=8)}_0"
     frappe.enqueue(
@@ -117,7 +135,7 @@ def sync_bulk_supplier_quotations(names):
             full_docs[d.name] = frappe.get_doc("External Supplier Quotation", d.name)
         except Exception as e:
             frappe.log_error(f"Failed to load External SQ {d.name}: {str(e)}", "SQ Sync")
-            break
+            raise
 
     suppliers  = set(frappe.get_all("Supplier",  pluck="name", limit_page_length=0))
     items      = set(frappe.get_all("Item",      pluck="name", limit_page_length=0))
@@ -169,9 +187,7 @@ def sync_bulk_supplier_quotations(names):
         if rid:
             existing_map[rid] = d
 
-    success      = 0
-    failed       = 0
-    failed_names = []
+    success = 0
 
     for idx, name in enumerate(names, start=1):
         savepoint = f"sq_sync_{frappe.generate_hash(length=10)}"
@@ -220,28 +236,12 @@ def sync_bulk_supplier_quotations(names):
                 frappe.db.rollback(save_point=savepoint)
             except Exception:
                 frappe.db.rollback()
-            failed += 1
-            failed_names.append(name)
+            log_record_failure("Supplier Quotation", name, str(e))
+            raise
 
-            frappe.log_error(
-                title="Supplier Quotation Sync Failed",
-                message=(
-                    f"External SQTN : {name}\n"
-                    f"Remote ID     : {getattr(src, 'remote_id', 'N/A') if src else 'N/A'}\n"
-                    f"Error         : {str(e)}"
-                )
-            )
-            break
+        # Frappe owns the transaction boundary for this job.
 
-        # NO batch commit every 50 records
-
-    if failed_names:
-        frappe.log_error(
-            title="Supplier Quotation Sync - Batch Failed Names",
-            message="\n".join(failed_names)
-        )
-
-    return {"success": success, "failed": failed}
+    return {"success": success}
 
 
 # ==========================================================
@@ -341,6 +341,29 @@ def _resolve_supplier(supplier_code):
         return supplier_code
 
     return None
+
+
+def _enable_supplier_for_sync(supplier):
+    state = frappe.db.get_value(
+        "Supplier",
+        supplier,
+        ["disabled", "is_frozen"],
+        as_dict=True,
+    )
+    if not state:
+        return False
+
+    updates = {}
+    if cint(state.get("disabled")) == 1:
+        updates["disabled"] = 0
+    if cint(state.get("is_frozen")) == 1:
+        updates["is_frozen"] = 0
+    if not updates:
+        return False
+
+    frappe.db.set_value("Supplier", supplier, updates)
+    frappe.clear_document_cache("Supplier", supplier)
+    return True
 
 
 def _auto_create_item(ext_item, company_abbr=None):
@@ -530,13 +553,27 @@ def _build_item_reference_fields(row, company_abbr, resolved_item):
         mr = _resolve_link_with_abbr(
             "Material Request", row.material_request, company_abbr
         )
+        if mr:
+            # Drop the link if the MR is cancelled — ERPNext raises
+            # CancelledLinkError on submit when any linked doc is docstatus=2.
+            mr_docstatus = frappe.db.get_value("Material Request", mr, "docstatus")
+            if frappe.utils.cint(mr_docstatus) == 2:
+                frappe.log_error(
+                    title=f"SQ item: MR link cleared (MR cancelled)",
+                    message=(
+                        f"Material Request '{mr}' is cancelled (docstatus=2). "
+                        f"Clearing the link so the SQ can be submitted without "
+                        f"CancelledLinkError."
+                    ),
+                )
+                mr = None
         refs["material_request"] = mr
         refs["material_request_item"] = _resolve_child_detail(
             "Material Request Item",
             mr,
             resolved_item,
             remote_item_name=row.get("material_request_item"),
-        ) if mr else row.get("material_request_item")
+        ) if mr else None
 
     if row.get("request_for_quotation"):
         rfq = _resolve_link_with_abbr(
@@ -585,6 +622,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     resolved_supplier = _resolve_supplier(src.supplier)
     if not resolved_supplier:
         raise Exception(f"Supplier '{src.supplier}' could not be resolved to local Supplier")
+    _enable_supplier_for_sync(resolved_supplier)
 
     # ----------------------------------------------------------
     # FIX: if the caller didn't resolve existing_name (lookup by
@@ -727,7 +765,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
                 "item_code": resolved_item,
                 "item_name": row.item_name,
                 "description": row.get("description") or row.item_name,
-                "uom": row.uom,
+                "uom": resolve_uom(row.uom),
                 "qty": qty,
                 "rate": rate,
                 "amount": qty * rate,
@@ -747,7 +785,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
             "item_code": resolved_item,
             "item_name": row.item_name,
             "description": row.get("description") or row.item_name,
-            "uom": row.uom,
+            "uom": resolve_uom(row.uom),
             "qty": qty,
             "rate": rate,
             "amount": qty * rate,
@@ -795,11 +833,7 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
     # ----------------------------------------------------------
     doc.flags.ignore_permissions  = True
     doc.flags.ignore_pricing_rule = True
-    # FIX: ERPNext's validate() blocks saving if a stock Item's row has no
-    # warehouse ("Warehouse is mandatory for stock Item X"). ignore_mandatory
-    # doesn't cover this — it's a business-rule check, not a blank-field
-    # couldn't be resolved, leave the field blank rather than blocking the
-    # whole Supplier Quotation from being created.
+    doc.flags.ignore_links        = True
 
     if hasattr(doc, "status"):
         doc.set("status", None)
@@ -812,16 +846,24 @@ def upsert_supplier_quotation(src, existing_name=None, suppliers=None, items=Non
 
     with temporarily_enable_transaction_items(doc):
         if existing_name:
-            doc.save()
+            doc.save(
+                ignore_permissions=True,
+                ignore_version=True,
+            )
         else:
             doc.naming_series = None
-            doc.insert()
+            doc.insert(
+                ignore_permissions=True,
+                ignore_links=True,
+            )
 
     # FIX: always (re)link External SQ -> Supplier Quotation, not just on
     # first creation — covers the case where existing_name was resolved
     # via the target_name fallback above and remote_id wasn't set yet.
     if getattr(src, "remote_id") != doc.name:
-        src.db_set("remote_id", doc.name)  # ORM equivalent of frappe.db.set_value
+        # update_modified=False keeps modified stable so last_synced_on correctly
+        # suppresses re-sync on the next scheduler run.
+        src.db_set("remote_id", doc.name, update_modified=False)
     
     
 

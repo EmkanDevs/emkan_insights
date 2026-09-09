@@ -28,7 +28,7 @@ def sync_project_docs(source_doctype: str, names):
 
 def sync_external_project(external_name, company):
     external = frappe.get_doc("External Project", external_name)
-    
+
     # 🟢 This is the ID we want to force
     target_name = external.remote_id or external.name
 
@@ -38,13 +38,22 @@ def sync_external_project(external_name, company):
 
     # ... [Keep your Parent and Cost Center resolution logic here] ...
 
+    # Get company abbreviation (e.g., "CPC" for "Construction Pillars Company")
+    company_abbr = frappe.db.get_value("Company", company, "abbr")
+
     project = frappe.new_doc("Project")
-    
+
     # 1. Set the name directly on the object
     project.name = target_name
-    
+
     # 2. Map your fields
-    project.project_name = external.project_name
+    # Append company abbreviation at the end of project_name
+    # e.g., "My Project" + "CPC" -> "My Project-CPC"
+    base_project_name = (external.project_name or "").strip()
+    if company_abbr and base_project_name and not base_project_name.endswith(f"-{company_abbr}"):
+        project.project_name = f"{base_project_name}-{company_abbr}"
+    else:
+        project.project_name = base_project_name
     project.company = company
     project.status = external.status or "Open"
     project.expected_start_date = external.expected_start_date
@@ -55,6 +64,6 @@ def sync_external_project(external_name, company):
     project.db_insert()
 
     # 4. Manually trigger standard post-insert logic if needed
-    # (Optional) project.run_post_save_methods() 
+    # (Optional) project.run_post_save_methods()
 
     return project.name

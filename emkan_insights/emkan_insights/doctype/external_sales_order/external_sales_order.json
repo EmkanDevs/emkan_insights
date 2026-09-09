@@ -21,6 +21,7 @@
   "transaction_date",
   "delivery_date",
   "remote_id",
+  "source_site",
   "site_url",
   "last_synced_on",
   "column_break1",
@@ -169,9 +170,16 @@
   "inter_company_order_reference",
   "campaign",
   "party_account_currency",
-  "connections_tab"
+  "connections_tab",
+  "json"
  ],
  "fields": [
+  {
+   "fieldname": "source_site",
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
+  },
   {
    "fieldname": "customer_section",
    "fieldtype": "Section Break",
@@ -1684,6 +1692,12 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-file-text",

@@ -4,6 +4,11 @@ import frappe
 import requests
 from frappe import _
 
+from emkan_insights.emkan_insights.fetch_window import (
+    add_fetch_window_end,
+    mark_fetch_completed,
+    mark_fetch_started,
+)
 from emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration import (
     _build_company_prefixed_remote_id,
     _fetch_remote_docs_with_children,
@@ -62,6 +67,9 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
         child_docname,
         "last_sync"
     )
+    previous_last_sync, fetch_started_at = mark_fetch_started(
+        child_docname, remote_dt, previous_last_sync, fetch_started_at
+    )
 
     filters = [
         ["docstatus", "in", [0, 1, 2]]
@@ -72,6 +80,7 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
             ">",
             frappe.utils.get_datetime_str(previous_last_sync)
         ])
+    add_fetch_window_end(filters, fetch_started_at)
 
     try:
         while True:
@@ -97,6 +106,9 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
     except Exception as e:
         frappe.throw(_("Quotation sync failed: {0}").format(str(e)))
 
+    from emkan_insights.emkan_insights.fetch_log import log_fetch_plan
+    log_fetch_plan(remote_dt, configuration_name, filters, len(data))
+
     if data:
         data = _fetch_remote_docs_with_children(base_url, headers, remote_dt, data)
         data = [_prepare_quotation_for_external_sync(item, company_abbr) for item in data]
@@ -115,9 +127,11 @@ def sync_quotations_from_remote(site_url, api_key, api_secret, ref_doctype, chil
         count += retry_count
         errors.extend(retry_errors)
 
-    last_sync = fetch_started_at
-    if child_docname:
-        frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+    last_sync = previous_last_sync
+    if child_docname and not not_saved:
+        last_sync = mark_fetch_completed(
+            child_docname, remote_dt, fetch_started_at, record_count=count
+        )
 
     return {
         "count": count,

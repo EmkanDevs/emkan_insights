@@ -11,6 +11,7 @@
  "engine": "InnoDB",
  "field_order": [
   "details",
+  "json",
   "naming_series",
   "item_code",
   "item_name",
@@ -18,6 +19,7 @@
   "stock_uom",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "column_break0",
   "disabled",
@@ -907,6 +909,18 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-tag",
@@ -914,7 +928,7 @@
  "image_field": "image",
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-07-28 13:54:29.398895",
+ "modified": "2026-09-08 11:08:42.708406",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Item",

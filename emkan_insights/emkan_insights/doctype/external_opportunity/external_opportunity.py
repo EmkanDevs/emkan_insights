@@ -13,6 +13,7 @@ import json
 from frappe.utils import cint, flt
 from frappe.model.naming import set_new_name
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -48,13 +49,16 @@ HANDLED_SEPARATELY = {
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_opportunities(names=None):
+def sync_external_opportunities(names=None, sync_now=False):
 
     if isinstance(names, str):
         names = json.loads(names)
 
     if not names:
         names = frappe.get_all("External Opportunity", pluck="name")
+
+    if sync_now:
+        return sync_opportunity_batch(names)
 
     batch_size = 200
 
@@ -91,14 +95,9 @@ def sync_opportunity_batch(names):
             sync_single_opportunity(source_name)
             success += 1
 
-        except Exception:
-
-            failed += 1
-
-            frappe.log_error(
-                title=f"External Opportunity Sync Failed: {source_name}",
-                message=frappe.get_traceback()
-            )
+        except Exception as e:
+            log_record_failure("Opportunity", source_name, str(e))
+            raise
 
     return {
         "success": success,

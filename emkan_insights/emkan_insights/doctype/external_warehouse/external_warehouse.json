@@ -14,6 +14,7 @@
   "warehouse_name",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "column_break_3",
   "is_group",
@@ -43,7 +44,8 @@
   "tree_details",
   "lft",
   "rgt",
-  "old_parent"
+  "old_parent",
+  "json"
  ],
  "fields": [
   {
@@ -279,6 +281,18 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -286,7 +300,7 @@
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-08-19 12:35:10.724114",
+ "modified": "2026-09-04 10:00:11.079348",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Warehouse",

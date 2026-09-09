@@ -34,7 +34,8 @@
   "include_in_gross",
   "remote_id",
   "source_site",
-  "last_synced_on"
+  "last_synced_on",
+  "json"
  ],
  "fields": [
   {
@@ -72,8 +73,9 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "default": "0",
@@ -224,6 +226,12 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-money",

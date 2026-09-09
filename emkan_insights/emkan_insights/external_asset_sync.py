@@ -16,6 +16,10 @@ ASSET_SPECIAL_FIELDS = {
 CHUNK_SIZE = 300
 
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 
 
 # ==========================================================
@@ -24,15 +28,15 @@ from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_assets(source_doctype, names):
+def sync_external_assets(source_doctype, names, sync_now=False):
     """
     Syncs external assets to local Asset doctype.
     Splits large batches into chunks and enqueues one background job per chunk.
-    
+
     Args:
         source_doctype: The external asset doctype (e.g., 'External Asset')
         names: JSON list of external asset names to sync
-    
+
     Returns:
         String describing how many chunks were queued
     """
@@ -49,6 +53,18 @@ def sync_external_assets(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_external_assets_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -284,14 +300,9 @@ def _sync_external_assets_job(source_doctype, names):
                 update_modified=False
             )
 
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"Asset Sync Error: {name}")
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": "See error log for details"
-            })
-            break
+        except Exception as e:
+            log_record_failure(source_doctype, name, str(e))
+            raise
 
     return results
 

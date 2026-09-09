@@ -27,9 +27,11 @@
   "disabled",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "linked_with",
-  "links"
+  "links",
+  "json"
  ],
  "fields": [
   {
@@ -167,12 +169,24 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-map-marker",
  "idx": 5,
  "links": [],
- "modified": "2026-07-29 12:47:09.569584",
+ "modified": "2026-09-04 15:01:07.524245",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Address",

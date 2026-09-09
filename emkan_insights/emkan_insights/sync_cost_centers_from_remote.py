@@ -8,6 +8,11 @@ import frappe
 import requests
 from frappe import _
 
+from emkan_insights.emkan_insights.fetch_window import (
+    add_fetch_window_end,
+    mark_fetch_completed,
+    mark_fetch_started,
+)
 from emkan_insights.emkan_insights.doctype.external_site_configuration.external_site_configuration import (
     _acquire_sync_lock,
     _release_sync_lock,
@@ -249,6 +254,9 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
             child_docname,
             "last_sync"
         )
+        previous_last_sync, fetch_started_at = mark_fetch_started(
+            child_docname, REMOTE_DT, previous_last_sync, fetch_started_at
+        )
 
         filters = [
             ["docstatus", "in", [0, 1, 2]]
@@ -259,6 +267,7 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
                 ">",
                 frappe.utils.get_datetime_str(previous_last_sync)
             ])
+        add_fetch_window_end(filters, fetch_started_at)
 
         if not frappe.db.exists("DocType", LOCAL_DT):
             frappe.throw(
@@ -267,14 +276,17 @@ def sync_cost_centers_from_remote(site_url, api_key, api_secret, ref_doctype=Non
             )
 
         remote_names = _fetch_remote_names(base_url, headers, filters)
+        from emkan_insights.emkan_insights.fetch_log import log_fetch_plan
+        log_fetch_plan(REMOTE_DT, configuration_name, filters, len(remote_names))
         frappe.logger("external_sync").info(
             "Cost Center name listing fetched %s remote records", len(remote_names)
         )
 
         if not remote_names:
             _release_sync_lock(child_docname)
-            last_sync = fetch_started_at
-            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+            last_sync = mark_fetch_completed(
+                child_docname, REMOTE_DT, fetch_started_at, record_count=0
+            )
             return {
                 "count": 0,
                 "fetched_total": 0,
@@ -361,8 +373,12 @@ def process_cost_center_chunk(
 
     finally:
         if is_last_chunk:
-            last_sync = fetch_started_at or frappe.utils.now()
-            frappe.db.set_value("External Site Configuration CT", child_docname, "last_sync", last_sync)
+            last_sync = mark_fetch_completed(
+                child_docname,
+                REMOTE_DT,
+                fetch_started_at or frappe.utils.now(),
+                record_count=state.get("count", 0),
+            )
             _release_sync_lock(child_docname)
             frappe.publish_realtime(
                 "cost_center_sync_complete",

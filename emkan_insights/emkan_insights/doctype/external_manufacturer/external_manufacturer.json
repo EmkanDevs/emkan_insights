@@ -17,13 +17,15 @@
   "column_break_sscb",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "address_contacts",
   "address_html",
   "column_break_8",
   "contact_html",
   "section_break_10",
-  "notes"
+  "notes",
+  "json"
  ],
  "fields": [
   {
@@ -107,14 +109,27 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-certificate",
  "links": [],
- "modified": "2026-07-29 12:43:21.349457",
+ "modified": "2026-09-04 10:26:00.188522",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Manufacturer",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {

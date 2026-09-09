@@ -3,12 +3,17 @@ import json
 from frappe.utils import flt
 from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import (
     acquire_sync_lock,
     release_sync_lock,
     set_source_site_fields,
     temporarily_enable_transaction_items,
 )
+from emkan_insights.emkan_insights.uom_resolver import resolve_uom
 
 SYSTEM_FIELDS = {
     "name", "owner", "creation", "modified", "modified_by",
@@ -274,7 +279,7 @@ def _resolve_cost_center(cost_center, company, company_abbr, cc_cache):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_sales_invoice_docs(source_doctype, names):
+def sync_external_sales_invoice_docs(source_doctype, names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -288,6 +293,18 @@ def sync_external_sales_invoice_docs(source_doctype, names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_sales_invoice_docs_job(
+                source_doctype=source_doctype,
+                names=chunk,
+            ),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -448,6 +465,10 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
                 for field, value in row.as_dict().items():
                     if field not in SYSTEM_FIELDS and field not in IGNORE_ITEM_FIELDS:
                         item_row[field] = value
+
+                # Normalise UOM casing against local master before any further use.
+                if item_row.get("uom"):
+                    item_row["uom"] = resolve_uom(item_row["uom"])
 
                 # Resolve Sales Order
                 if row.get("sales_order"):
@@ -674,14 +695,15 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
             # ALL of these are REQUIRED by make_gl_entries().
             # ============================================================
 
-            si.set_missing_values()
-            si.calculate_taxes_and_totals()
-
             # ------------------------------------------------
             # INSERT
+            # set_missing_values() calls get_item_details() internally,
+            # which raises if an item is disabled. Guard the whole block.
             # ------------------------------------------------
             si.merge_similar_items = 0
             with temporarily_enable_transaction_items(si):
+                si.set_missing_values()
+                si.calculate_taxes_and_totals()
                 si.insert(
                     ignore_permissions=True,
                 )
@@ -748,19 +770,9 @@ def _sync_sales_invoice_docs_job(source_doctype, names):
         except Exception as e:
             if savepoint:
                 frappe.db.rollback(save_point=savepoint)
-            error = frappe.get_traceback()
 
-            frappe.log_error(
-                title=f"Sales Invoice Sync Error: {name}",
-                message=error
-            )
-
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e)
-            })
-            break
+            log_record_failure(source_doctype, name, str(e))
+            raise
         finally:
             release_sync_lock(lock_name)
 

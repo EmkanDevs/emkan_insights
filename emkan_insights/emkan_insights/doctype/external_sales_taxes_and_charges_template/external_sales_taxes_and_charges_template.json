@@ -17,9 +17,12 @@
   "tax_category",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "last_synced_on",
   "section_break_5",
-  "taxes"
+  "taxes",
+  "json",
+  "sap_response"
  ],
  "fields": [
   {
@@ -87,19 +90,38 @@
   },
   {
    "fieldname": "source_site",
-   "fieldtype": "Data",
-   "label": "Source Site"
+   "fieldtype": "Link",
+   "label": "Source Site",
+   "options": "External Site Configuration"
   },
   {
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "sap_response",
+   "fieldtype": "JSON",
+   "label": "SAP Response",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-money",
  "idx": 1,
  "links": [],
- "modified": "2026-07-29 12:53:51.527604",
+ "modified": "2026-09-08 10:22:54.792751",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Sales Taxes and Charges Template",

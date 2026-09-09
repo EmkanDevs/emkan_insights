@@ -5,6 +5,7 @@ import frappe
 import json
 from frappe.model.document import Document
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 class ExternalModeofPayment(Document):
     pass
@@ -57,13 +58,8 @@ def sync_external_docs(source_doctype, names):
                 "mode_of_payment": doc.name
             })
             
-        except Exception:
-            error = frappe.get_traceback()
-            frappe.log_error(
-                title=f"Mode of Payment Sync Error: {name}",
-                message=error
-            )
-            results.append({"name": name, "status": "failed"})
-            break
+        except Exception as e:
+            log_record_failure("Mode of Payment", name, str(e))
+            raise
     
     return results

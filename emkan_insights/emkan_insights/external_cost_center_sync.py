@@ -1,6 +1,13 @@
-import frappe
 import json
+
+import frappe
+
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.tree_sync import (
+    order_tree_sync_names,
+    resolve_tree_source_name,
+)
+
 
 @frappe.whitelist()
 @filter_kwargs
@@ -17,6 +24,11 @@ def sync_cost_center_docs(source_doctype, names):
                 OR modified >= last_synced_on
         """, pluck=True)
 
+    names = order_tree_sync_names(
+        "External Cost Center",
+        names,
+        "parent_cost_center",
+    )
     created = []
 
     for name in names:
@@ -26,7 +38,15 @@ def sync_cost_center_docs(source_doctype, names):
     return created
 
 
-def create_cost_center_from_external(external_name):
+def create_cost_center_from_external(external_name, sync_stack=None):
+
+    sync_stack = list(sync_stack or [])
+    if external_name in sync_stack:
+        cycle = sync_stack[sync_stack.index(external_name):] + [external_name]
+        frappe.throw(
+            f"Circular External Cost Center hierarchy: {' -> '.join(cycle)}"
+        )
+    sync_stack.append(external_name)
 
     external = frappe.get_doc("External Cost Center", external_name)
     sync_started_at = external.modified
@@ -79,30 +99,47 @@ def create_cost_center_from_external(external_name):
     parent_cc = None
 
     if external.parent_cost_center:
-        parent_external = frappe.get_doc(
+        parent_external_name = resolve_tree_source_name(
             "External Cost Center",
             external.parent_cost_center,
+            "remote_id",
+        )
+        if not parent_external_name:
+            frappe.throw(
+                f"Parent External Cost Center {external.parent_cost_center} "
+                f"was not found for {external.name}"
+            )
+        parent_external = frappe.get_doc(
+            "External Cost Center",
+            parent_external_name,
         )
 
         parent_target_name = parent_external.name
 
         # Ensure the parent is created first (recursive, handles arbitrary depth)
         if not frappe.db.exists("Cost Center", parent_target_name):
-            parent_cc = create_cost_center_from_external(external.parent_cost_center)
+            parent_cc = create_cost_center_from_external(
+                parent_external_name,
+                sync_stack=sync_stack,
+            )
         else:
             parent_cc = parent_target_name
+    else:
+        parent_cc = _get_company_root_cost_center(company)
 
     # -----------------------
     # Create Cost Center
     # -----------------------
-    doc = frappe.get_doc({
-        "doctype": "Cost Center",
-        "cost_center_name": cc_name,
-        "company": company,
-        "parent_cost_center": parent_cc,
-        "is_group": external.is_group,
-        "disabled": external.disabled,
-    })
+    doc = frappe.get_doc(
+        {
+            "doctype": "Cost Center",
+            "cost_center_name": cc_name,
+            "company": company,
+            "parent_cost_center": parent_cc,
+            "is_group": external.is_group,
+            "disabled": external.disabled,
+        }
+    )
 
     # Force the document's primary key (name) to match the External Cost Center
     # ID exactly.  Without this, ERPNext's autoname rule generates the name as
@@ -112,7 +149,6 @@ def create_cost_center_from_external(external_name):
     doc.flags.name_set = True      # tells Frappe not to auto-generate the name
     doc.insert(ignore_permissions=True)
 
-
     external.db_set(
         "last_synced_on",
         sync_started_at,
@@ -120,3 +156,22 @@ def create_cost_center_from_external(external_name):
     )
 
     return doc.name
+
+
+def _get_company_root_cost_center(company):
+    root = frappe.db.get_value(
+        "Cost Center",
+        {
+            "company": company,
+            "parent_cost_center": ["is", "not set"],
+            "is_group": 1,
+        },
+        "name",
+    )
+    if root:
+        return root
+
+    frappe.throw(
+        f"No root Cost Center found for company {company}. "
+        "Please create the company Cost Center tree before syncing."
+    )

@@ -15,6 +15,7 @@
   "employee",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "naming_series",
   "first_name",
   "middle_name",
@@ -120,7 +121,8 @@
   "lft",
   "rgt",
   "old_parent",
-  "connections_tab"
+  "connections_tab",
+  "json"
  ],
  "fields": [
   {
@@ -366,18 +368,7 @@
    "label": "Department",
    "oldfieldname": "department",
    "oldfieldtype": "Link",
-   "options": "Department"
-  },
-  {
-   "fieldname": "designation",
-   "fieldtype": "Link",
-   "in_global_search": 1,
-   "in_list_view": 1,
-   "label": "Designation",
-   "oldfieldname": "designation",
-   "oldfieldtype": "Link",
-   "options": "Designation",
-   "search_index": 1
+   "options": "External Department"
   },
   {
    "fieldname": "reports_to",
@@ -835,6 +826,24 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Link",
+   "label": "Designation",
+   "options": "External Designation"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-user",
@@ -842,7 +851,7 @@
  "image_field": "image",
  "is_tree": 1,
  "links": [],
- "modified": "2026-07-29 12:48:19.783532",
+ "modified": "2026-09-04 12:01:44.237378",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Employee",

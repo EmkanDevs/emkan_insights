@@ -566,6 +566,10 @@ import json
 from frappe.utils import flt, cint
 from emkan_insights.emkan_insights.account_resolver import resolve_company_account
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import (
+    log_record_failure,
+    run_chunks_fail_fast,
+)
 from emkan_insights.emkan_insights.sync_guard import acquire_sync_lock, release_sync_lock
 
 # Chunk size for splitting large bulk syncs into multiple background jobs
@@ -969,7 +973,7 @@ def _repair_draft_je_from_external(je, ext, company_abbr, company, cc_cache):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_external_journal_entries(names):
+def sync_external_journal_entries(names, sync_now=False):
     if isinstance(names, str):
         names = json.loads(names)
 
@@ -993,6 +997,15 @@ def sync_external_journal_entries(names):
         if n not in seen:
             seen.add(n)
             unique_names.append(n)
+
+    if sync_now:
+        # Sequential pipeline path: strict fail-fast. Each chunk is completed
+        # before the next starts; the first record failure aborts everything.
+        return run_chunks_fail_fast(
+            unique_names,
+            CHUNK_SIZE,
+            lambda chunk: _sync_journal_entries_job(names=chunk),
+        )
 
     # Split into chunks and enqueue one background job per chunk
     chunks = [
@@ -1112,12 +1125,10 @@ def _sync_journal_entries_job(names):
 
             final_rows = _build_account_rows(ext, company_abbr, ext.company, cc_cache)
             if not final_rows:
-                _log(
-                    f"Journal Entry {name} has no valid account rows",
-                    "All rows were skipped because 'account' field was empty.",
+                raise Exception(
+                    f"Journal Entry {name} has no valid account rows "
+                    "(account field missing on all rows)"
                 )
-                result["failed"].append({"external": name, "error": "No valid account rows (account field missing on all rows)"})
-                break
 
             je.set("accounts", final_rows)
             # FIX: this now raises (instead of silently returning) when the
@@ -1183,10 +1194,9 @@ def _sync_journal_entries_job(names):
         except Exception as e:
             if savepoint:
                 frappe.db.rollback(save_point=savepoint)
-            frappe.log_error(frappe.get_traceback(), f"Sync Error: {name}")
-            result["failed"].append({"external": name, "error": str(e)})
-            break
+            log_record_failure("Journal Entry", name, str(e))
+            raise
         finally:
             release_sync_lock(lock_name)
-    
+
     return result

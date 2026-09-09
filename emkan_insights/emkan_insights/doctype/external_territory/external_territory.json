@@ -14,6 +14,7 @@
   "is_group",
   "remote_id",
   "source_site",
+  "sap_source_site",
   "cb0",
   "territory_manager",
   "lft",
@@ -21,7 +22,8 @@
   "old_parent",
   "last_synced_on",
   "target_details_section_break",
-  "targets"
+  "targets",
+  "json"
  ],
  "fields": [
   {
@@ -137,13 +139,25 @@
    "fieldname": "last_synced_on",
    "fieldtype": "Datetime",
    "label": "Last Synced On"
+  },
+  {
+   "fieldname": "sap_source_site",
+   "fieldtype": "Link",
+   "label": "SAP Source Site",
+   "options": "External SAP Configuration"
+  },
+  {
+   "fieldname": "json",
+   "fieldtype": "JSON",
+   "label": "JSON",
+   "read_only": 1
   }
  ],
  "icon": "fa fa-map-marker",
  "idx": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-07-29 12:40:32.973430",
+ "modified": "2026-09-04 13:45:13.150375",
  "modified_by": "Administrator",
  "module": "Emkan Insights",
  "name": "External Territory",

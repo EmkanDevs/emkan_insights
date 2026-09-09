@@ -1,91 +1,12 @@
-# import frappe
-# import json
-
-# @frappe.whitelist()
-# def sync_account_docs(source_doctype: str, names, company: str):
-
-#     if isinstance(names, str):
-#         names = json.loads(names)
-
-#     for name in names:
-#         sync_external_account(name, company)
-
-#     return "Success"
-
-
-# def sync_external_account(external_name, company):
-
-#     external = frappe.get_doc("External Account", external_name)
-
-#     # Check if already created in Account
-#     existing = frappe.get_value(
-#         "Account",
-#         {
-#             "account_number": external.account_number,
-#             "company": company
-#         },
-#         "name"
-#     )
-#     if existing:
-#         return existing
-
-#     # 🔁 Resolve Parent from External
-#     external_parent = external.parent_account
-#     parent_account = None
-
-#     if external_parent:
-#         parent_account = sync_external_account(external_parent, company)
-   
-#     account = frappe.get_doc({
-#         "doctype": "Account",
-#         "account_name": external.account_name,
-#         "account_number": external.account_number,
-#         "account_type": external.account_type,
-#         "company": company,
-#         "parent_account": parent_account,
-#         "is_group": external.is_group,
-#         "root_type": external.root_type,
-#         "report_type": external.report_type,
-#         "account_currency": external.account_currency
-#     })
-
-    
-#     account.flags.ignore_root_company_validation = True
-#     account.flags.ignore_mandatory = True
-#     account.flags.ignore_links = True
-#     account.insert(ignore_permissions=True)
-#     return account.name
-
-
-#     root = frappe.get_value(
-#         "Account",
-#         {
-#             "company": company,
-#             "root_type": root_type,
-#             "parent_account": ["is", "not set"]
-#         },
-#         "name"
-#     )
-
-#     if root:
-#         return root
-
-#     root_doc = frappe.get_doc({
-#         "doctype": "Account",
-#         "account_name": root_type,
-#         "company": company,
-#         "root_type": root_type,
-#         "is_group": 1,
-#         "report_type": "Balance Sheet" if root_type in ["Asset", "Liability", "Equity"] else "Profit and Loss"
-#     })
-
-#     root_doc.insert(ignore_permissions=True)
-
-#     return root_doc.name
-
+import json
 
 import frappe
-import json
+
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
+from emkan_insights.emkan_insights.tree_sync import (
+    order_tree_sync_names,
+    resolve_tree_source_name,
+)
 
 
 @frappe.whitelist()
@@ -94,22 +15,26 @@ def sync_account_docs(source_doctype: str, names, company: str):
     if isinstance(names, str):
         names = json.loads(names)
 
+    names = order_tree_sync_names(source_doctype, names, "parent_account")
+    synced_names = []
     for name in names:
         try:
             external = frappe.get_doc(source_doctype, name)
             sync_started_at = external.modified
 
             result = sync_external_account(name, company)
+            synced_names.append(result)
 
             external.db_set(
                 "last_synced_on",
                 sync_started_at,
                 update_modified=False
             )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"Account Sync Failed: {name}")
+        except Exception as e:
+            log_record_failure("Account", name, str(e))
+            raise
 
-    return "Success"
+    return synced_names
 
 
 def _find_existing_account(candidate_name, company):
@@ -134,7 +59,7 @@ def _find_existing_account_by_number(account_number, company):
     )
 
 
-def sync_external_account(external_name, company):
+def sync_external_account(external_name, company, sync_stack=None):
 
     external = frappe.get_doc("External Account", external_name)
 
@@ -155,6 +80,12 @@ def sync_external_account(external_name, company):
     if existing:
         return existing
 
+    sync_stack = list(sync_stack or [])
+    if external_name in sync_stack:
+        cycle = sync_stack[sync_stack.index(external_name):] + [external_name]
+        frappe.throw(f"Circular External Account hierarchy: {' -> '.join(cycle)}")
+    sync_stack.append(external_name)
+
     # Prefer the raw remote_id as the new Account's name. Only prefix
     # with the company abbreviation if that raw name is already taken -
     # by construction that means it belongs to a DIFFERENT company
@@ -169,20 +100,38 @@ def sync_external_account(external_name, company):
     parent_account = None
 
     if external_parent:
-        parent_account = sync_external_account(external_parent, company)
+        parent_external_name = resolve_tree_source_name(
+            "External Account",
+            external_parent,
+            "remote_id",
+        )
+        if not parent_external_name:
+            frappe.throw(
+                f"Parent External Account {external_parent} was not found for "
+                f"{external.name}"
+            )
+        parent_account = sync_external_account(
+            parent_external_name,
+            company,
+            sync_stack=sync_stack,
+        )
+    else:
+        parent_account = _get_company_root_account(company, external.root_type)
 
-    account = frappe.get_doc({
-        "doctype": "Account",
-        "account_name": external.account_name,
-        "account_number": external.account_number,
-        "account_type": external.account_type,
-        "company": company,
-        "parent_account": parent_account,
-        "is_group": external.is_group,
-        "root_type": external.root_type,
-        "report_type": external.report_type,
-        "account_currency": external.account_currency
-    })
+    account = frappe.get_doc(
+        {
+            "doctype": "Account",
+            "account_name": external.account_name,
+            "account_number": external.account_number,
+            "account_type": external.account_type,
+            "company": company,
+            "parent_account": parent_account,
+            "is_group": external.is_group,
+            "root_type": external.root_type,
+            "report_type": external.report_type,
+            "account_currency": external.account_currency,
+        }
+    )
 
     # FIX: force the Account's name to the External Account's remote_id
     # instead of letting ERPNext's autoname() derive it from
@@ -205,3 +154,23 @@ def sync_external_account(external_name, company):
         )
 
     return account.name
+
+
+def _get_company_root_account(company, root_type):
+    root = frappe.db.get_value(
+        "Account",
+        {
+            "company": company,
+            "root_type": root_type,
+            "parent_account": ["is", "not set"],
+            "is_group": 1,
+        },
+        "name",
+    )
+    if root:
+        return root
+
+    frappe.throw(
+        f"No root Account found for company {company} and root type {root_type}. "
+        "Please create the Chart of Accounts before syncing."
+    )

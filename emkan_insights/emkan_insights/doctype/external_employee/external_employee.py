@@ -11,6 +11,7 @@ class ExternalEmployee(Document):
 import frappe
 import json
 from frappe.utils import flt, nowdate, getdate
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 
 
 # ==========================================================
@@ -571,64 +572,13 @@ def upsert_employee(src, existing_name):
         )
 
     # ----------------------------------------------------------
-    # Verify counts
-    # ----------------------------------------------------------
-    actual_edu = frappe.db.count("Employee Education", {"parent": employee_name})
-    expected_edu = len(getattr(src, "education", []) or [])
-
-    actual_ext = 0
-    expected_ext = len(getattr(src, "external_work_history", []) or [])
-    if frappe.db.table_exists("tabExternal Work History"):
-        actual_ext = frappe.db.count(
-            "External Work History",
-            {"parent": employee_name, "parenttype": "Employee"}
-        )
-
-    actual_int = 0
-    expected_int = len(getattr(src, "internal_work_history", []) or [])
-    if frappe.db.table_exists("tabInternal Work History"):
-        actual_int = frappe.db.count(
-            "Internal Work History",
-            {"parent": employee_name, "parenttype": "Employee"}
-        )
-
-    if actual_edu != expected_edu:
-        frappe.log_error(
-            title=f"Employee Sync education mismatch: {employee_name}",
-            message=f"Expected {expected_edu}, found {actual_edu}. "
-                    f"Successfully inserted: {edu_success}, Errors: {len(edu_errors)}. "
-                    f"This may indicate duplicate source rows in External Employee."
-        )
-
-    if actual_ext != expected_ext:
-        frappe.log_error(
-            title=f"Employee Sync external work history mismatch: {employee_name}",
-            message=f"Expected {expected_ext}, found {actual_ext}. "
-                    f"Successfully inserted: {ext_success}, Errors: {len(ext_errors)}."
-        )
-
-    if actual_int != expected_int:
-        frappe.log_error(
-            title=f"Employee Sync internal work history mismatch: {employee_name}",
-            message=f"Expected {expected_int}, found {actual_int}. "
-                    f"Successfully inserted: {int_success}, Errors: {len(int_errors)}."
-        )
-
-    # ----------------------------------------------------------
     # Write back remote_id onto the External Employee parent
     # ----------------------------------------------------------
-    if frappe.db.exists("DocType", "External Employee"):
-        ext_emp_meta = frappe.get_meta("External Employee")
-        if ext_emp_meta.has_field("remote_id"):
-            # Use db_set on the source doc (ORM equivalent of frappe.db.set_value)
-            src.db_set("remote_id", employee_name, update_modified=False)
+    ext_emp_meta = frappe.get_meta("External Employee")
+    if ext_emp_meta.has_field("remote_id"):
+        src.db_set("remote_id", employee_name, update_modified=False)
 
-    # ----------------------------------------------------------
-    # Reload and return
-    # ----------------------------------------------------------
     frappe.clear_document_cache("Employee", employee_name)
-    doc = frappe.get_doc("Employee", employee_name)
-
     return doc
 
 
@@ -638,18 +588,24 @@ def upsert_employee(src, existing_name):
 
 @frappe.whitelist()
 @filter_kwargs
-def sync_employee_docs(source_doctype: str, names):
+def sync_employee_docs(source_doctype: str, names, sync_now=False):
     """
-    Whitelisted entry point to queue employee sync.
-    Called from client-side with list of External Employee names.
+    Sync External Employee records to the Employee doctype.
+
+    When called from the sequential pipeline (sync_now=True), runs synchronously.
+    When called from the client, enqueues a background job.
     """
     if isinstance(names, str):
         names = json.loads(names)
+
+    if sync_now:
+        return sync_bulk_employees(names)
+
     frappe.enqueue(
         "emkan_insights.emkan_insights.doctype.external_employee.external_employee.sync_bulk_employees",
         queue="long",
         names=names,
-        timeout=2000
+        timeout=2000,
     )
     return "Sync Queued"
 
@@ -658,14 +614,14 @@ def sync_bulk_employees(names):
     """
     Bulk sync employees from External Employee to Employee.
     Processed in background queue.
-    
+
     All database writes happen within a single transaction.
     Frappe automatically commits the transaction when the background job finishes.
     """
     results = []
+
     for name in names:
         try:
-            
             src = frappe.get_doc("External Employee", name)
 
             company_abbr = frappe.db.get_value("Company", src.company, "abbr") or ""
@@ -684,22 +640,10 @@ def sync_bulk_employees(names):
                 "name": name,
                 "status": "success",
                 "employee_name": doc.name,
-                "employee_id": doc.employee_number,
-                "full_name": doc.employee_name,
-                "department": doc.department,
-                "designation": doc.designation,
             })
-
-            # NO batch commit every 10 records
 
         except Exception as e:
-            import traceback
-            results.append({
-                "name": name,
-                "status": "failed",
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            })
-            break
+            log_record_failure("Employee", name, str(e))
+            raise
 
     return results

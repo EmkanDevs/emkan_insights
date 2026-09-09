@@ -5,6 +5,7 @@ import frappe
 import json
 from frappe.model.document import Document
 from emkan_insights.emkan_insights.registry.decorators import filter_kwargs
+from emkan_insights.emkan_insights.external_sync_utils import log_record_failure
 from emkan_insights.emkan_insights.sync_guard import set_source_site_fields
 
 class ExternalProductionPlan(Document):
@@ -259,9 +260,8 @@ def sync_external_production_plan_docs(source_doctype, names):
 
             results.append({"name": target_name, "status": "synced"})
 
-        except Exception:
-            frappe.log_error(f"Production Plan Sync Error: {name}", frappe.get_traceback())
-            results.append({"name": name, "status": "failed"})
-            break
+        except Exception as e:
+            log_record_failure("Production Plan", name, str(e))
+            raise
 
     return results
