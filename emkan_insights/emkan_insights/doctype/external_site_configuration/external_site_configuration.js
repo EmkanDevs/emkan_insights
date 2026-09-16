@@ -11,15 +11,9 @@ frappe.ui.form.on('External Site Configuration', {
             );
             add_sequence_button(
                 frm,
-                __('Sync Only'),
-                "emkan_insights.emkan_insights.scheduler.sync_external_site_configuration_sequence",
-                __('Queueing sequential sync...')
-            );
-            add_sequence_button(
-                frm,
-                __('Fetch + Sync'),
+                __('Fetch + Bulk Insert'),
                 "emkan_insights.emkan_insights.scheduler.fetch_and_sync_external_site_configuration_sequence",
-                __('Queueing sequential fetch and sync...')
+                __('Queueing sequential fetch and bulk insert...')
             );
             add_bulk_insert_button(frm);
             add_sequence_button(
@@ -136,8 +130,6 @@ function queue_bulk_insert(configuration_name) {
         }
     });
 }
-
-
 
 frappe.ui.form.on('External Site Configuration CT', {
     fetch_data: function (frm, cdt, cdn) {

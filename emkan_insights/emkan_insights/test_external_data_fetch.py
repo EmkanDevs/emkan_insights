@@ -82,6 +82,19 @@ class TestExternalDataFetch(FrappeTestCase):
 		)
 		response.raise_for_status.assert_called_once_with()
 
+	@patch(f"{MODULE}.requests.get")
+	def test_name_page_excludes_temporarily_named_gl_entries(self, get):
+		response = Mock()
+		response.json.return_value = {"data": [{"name": "ACC-GLE-2026-00001"}]}
+		get.return_value = response
+		context = _fetch_context()
+		context = FetchContext(**{**context.__dict__, "remote_doctype": "GL Entry"})
+
+		_fetch_remote_names(context, None)
+
+		filters = json.loads(get.call_args.kwargs["params"]["filters"])
+		self.assertIn(["to_rename", "=", 0], filters)
+
 
 def _fetch_context():
 	return FetchContext(

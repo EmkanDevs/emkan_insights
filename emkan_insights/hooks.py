@@ -95,11 +95,6 @@ doctype_js = {"Company" : "public/js/company.js"}
 # 	"methods": "emkan_insights.utils.jinja_methods",
 # 	"filters": "emkan_insights.utils.jinja_filters"
 # }
-app_include_js = [
-    "/assets/emkan_insights/js/external_sync_global.js"
-]
-
-
 # Installation
 # ------------
 

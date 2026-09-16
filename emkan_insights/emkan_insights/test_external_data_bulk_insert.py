@@ -19,9 +19,59 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	add_prefix,
 	transform_row,
 )
+from emkan_insights.emkan_insights.external_data_fetch import is_deferred_naming_pending
 
 
 class TestExternalDataBulkInsert(FrappeTestCase):
+	def test_temporary_ledger_rows_are_not_ready_for_import(self):
+		self.assertTrue(is_deferred_naming_pending("GL Entry", {"to_rename": 1}))
+		self.assertTrue(is_deferred_naming_pending("Stock Ledger Entry", {"to_rename": "1"}))
+		self.assertFalse(is_deferred_naming_pending("GL Entry", {"to_rename": 0}))
+		self.assertFalse(is_deferred_naming_pending("Sales Invoice", {"to_rename": 1}))
+
+	def test_bulk_insert_skips_staged_temporary_ledger_row(self):
+		context = BulkInsertContext(
+			configuration="Remote Site",
+			source_doctype="External GL Entry",
+			target_doctype="GL Entry",
+			company_abbr="CMP",
+			abbr_doctypes=frozenset({"GL Entry"}),
+			requested_by="Administrator",
+		)
+		source_row = _dict(
+			name="staging-row",
+			remote_id="temporary-hash",
+			json='{"name": "temporary-hash", "to_rename": 1}',
+		)
+
+		with (
+			patch(
+				"emkan_insights.emkan_insights.external_data_bulk_insert._validate_source"
+			),
+			patch(
+				"emkan_insights.emkan_insights.external_data_bulk_insert._count_pending_source_rows",
+				return_value=1,
+			),
+			patch(
+				"emkan_insights.emkan_insights.external_data_bulk_insert._get_pending_source_rows",
+				side_effect=[[source_row], []],
+			),
+			patch(
+				"emkan_insights.emkan_insights.external_data_bulk_insert._partition_document_trees"
+			) as partition,
+			patch(
+				"emkan_insights.emkan_insights.external_data_bulk_insert._mark_source_rows_synced"
+			) as mark_synced,
+			patch.object(frappe.db, "commit"),
+			patch.object(frappe, "log_error"),
+		):
+			result = _bulk_insert_records(context, "2026-09-10 10:00:00")
+
+		self.assertEqual(result["inserted"], 0)
+		self.assertEqual(result["updated"], 0)
+		partition.assert_not_called()
+		mark_synced.assert_called_once_with("External GL Entry", [source_row])
+
 	def test_configuration_rows_are_processed_in_child_table_order(self):
 		configuration = _dict(fetch_data=[
 			_dict(idx=3, ref_doctype="Sales Invoice"),

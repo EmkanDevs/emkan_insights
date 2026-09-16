@@ -8,6 +8,8 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cint, now_datetime
 from frappe.utils.nestedset import rebuild_tree
 
+from emkan_insights.emkan_insights.external_data_fetch import is_deferred_naming_pending
+
 
 PAGE_SIZE = 500
 BULK_INSERT_LOCK_TTL = 7200
@@ -62,7 +64,12 @@ def queue_external_data_bulk_insert(configuration_name: str) -> dict:
 	}
 
 
-def bulk_insert_external_data(configuration_name: str, requested_by: str | None = None) -> dict:
+def bulk_insert_external_data(
+	configuration_name: str,
+	requested_by: str | None = None,
+	*,
+	release_lock: bool = True,
+) -> dict:
 	try:
 		configuration = frappe.get_doc("External Site Configuration", configuration_name)
 		requested_by = requested_by or frappe.session.user
@@ -80,9 +87,19 @@ def bulk_insert_external_data(configuration_name: str, requested_by: str | None 
 			user=requested_by,
 			after_commit=True,
 		)
-		return result
 	finally:
-		frappe.cache().delete(_lock_key(configuration_name))
+		if release_lock:
+			frappe.cache().delete(_lock_key(configuration_name))
+
+	if release_lock:
+		from emkan_insights.emkan_insights.external_data_deletion import (
+			enqueue_external_data_deletion_reconciliation,
+		)
+
+		result["deletion_reconciliation"] = enqueue_external_data_deletion_reconciliation(
+			configuration_name,
+		)
+	return result
 
 
 def _ordered_configuration_rows(configuration) -> list:
@@ -212,15 +229,18 @@ def _bulk_insert_records(context: BulkInsertContext, started_at) -> dict:
 		prepared = []
 		for source_row in source_rows:
 			raw = _parse_json(source_row.json, source_row.name)
+			if is_deferred_naming_pending(context.target_doctype, raw):
+				continue
 			raw.setdefault("name", source_row.remote_id or source_row.name)
 			prepared.append(_prepare_document_tree(context, raw))
 
-		new_documents, existing_documents = _partition_document_trees(
-			context.target_doctype,
-			prepared,
-		)
-		inserted += _insert_document_trees(new_documents)
-		updated += _update_document_trees(context.target_doctype, existing_documents)
+		if prepared:
+			new_documents, existing_documents = _partition_document_trees(
+				context.target_doctype,
+				prepared,
+			)
+			inserted += _insert_document_trees(new_documents)
+			updated += _update_document_trees(context.target_doctype, existing_documents)
 		_mark_source_rows_synced(context.source_doctype, source_rows)
 		frappe.db.commit()
 	if context.target_doctype == "Account":

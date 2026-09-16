@@ -1,5 +1,8 @@
 import frappe
 
+from emkan_insights.emkan_insights.external_data_deletion import (
+	enqueue_external_data_deletion_batch,
+)
 from emkan_insights.emkan_insights.scheduler import (
 	SITE_PIPELINE_LOCK_TTL,
 	fetch_external_site_configuration_sequence_job,
@@ -11,7 +14,7 @@ SCHEDULER_JOB_ID = "external_site_configuration_fetch_and_sync"
 
 
 def enqueue_external_site_configuration_scheduler():
-	"""Queue one fetch-and-sync job for all external site configurations."""
+	"""Queue fetch, sync, and deletion reconciliation for all external sites."""
 	job = frappe.enqueue(
 		"emkan_insights.emkan_insights.scheduler.external_site_configuration_scheduler."
 		"run_external_site_configuration_scheduler",
@@ -27,7 +30,7 @@ def enqueue_external_site_configuration_scheduler():
 
 
 def run_external_site_configuration_scheduler():
-	"""Fetch every external site, then sync every successful fetch."""
+	"""Fetch and sync every external site, then queue deletion reconciliation."""
 	config_names = frappe.get_all(
 		"External Site Configuration",
 		pluck="name",
@@ -38,6 +41,7 @@ def run_external_site_configuration_scheduler():
 		"configurations": len(config_names),
 		"fetch": [],
 		"sync": [],
+		"deletion": None,
 	}
 
 	ready_to_sync = []
@@ -51,14 +55,22 @@ def run_external_site_configuration_scheduler():
 		if result["status"] == "complete":
 			ready_to_sync.append(config_name)
 
+	ready_to_delete = []
 	for config_name in ready_to_sync:
-		results["sync"].append(
-			_run_configuration_phase(
-				"sync",
-				config_name,
-				sync_external_site_configuration_sequence_job,
-			)
+		result = _run_configuration_phase(
+			"sync",
+			config_name,
+			sync_external_site_configuration_sequence_job,
+			enqueue_deletion=False,
 		)
+		results["sync"].append(result)
+		if result["status"] == "complete":
+			ready_to_delete.append(config_name)
+
+	results["deletion"] = enqueue_external_data_deletion_batch(
+		ready_to_delete,
+		enqueue_after_commit=False,
+	)
 
 	if _has_incomplete_phase(results):
 		results["status"] = "complete_with_errors"
@@ -70,9 +82,9 @@ def run_external_site_configuration_scheduler():
 	return results
 
 
-def _run_configuration_phase(phase, config_name, method):
+def _run_configuration_phase(phase, config_name, method, **kwargs):
 	try:
-		result = method(config_name) or {}
+		result = method(config_name, **kwargs) or {}
 		return {
 			"site_config": config_name,
 			"status": result.get("status", "complete"),

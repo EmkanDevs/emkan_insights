@@ -9,6 +9,17 @@ class ExternalSiteConfiguration(Document):
 	pass
 
 
+@frappe.whitelist(methods=["POST"])
+def fetch_and_sync_all_companies() -> dict:
+	frappe.has_permission("External Site Configuration", "write", throw=True)
+
+	from emkan_insights.emkan_insights.scheduler.external_site_configuration_scheduler import (
+		enqueue_external_site_configuration_scheduler,
+	)
+
+	return enqueue_external_site_configuration_scheduler()
+
+
 FETCH_ONLY_DOCTYPE_MAPPINGS = {
 	"Blanket Order": "External Blanket Order",
 	"GL Entry": "External GL Entry",

@@ -4,3 +4,10 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+emkan_insights.patches.v0_0_1.fix_rfq_double_company_prefix
+emkan_insights.patches.v0_0_1.suffix_synced_departments
+emkan_insights.patches.v0_0_1.normalize_source_site_values
+emkan_insights.patches.v0_0_1.add_fetch_only_doctypes
+emkan_insights.patches.v0_0_1.backfill_cpc_source_site
+emkan_insights.patches.v0_0_1.add_period_closing_voucher_fetch
+emkan_insights.patches.v0_0_1.remove_temporary_ledger_duplicates

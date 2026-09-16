@@ -11,6 +11,7 @@ from frappe import _
 PAGE_SIZE = 500
 FETCH_WORKERS = 8
 FETCH_LOCK_TTL = 7200
+DEFERRED_NAMING_DOCTYPES = frozenset({"GL Entry", "Stock Ledger Entry"})
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,8 @@ def _fetch_remote_names(context: FetchContext, cursor: str | None) -> list[str]:
 	filters = [["modified", "<=", context.window_end]]
 	if context.window_start:
 		filters.append(["modified", ">", context.window_start])
+	if context.remote_doctype in DEFERRED_NAMING_DOCTYPES:
+		filters.append(["to_rename", "=", 0])
 	if cursor:
 		filters.append(["name", ">", cursor])
 
@@ -176,6 +179,10 @@ def _fetch_remote_names(context: FetchContext, cursor: str | None) -> list[str]:
 	)
 	response.raise_for_status()
 	return [row["name"] for row in response.json().get("data", []) if row.get("name")]
+
+
+def is_deferred_naming_pending(doctype: str, document: dict) -> bool:
+	return doctype in DEFERRED_NAMING_DOCTYPES and frappe.utils.cint(document.get("to_rename")) == 1
 
 
 def _fetch_documents(context: FetchContext, names: list[str]) -> tuple[list[dict], list[dict]]:
