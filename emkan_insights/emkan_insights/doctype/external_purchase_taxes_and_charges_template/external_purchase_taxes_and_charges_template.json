@@ -7,6 +7,7 @@
  "field_order": [
   "remote_id",
   "source_site",
+  "external_sap_configuration",
   "last_synced_on",
   "json"
  ],
@@ -23,6 +24,13 @@
    "in_list_view": 1,
    "label": "Source Site",
    "options": "External Site Configuration"
+  },
+  {
+   "fieldname": "external_sap_configuration",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "External SAP Configuration",
+   "options": "External SAP Configuration"
   },
   {
    "fieldname": "last_synced_on",

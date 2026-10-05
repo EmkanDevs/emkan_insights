@@ -172,18 +172,18 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
+	"hourly": [
+	],
 	"cron": {
 		"0 0 * * *": [
 			"emkan_insights.emkan_insights.scheduler.external_site_configuration_scheduler.enqueue_external_site_configuration_scheduler"
 		],
-        # Keep every SAP Service Layer session warm. SAP sessions expire after
-        # ~30 minutes of inactivity; pinging every 10 minutes ensures sessions
-        # never idle long enough to drop. heartbeat_all_configs iterates every
-        # External SAP Configuration doc so one scheduler entry covers all
-        # SAP connections on the site.
-        "*/10 * * * *": [
-            "emkan_insights.sap.fetch_from_sap.sap_heartbeat.heartbeat_all_configs"
-        ],
+		"0 3 * * *": [
+			"emkan_insights.sap.tasks.enqueue_incremental_master_fetch"
+		],
+		"0 4 * * *": [
+			"emkan_insights.sap.tasks.enqueue_sap_master_sync"
+		],
         # # Phase 1 – fetch from remote site (enqueues background API calls)
         # "0 * * * *": [
         #     "emkan_insights.emkan_insights.scheduler.fetch_scheduler"

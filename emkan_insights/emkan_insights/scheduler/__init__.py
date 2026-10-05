@@ -1093,7 +1093,7 @@ def fetch_external_site_configuration_sequence_job(site_config):
         _release_site_pipeline_lock(site_config)
 
 
-def sync_external_site_configuration_sequence_job(site_config):
+def sync_external_site_configuration_sequence_job(site_config, enqueue_deletion=True):
     if not _acquire_site_pipeline_lock(site_config):
         _log_sync_event(
             "Sequential Sync Skipped",
@@ -1105,13 +1105,13 @@ def sync_external_site_configuration_sequence_job(site_config):
         }
 
     try:
-        from emkan_insights.emkan_insights.external_data_bulk_insert import (
-            bulk_insert_external_data,
-        )
-
-        return bulk_insert_external_data(site_config)
+        sync_result = _sync_external_configuration(site_config)
     finally:
         _release_site_pipeline_lock(site_config)
+
+    if enqueue_deletion:
+        return _enqueue_deletion_after_sync(site_config, sync_result)
+    return sync_result
 
 
 def run_external_site_configuration_sequence_job(site_config):
@@ -1127,13 +1127,32 @@ def run_external_site_configuration_sequence_job(site_config):
 
     try:
         _fetch_configuration_sequentially(site_config)
-        from emkan_insights.emkan_insights.external_data_bulk_insert import (
-            bulk_insert_external_data,
-        )
-
-        return bulk_insert_external_data(site_config)
+        sync_result = _sync_external_configuration(site_config)
     finally:
         _release_site_pipeline_lock(site_config)
+
+    return _enqueue_deletion_after_sync(site_config, sync_result)
+
+
+def _sync_external_configuration(site_config):
+    from emkan_insights.emkan_insights.external_data_bulk_insert import (
+        bulk_insert_external_data,
+    )
+
+    return bulk_insert_external_data(site_config, release_lock=False)
+
+
+def _enqueue_deletion_after_sync(site_config, sync_result):
+    from emkan_insights.emkan_insights.external_data_deletion import (
+        enqueue_external_data_deletion_reconciliation,
+    )
+
+    deletion_result = enqueue_external_data_deletion_reconciliation(
+        site_config,
+        enqueue_after_commit=False,
+    )
+    sync_result["deletion_reconciliation"] = deletion_result
+    return sync_result
 
 
 def _fetch_configuration_sequentially(config_name):
@@ -1216,8 +1235,8 @@ def fetch_scheduler(site_config=None):
 
 def sync_external_docs_scheduler(site_config=None):
     """Bulk insert pending staging records for every configured external site."""
-    from emkan_insights.emkan_insights.external_data_bulk_insert import (
-        bulk_insert_external_data,
+    from emkan_insights.emkan_insights.external_data_deletion import (
+        enqueue_external_data_deletion_batch,
     )
 
     filters = {}
@@ -1231,6 +1250,7 @@ def sync_external_docs_scheduler(site_config=None):
     )
 
     logger = frappe.logger("external_sync")
+    ready_to_delete = []
 
     for config_name in configs:
         if not _acquire_site_pipeline_lock(config_name):
@@ -1241,9 +1261,16 @@ def sync_external_docs_scheduler(site_config=None):
             continue
 
         try:
-            bulk_insert_external_data(config_name)
+            _sync_external_configuration(config_name)
         finally:
             _release_site_pipeline_lock(config_name)
+
+        ready_to_delete.append(config_name)
+
+    enqueue_external_data_deletion_batch(
+        ready_to_delete,
+        enqueue_after_commit=False,
+    )
 
 
 def _external_doc_sync_filters(external_doctype, config=None):

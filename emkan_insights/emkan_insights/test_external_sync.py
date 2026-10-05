@@ -3,12 +3,31 @@ from unittest.mock import MagicMock, patch
 from frappe.tests.utils import FrappeTestCase
 
 from emkan_insights.emkan_insights.external_sync import (
+    _get_source_configuration_company,
     _sync_child_tables,
     _sync_external_docs_worker,
 )
 
 
 class TestExternalSyncWorker(FrappeTestCase):
+    @patch("emkan_insights.emkan_insights.external_sync.frappe.db.get_value")
+    def test_gets_company_from_sap_configuration(self, get_value):
+        get_value.return_value = "Sap Company"
+
+        company = _get_source_configuration_company(
+            {
+                "external_sap_configuration": "SAP - Sap Company",
+                "source_site": None,
+            }
+        )
+
+        self.assertEqual(company, "Sap Company")
+        get_value.assert_called_once_with(
+            "External SAP Configuration",
+            "SAP - Sap Company",
+            "company",
+        )
+
     def test_tax_templates_use_generic_sync(self):
         from emkan_insights.emkan_insights.external_sync import sync_external_docs
         from emkan_insights.emkan_insights.registry.sync_registry import SYNC_METHODS

@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:mapping_name",
+ "creation": "2026-09-16 14:36:09.397586",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "mapping_name",
+  "enabled",
+  "sap_doctype",
+  "external_doctype",
+  "erp_doctype",
+  "sap_filter",
+  "source_array_field",
+  "date_filter_field",
+  "sap_id_field",
+  "erp_sap_id_fieldname",
+  "mapping_section",
+  "field_mapping"
+ ],
+ "fields": [
+  {
+   "fieldname": "mapping_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Mapping Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "sap_doctype",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SAP Entity",
+   "reqd": 1
+  },
+  {
+   "description": "Staging DocType that stores remote_id, source_site, last_synced_on, and json.",
+   "fieldname": "external_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "External DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "ERPNext DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "description": "Optional OData filter, for example CardType eq 'cCustomer'.",
+   "fieldname": "sap_filter",
+   "fieldtype": "Small Text",
+   "label": "SAP Filter"
+  },
+  {
+   "description": "Optional array on each SAP record to flatten into separate staging records, for example ContactEmployees.",
+   "fieldname": "source_array_field",
+   "fieldtype": "Data",
+   "label": "Source Array Field"
+  },
+  {
+   "fieldname": "date_filter_field",
+   "fieldtype": "Data",
+   "label": "SAP Date Filter Field"
+  },
+  {
+   "fieldname": "sap_id_field",
+   "fieldtype": "Data",
+   "label": "SAP ID Field",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_sap_id_fieldname",
+   "fieldtype": "Data",
+   "label": "ERPNext SAP ID Fieldname",
+   "description": "Optional field used by a later staging-to-ERPNext synchronization step."
+  },
+  {
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "Field Mapping"
+  },
+  {
+   "description": "ERPNext fieldnames are keys. Direct values are SAP fieldnames. Child tables use {\"fieldname\": \"SAPArray\", \"mapping\": [{\"erp_field\": \"SAPField\"}] }.",
+   "fieldname": "field_mapping",
+   "fieldtype": "Code",
+   "label": "ERPNext-first JSON Mapping",
+   "options": "JSON",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-16 14:36:09.397586",
+ "modified_by": "Administrator",
+ "module": "SAP",
+ "name": "SAP Doctype Mapping",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

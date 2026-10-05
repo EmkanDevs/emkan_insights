@@ -18,10 +18,10 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "emkan_insights/emkan_insights/accounts.py": {
-    "mtime": 1785773519.293075,
-    "seen": 1787208740.8729563,
-    "ast_hash": "3dfd52c4c929708748f993bb83f9aa78",
-    "semantic_hash": "3dfd52c4c929708748f993bb83f9aa78"
+    "mtime": 1788257870.0757291,
+    "seen": 1788349916.79542,
+    "ast_hash": "28bc37fec686a84ad0397617e03314f3",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/__init__.py": {
     "mtime": 1770200102.4744897,
@@ -83,29 +83,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_account/external_account.js": {
-    "mtime": 1771840278.8260896,
-    "seen": 1787208740.8729799,
-    "ast_hash": "81a8f3a032d7a01e61ce68647fdad780",
-    "semantic_hash": "81a8f3a032d7a01e61ce68647fdad780"
-  },
   "emkan_insights/emkan_insights/doctype/external_account/external_account.py": {
-    "mtime": 1784786054.2537403,
-    "seen": 1787208740.8729818,
-    "ast_hash": "5facd383fdc750b819b91c560ea4421e",
-    "semantic_hash": "5facd383fdc750b819b91c560ea4421e"
-  },
-  "emkan_insights/emkan_insights/doctype/external_account/external_account_list.js": {
-    "mtime": 1773034007.2436943,
-    "seen": 1787208740.8729842,
-    "ast_hash": "65ec584ff11b26f682a3130b65ec975b",
-    "semantic_hash": "65ec584ff11b26f682a3130b65ec975b"
-  },
-  "emkan_insights/emkan_insights/doctype/external_account/external_account_tree.js": {
-    "mtime": 1772003107.3631341,
-    "seen": 1787208740.872986,
-    "ast_hash": "c6c25c1b036030bb9c609571ce4deaf8",
-    "semantic_hash": "c6c25c1b036030bb9c609571ce4deaf8"
+    "mtime": 1788946501.6583188,
+    "seen": 1789023014.2640455,
+    "ast_hash": "361d6060b213bc494ad9afa172cac88b",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_account/test_external_account.py": {
     "mtime": 1770288680.7150679,
@@ -119,23 +101,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_address/external_address.js": {
-    "mtime": 1770289161.9035892,
-    "seen": 1787208740.8729923,
-    "ast_hash": "28364e7110746d6168443272d956363e",
-    "semantic_hash": "28364e7110746d6168443272d956363e"
-  },
   "emkan_insights/emkan_insights/doctype/external_address/external_address.py": {
-    "mtime": 1785739308.898513,
-    "seen": 1787208740.8729944,
-    "ast_hash": "c4695e23be9bc1be6bd2a9f6f6dc1732",
-    "semantic_hash": "c4695e23be9bc1be6bd2a9f6f6dc1732"
-  },
-  "emkan_insights/emkan_insights/doctype/external_address/external_address_list.js": {
-    "mtime": 1784101876.6351762,
-    "seen": 1787208740.8729994,
-    "ast_hash": "e030ed79a99502c536830f754a7d5c28",
-    "semantic_hash": "e030ed79a99502c536830f754a7d5c28"
+    "mtime": 1788946501.8143203,
+    "seen": 1789023014.264196,
+    "ast_hash": "9b043c7ae92a4db72227ba2cf3e1bacb",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_address/test_external_address.py": {
     "mtime": 1770289161.9035892,
@@ -149,23 +119,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_asset/external_asset.js": {
-    "mtime": 1770805032.393802,
-    "seen": 1787208740.8730059,
-    "ast_hash": "96173773a07f64dd0ca653f059ce0a14",
-    "semantic_hash": "96173773a07f64dd0ca653f059ce0a14"
-  },
   "emkan_insights/emkan_insights/doctype/external_asset/external_asset.py": {
-    "mtime": 1774602997.3890154,
-    "seen": 1787208740.8730085,
-    "ast_hash": "9be1a14de7c8efa473066c967c2bf262",
-    "semantic_hash": "9be1a14de7c8efa473066c967c2bf262"
-  },
-  "emkan_insights/emkan_insights/doctype/external_asset/external_asset_list.js": {
-    "mtime": 1787133833.9133534,
-    "seen": 1787208740.8730106,
-    "ast_hash": "8909805be129b5592bba2901c762ed30",
-    "semantic_hash": "8909805be129b5592bba2901c762ed30"
+    "mtime": 1788946501.9583216,
+    "seen": 1789023014.264346,
+    "ast_hash": "c1a24289abe3b13737dcbea641aa527c",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_asset/test_external_asset.py": {
     "mtime": 1770805032.393802,
@@ -179,23 +137,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_asset_category/external_asset_category.js": {
-    "mtime": 1770803768.0138757,
-    "seen": 1787208740.8730168,
-    "ast_hash": "3592d5d35bb4381b5434a4ae97a3b197",
-    "semantic_hash": "3592d5d35bb4381b5434a4ae97a3b197"
-  },
   "emkan_insights/emkan_insights/doctype/external_asset_category/external_asset_category.py": {
-    "mtime": 1785741823.298634,
-    "seen": 1787208740.8730192,
-    "ast_hash": "b9cd86aca73fc94d21253cb391aca2cf",
-    "semantic_hash": "b9cd86aca73fc94d21253cb391aca2cf"
-  },
-  "emkan_insights/emkan_insights/doctype/external_asset_category/external_asset_category_list.js": {
-    "mtime": 1771482558.9810526,
-    "seen": 1787208740.8730211,
-    "ast_hash": "9fa2aece7bdf79b51101a32e84376419",
-    "semantic_hash": "9fa2aece7bdf79b51101a32e84376419"
+    "mtime": 1788946502.106323,
+    "seen": 1789023014.2645001,
+    "ast_hash": "a8b084da528999c795d87ec23ffb68a5",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_asset_category/test_external_asset_category.py": {
     "mtime": 1770803768.0138757,
@@ -209,23 +155,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_bank/external_bank.js": {
-    "mtime": 1770288820.2883794,
-    "seen": 1787208740.8730276,
-    "ast_hash": "c5773d1d3bfa1ef5a5de9af5ee0684e1",
-    "semantic_hash": "c5773d1d3bfa1ef5a5de9af5ee0684e1"
-  },
   "emkan_insights/emkan_insights/doctype/external_bank/external_bank.py": {
-    "mtime": 1785741810.0625067,
-    "seen": 1787208740.8730295,
-    "ast_hash": "edf2d0a44c190e04cbcf3122250b6126",
-    "semantic_hash": "edf2d0a44c190e04cbcf3122250b6126"
-  },
-  "emkan_insights/emkan_insights/doctype/external_bank/external_bank_list.js": {
-    "mtime": 1771482559.025053,
-    "seen": 1787208740.8730311,
-    "ast_hash": "72ad59254553b41cae3198106465ab3d",
-    "semantic_hash": "72ad59254553b41cae3198106465ab3d"
+    "mtime": 1788946502.2503242,
+    "seen": 1789023014.2646527,
+    "ast_hash": "dce7cd5c598d572376edd5fc9b5354ad",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_bank/test_external_bank.py": {
     "mtime": 1770288820.2883794,
@@ -239,23 +173,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_bank_account/external_bank_account.js": {
-    "mtime": 1770288902.9571562,
-    "seen": 1787208740.8730373,
-    "ast_hash": "fc5dce2533f42794765d4cf2aa5f60ea",
-    "semantic_hash": "fc5dce2533f42794765d4cf2aa5f60ea"
-  },
   "emkan_insights/emkan_insights/doctype/external_bank_account/external_bank_account.py": {
-    "mtime": 1785741793.482347,
-    "seen": 1787208740.8730397,
-    "ast_hash": "ba8503a39810121c5fe120438482d05d",
-    "semantic_hash": "ba8503a39810121c5fe120438482d05d"
-  },
-  "emkan_insights/emkan_insights/doctype/external_bank_account/external_bank_account_list.js": {
-    "mtime": 1772690382.4343812,
-    "seen": 1787208740.8730414,
-    "ast_hash": "55821e4e05e95a41cafe6a38329310cf",
-    "semantic_hash": "55821e4e05e95a41cafe6a38329310cf"
+    "mtime": 1788946502.3943257,
+    "seen": 1789023014.2648075,
+    "ast_hash": "a121efa5ca125ce3608168abec7bd1aa",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_bank_account/test_external_bank_account.py": {
     "mtime": 1770288902.9571562,
@@ -269,23 +191,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_batch_plant/external_batch_plant.js": {
-    "mtime": 1782736557.5113564,
-    "seen": 1787208740.8730483,
-    "ast_hash": "c8d43c84262ac6f3b9988e71ffb5d4b9",
-    "semantic_hash": "c8d43c84262ac6f3b9988e71ffb5d4b9"
-  },
   "emkan_insights/emkan_insights/doctype/external_batch_plant/external_batch_plant.py": {
     "mtime": 1782736557.5073564,
     "seen": 1787208740.8730505,
     "ast_hash": "04885fe9a5a5515ba3924073b06aac14",
     "semantic_hash": "04885fe9a5a5515ba3924073b06aac14"
-  },
-  "emkan_insights/emkan_insights/doctype/external_batch_plant/external_batch_plant_list.js": {
-    "mtime": 1785392503.8912625,
-    "seen": 1787208740.8730524,
-    "ast_hash": "a2ad8dc9eddb7c0a3eddffd51dcb4bbd",
-    "semantic_hash": "a2ad8dc9eddb7c0a3eddffd51dcb4bbd"
   },
   "emkan_insights/emkan_insights/doctype/external_batch_plant/test_external_batch_plant.py": {
     "mtime": 1782736557.5113564,
@@ -299,23 +209,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_bom/external_bom.js": {
-    "mtime": 1782459397.661442,
-    "seen": 1787208740.8730583,
-    "ast_hash": "b4dd383b250b8aa78866c92fabd40587",
-    "semantic_hash": "b4dd383b250b8aa78866c92fabd40587"
-  },
   "emkan_insights/emkan_insights/doctype/external_bom/external_bom.py": {
-    "mtime": 1784786054.2897406,
-    "seen": 1787208740.8730605,
-    "ast_hash": "ed68a22882aa125a8f5cb0cb6469cb98",
-    "semantic_hash": "ed68a22882aa125a8f5cb0cb6469cb98"
-  },
-  "emkan_insights/emkan_insights/doctype/external_bom/external_bom_list.js": {
-    "mtime": 1783407415.0070083,
-    "seen": 1787208740.8730624,
-    "ast_hash": "dd17073115b1204730eb4799d88ceb27",
-    "semantic_hash": "dd17073115b1204730eb4799d88ceb27"
+    "mtime": 1788946502.534327,
+    "seen": 1789023014.2653303,
+    "ast_hash": "7c83bd9ae64680749e2ada5a2f8fe93b",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_bom/test_external_bom.py": {
     "mtime": 1782459397.661442,
@@ -329,23 +227,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_contact/external_contact.js": {
-    "mtime": 1770289059.0306225,
-    "seen": 1787208740.8730679,
-    "ast_hash": "a9c17835bac54637fdc5c9d666bbc8b8",
-    "semantic_hash": "a9c17835bac54637fdc5c9d666bbc8b8"
-  },
   "emkan_insights/emkan_insights/doctype/external_contact/external_contact.py": {
-    "mtime": 1770783961.6815345,
-    "seen": 1787208740.8730698,
-    "ast_hash": "b33963ae6c7d919f585c63a01d8b1f28",
-    "semantic_hash": "b33963ae6c7d919f585c63a01d8b1f28"
-  },
-  "emkan_insights/emkan_insights/doctype/external_contact/external_contact_list.js": {
-    "mtime": 1773301442.9021661,
-    "seen": 1787208740.8730726,
-    "ast_hash": "ca12ef53d5aa61db4e7989e361050277",
-    "semantic_hash": "ca12ef53d5aa61db4e7989e361050277"
+    "mtime": 1788946502.6743283,
+    "seen": 1789023014.2654815,
+    "ast_hash": "dd4ca72043e3251bbe3bd50b73314fd2",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_contact/test_external_contact.py": {
     "mtime": 1770289059.0306225,
@@ -359,23 +245,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_contract/external_contract.js": {
-    "mtime": 1770293106.7726634,
-    "seen": 1787208740.8730786,
-    "ast_hash": "b74eba57ffd4e21203e500a4312f4f98",
-    "semantic_hash": "b74eba57ffd4e21203e500a4312f4f98"
-  },
   "emkan_insights/emkan_insights/doctype/external_contract/external_contract.py": {
-    "mtime": 1785741767.318095,
-    "seen": 1787208740.8730805,
-    "ast_hash": "bc5074d616d16ecbfea31b150affd46e",
-    "semantic_hash": "bc5074d616d16ecbfea31b150affd46e"
-  },
-  "emkan_insights/emkan_insights/doctype/external_contract/external_contract_list.js": {
-    "mtime": 1771482559.0050528,
-    "seen": 1787208740.8730824,
-    "ast_hash": "cd3cb1ff49d69f78ccf2886e7a21352e",
-    "semantic_hash": "cd3cb1ff49d69f78ccf2886e7a21352e"
+    "mtime": 1788946502.8103294,
+    "seen": 1789023014.2656329,
+    "ast_hash": "2c0cb1b135a10cb4024db3b44a583087",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_contract/test_external_contract.py": {
     "mtime": 1770293106.7686634,
@@ -389,29 +263,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_cost_center/external_cost_center.js": {
-    "mtime": 1770294492.9216938,
-    "seen": 1787208740.873088,
-    "ast_hash": "c4d203f753ef8ebba6c8dd21eabe71e6",
-    "semantic_hash": "c4d203f753ef8ebba6c8dd21eabe71e6"
-  },
   "emkan_insights/emkan_insights/doctype/external_cost_center/external_cost_center.py": {
-    "mtime": 1784786054.2577403,
-    "seen": 1787208740.87309,
-    "ast_hash": "b229d0a6bf300b72db6acc8aa006df1b",
-    "semantic_hash": "b229d0a6bf300b72db6acc8aa006df1b"
-  },
-  "emkan_insights/emkan_insights/doctype/external_cost_center/external_cost_center_list.js": {
-    "mtime": 1772520678.708576,
-    "seen": 1787208740.8730927,
-    "ast_hash": "a92b14cc0d91c8cf4e907038af1337e3",
-    "semantic_hash": "a92b14cc0d91c8cf4e907038af1337e3"
-  },
-  "emkan_insights/emkan_insights/doctype/external_cost_center/external_cost_center_tree.js": {
-    "mtime": 1773117092.8843064,
-    "seen": 1787208740.8730946,
-    "ast_hash": "c0ec4c216f7ef48741d2063ae206a624",
-    "semantic_hash": "c0ec4c216f7ef48741d2063ae206a624"
+    "mtime": 1788946502.9503307,
+    "seen": 1789023014.2657876,
+    "ast_hash": "d808ac9c5e0f1d461f986a8cc34852c9",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_cost_center/test_external_cost_center.py": {
     "mtime": 1770294492.9176936,
@@ -425,23 +281,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_customer/external_customer.js": {
-    "mtime": 1770782706.7976754,
-    "seen": 1787208740.8731003,
-    "ast_hash": "515a98613ddebcdc879974bd0e8d6ea2",
-    "semantic_hash": "515a98613ddebcdc879974bd0e8d6ea2"
-  },
   "emkan_insights/emkan_insights/doctype/external_customer/external_customer.py": {
-    "mtime": 1785740238.6433778,
-    "seen": 1787208740.8731024,
-    "ast_hash": "ff895998c4fbcc1e19f2c660eceedeaf",
-    "semantic_hash": "ff895998c4fbcc1e19f2c660eceedeaf"
-  },
-  "emkan_insights/emkan_insights/doctype/external_customer/external_customer_list.js": {
-    "mtime": 1783577590.458647,
-    "seen": 1787208740.8731043,
-    "ast_hash": "49a624101794d349dc2101360bf96e17",
-    "semantic_hash": "49a624101794d349dc2101360bf96e17"
+    "mtime": 1788946503.086332,
+    "seen": 1789023014.2659397,
+    "ast_hash": "8082b62dde9d95bd6522fedb3ddf760f",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_customer/test_external_customer.py": {
     "mtime": 1770209780.8172302,
@@ -455,23 +299,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_customer_group/external_customer_group.js": {
-    "mtime": 1773143955.622818,
-    "seen": 1787208740.8731174,
-    "ast_hash": "527ad0170be06622812d600645494ebe",
-    "semantic_hash": "527ad0170be06622812d600645494ebe"
-  },
   "emkan_insights/emkan_insights/doctype/external_customer_group/external_customer_group.py": {
-    "mtime": 1773143955.622818,
-    "seen": 1787208740.873119,
-    "ast_hash": "7fbc79d2afe48814cd7883fd9f698384",
-    "semantic_hash": "7fbc79d2afe48814cd7883fd9f698384"
-  },
-  "emkan_insights/emkan_insights/doctype/external_customer_group/external_customer_group_list.js": {
-    "mtime": 1773658310.6152985,
-    "seen": 1787208740.873121,
-    "ast_hash": "cffe66372d7388e72cfdb2e97b2b8060",
-    "semantic_hash": "cffe66372d7388e72cfdb2e97b2b8060"
+    "mtime": 1788946503.2223334,
+    "seen": 1789023014.266092,
+    "ast_hash": "ebca5f54eeff36b9a57211535753b502",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_customer_group/test_external_customer_group.py": {
     "mtime": 1773143955.622818,
@@ -485,23 +317,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_delivery_note/external_delivery_note.js": {
-    "mtime": 1772089145.1190555,
-    "seen": 1787208740.873127,
-    "ast_hash": "4e0ec08c13f10766752c0a7a83646254",
-    "semantic_hash": "4e0ec08c13f10766752c0a7a83646254"
-  },
   "emkan_insights/emkan_insights/doctype/external_delivery_note/external_delivery_note.py": {
     "mtime": 1772089145.1190555,
     "seen": 1787208740.873129,
     "ast_hash": "8e994fb6b89dbc155e113a7b26a6b6bd",
     "semantic_hash": "8e994fb6b89dbc155e113a7b26a6b6bd"
-  },
-  "emkan_insights/emkan_insights/doctype/external_delivery_note/external_delivery_note_list.js": {
-    "mtime": 1773320244.4623203,
-    "seen": 1787208740.8731308,
-    "ast_hash": "362f234ba338c8dcb0fa5c4d3e989dda",
-    "semantic_hash": "362f234ba338c8dcb0fa5c4d3e989dda"
   },
   "emkan_insights/emkan_insights/doctype/external_delivery_note/test_external_delivery_note.py": {
     "mtime": 1772089145.1190555,
@@ -515,23 +335,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_department/external_department.js": {
-    "mtime": 1784012639.0208204,
-    "seen": 1787208740.8731387,
-    "ast_hash": "e6d907fc5f92f09fbdab1a21324f1250",
-    "semantic_hash": "e6d907fc5f92f09fbdab1a21324f1250"
-  },
   "emkan_insights/emkan_insights/doctype/external_department/external_department.py": {
-    "mtime": 1785740285.0398245,
-    "seen": 1787208740.873141,
-    "ast_hash": "604970f9bbd4ec92c54278859ab2b4cd",
-    "semantic_hash": "604970f9bbd4ec92c54278859ab2b4cd"
-  },
-  "emkan_insights/emkan_insights/doctype/external_department/external_department_list.js": {
-    "mtime": 1784013678.466659,
-    "seen": 1787208740.873143,
-    "ast_hash": "6f145244d1cc918b64aa88d903916c93",
-    "semantic_hash": "6f145244d1cc918b64aa88d903916c93"
+    "mtime": 1788946503.3583345,
+    "seen": 1789023014.266459,
+    "ast_hash": "2f815f33a557c0838a661e110013be68",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_department/test_external_department.py": {
     "mtime": 1784012639.0208204,
@@ -545,23 +353,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_designation/external_designation.js": {
-    "mtime": 1784013228.1703968,
-    "seen": 1787208740.8731492,
-    "ast_hash": "91a4b63fa1d838e9894f7f5d9aa0ba3e",
-    "semantic_hash": "91a4b63fa1d838e9894f7f5d9aa0ba3e"
-  },
   "emkan_insights/emkan_insights/doctype/external_designation/external_designation.py": {
-    "mtime": 1785740381.8167562,
-    "seen": 1787208740.873151,
-    "ast_hash": "9faa7769fc698aa53d2a75e2b63269b4",
-    "semantic_hash": "9faa7769fc698aa53d2a75e2b63269b4"
-  },
-  "emkan_insights/emkan_insights/doctype/external_designation/external_designation_list.js": {
-    "mtime": 1784013684.370715,
-    "seen": 1787208740.873153,
-    "ast_hash": "d82a84238b371bebf50bb6f66cc03465",
-    "semantic_hash": "d82a84238b371bebf50bb6f66cc03465"
+    "mtime": 1788946503.4983358,
+    "seen": 1789023014.2666068,
+    "ast_hash": "7742232ccd8fb36e8b085990c7774566",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_designation/test_external_designation.py": {
     "mtime": 1784013228.1663969,
@@ -575,23 +371,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_email_template/external_email_template.js": {
-    "mtime": 1772787745.9875078,
-    "seen": 1787208740.8731587,
-    "ast_hash": "86697ab394dc204945cfe53939fbcf49",
-    "semantic_hash": "86697ab394dc204945cfe53939fbcf49"
-  },
   "emkan_insights/emkan_insights/doctype/external_email_template/external_email_template.py": {
     "mtime": 1772787745.9875078,
     "seen": 1787208740.8731606,
     "ast_hash": "bd6ec0566c5428011b6dd98e6a90967b",
     "semantic_hash": "bd6ec0566c5428011b6dd98e6a90967b"
-  },
-  "emkan_insights/emkan_insights/doctype/external_email_template/external_email_template_list.js": {
-    "mtime": 1773649311.9848576,
-    "seen": 1787208740.8731625,
-    "ast_hash": "9398ff1337e3ee0712492f4e548a6be5",
-    "semantic_hash": "9398ff1337e3ee0712492f4e548a6be5"
   },
   "emkan_insights/emkan_insights/doctype/external_email_template/test_external_email_template.py": {
     "mtime": 1772787745.9875078,
@@ -605,29 +389,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_employee/external_employee.js": {
-    "mtime": 1784010579.6490307,
-    "seen": 1787208740.8731682,
-    "ast_hash": "8badb8003130babebd50e9997de05593",
-    "semantic_hash": "8badb8003130babebd50e9997de05593"
-  },
   "emkan_insights/emkan_insights/doctype/external_employee/external_employee.py": {
-    "mtime": 1785740437.2332897,
-    "seen": 1787208740.8731701,
-    "ast_hash": "227fb0c681b240823cc29aa5d032621b",
-    "semantic_hash": "227fb0c681b240823cc29aa5d032621b"
-  },
-  "emkan_insights/emkan_insights/doctype/external_employee/external_employee_list.js": {
-    "mtime": 1784011534.2462466,
-    "seen": 1787208740.873172,
-    "ast_hash": "f79cdece2ace9d0a3aa6443c9d5e2e05",
-    "semantic_hash": "f79cdece2ace9d0a3aa6443c9d5e2e05"
-  },
-  "emkan_insights/emkan_insights/doctype/external_employee/test_external_employee.py": {
-    "mtime": 1784010579.6490307,
-    "seen": 1787208740.8731737,
-    "ast_hash": "c9c91a0a9e96483cce652b16093a705b",
-    "semantic_hash": "c9c91a0a9e96483cce652b16093a705b"
+    "mtime": 1788946503.6343372,
+    "seen": 1789023014.2669845,
+    "ast_hash": "aebdfbd7be7ca73c44c3717180f1083f",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_expense_claim/__init__.py": {
     "mtime": 1772617907.4894257,
@@ -635,23 +401,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_expense_claim/external_expense_claim.js": {
-    "mtime": 1772617907.4934258,
-    "seen": 1787208740.8731778,
-    "ast_hash": "cb470532f1790a96cd51aebd7a37bcf6",
-    "semantic_hash": "cb470532f1790a96cd51aebd7a37bcf6"
-  },
   "emkan_insights/emkan_insights/doctype/external_expense_claim/external_expense_claim.py": {
     "mtime": 1772617907.4934258,
     "seen": 1787208740.8731797,
     "ast_hash": "adf99c13baef6f59df0df0acba676dbb",
     "semantic_hash": "adf99c13baef6f59df0df0acba676dbb"
-  },
-  "emkan_insights/emkan_insights/doctype/external_expense_claim/external_expense_claim_list.js": {
-    "mtime": 1772629166.2826767,
-    "seen": 1787208740.8731816,
-    "ast_hash": "2a3c6c76f9324bc38da166bc9b1811e9",
-    "semantic_hash": "2a3c6c76f9324bc38da166bc9b1811e9"
   },
   "emkan_insights/emkan_insights/doctype/external_expense_claim/test_external_expense_claim.py": {
     "mtime": 1772617907.4934258,
@@ -665,23 +419,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_item/external_item.js": {
-    "mtime": 1770288226.7468026,
-    "seen": 1787208740.873188,
-    "ast_hash": "8252f13effdb551405f58256ac8cd639",
-    "semantic_hash": "8252f13effdb551405f58256ac8cd639"
-  },
   "emkan_insights/emkan_insights/doctype/external_item/external_item.py": {
-    "mtime": 1770783961.6855345,
-    "seen": 1787208740.8731904,
-    "ast_hash": "bd7100b2c584b73dc02f51cf0fcf89e1",
-    "semantic_hash": "bd7100b2c584b73dc02f51cf0fcf89e1"
-  },
-  "emkan_insights/emkan_insights/doctype/external_item/external_item_list.js": {
-    "mtime": 1778650265.8164008,
-    "seen": 1787208740.8731923,
-    "ast_hash": "1addd69b0cde739a6d9ac5be5bab702d",
-    "semantic_hash": "1addd69b0cde739a6d9ac5be5bab702d"
+    "mtime": 1788946503.7743385,
+    "seen": 1789023014.267456,
+    "ast_hash": "e4ec030cd24d255b9fde432ecd5a9410",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_item/test_external_item.py": {
     "mtime": 1770288226.7468026,
@@ -695,23 +437,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_item_group/external_item_group.js": {
-    "mtime": 1770287441.803429,
-    "seen": 1787208740.8731983,
-    "ast_hash": "6042574d421dc40b5c13266471fbface",
-    "semantic_hash": "6042574d421dc40b5c13266471fbface"
-  },
   "emkan_insights/emkan_insights/doctype/external_item_group/external_item_group.py": {
-    "mtime": 1785741712.3575659,
-    "seen": 1787208740.8732007,
-    "ast_hash": "6a91d2b71386b29ccbcf84eb033262f8",
-    "semantic_hash": "6a91d2b71386b29ccbcf84eb033262f8"
-  },
-  "emkan_insights/emkan_insights/doctype/external_item_group/external_item_group_list.js": {
-    "mtime": 1787121135.0127902,
-    "seen": 1787208740.8732028,
-    "ast_hash": "1c330f14acb9834abd833b55342571d2",
-    "semantic_hash": "1c330f14acb9834abd833b55342571d2"
+    "mtime": 1788946503.9103398,
+    "seen": 1789023014.2676032,
+    "ast_hash": "6fee2730bfc6fe006e3132d822e93d98",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_item_group/test_external_item_group.py": {
     "mtime": 1770287441.803429,
@@ -725,23 +455,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_item_price/external_item_price.js": {
-    "mtime": 1785323776.1752965,
-    "seen": 1787208740.8732083,
-    "ast_hash": "5b2f73d5ea86253f665dd005b2dbfce0",
-    "semantic_hash": "5b2f73d5ea86253f665dd005b2dbfce0"
-  },
   "emkan_insights/emkan_insights/doctype/external_item_price/external_item_price.py": {
     "mtime": 1785323776.1752965,
     "seen": 1787208740.8732107,
     "ast_hash": "256a4cf52c1778304dc9dc0b42727f51",
     "semantic_hash": "256a4cf52c1778304dc9dc0b42727f51"
-  },
-  "emkan_insights/emkan_insights/doctype/external_item_price/external_item_price_list.js": {
-    "mtime": 1785327854.060082,
-    "seen": 1787208740.8732123,
-    "ast_hash": "71b11fc1c0f78a4fbff893b0ee4519b6",
-    "semantic_hash": "71b11fc1c0f78a4fbff893b0ee4519b6"
   },
   "emkan_insights/emkan_insights/doctype/external_item_price/test_external_item_price.py": {
     "mtime": 1785323776.1752965,
@@ -755,23 +473,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_item_tax_template/external_item_tax_template.js": {
-    "mtime": 1784270016.302664,
-    "seen": 1787208740.8732183,
-    "ast_hash": "27f5adcfb6ec32d759acc91d83e6d867",
-    "semantic_hash": "27f5adcfb6ec32d759acc91d83e6d867"
-  },
   "emkan_insights/emkan_insights/doctype/external_item_tax_template/external_item_tax_template.py": {
     "mtime": 1784270016.302664,
     "seen": 1787208740.8732204,
     "ast_hash": "ac244e865cd705dd23971a7ec54f9963",
     "semantic_hash": "ac244e865cd705dd23971a7ec54f9963"
-  },
-  "emkan_insights/emkan_insights/doctype/external_item_tax_template/external_item_tax_template_list.js": {
-    "mtime": 1784272420.1416934,
-    "seen": 1787208740.873222,
-    "ast_hash": "bef00ffeb40b85812313843fa4c456ec",
-    "semantic_hash": "bef00ffeb40b85812313843fa4c456ec"
   },
   "emkan_insights/emkan_insights/doctype/external_item_tax_template/test_external_item_tax_template.py": {
     "mtime": 1784270016.302664,
@@ -785,23 +491,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_journal_entry/external_journal_entry.js": {
-    "mtime": 1771917531.6109262,
-    "seen": 1787208740.8732285,
-    "ast_hash": "dce1b99e842f8199b712782ffba10f2b",
-    "semantic_hash": "dce1b99e842f8199b712782ffba10f2b"
-  },
   "emkan_insights/emkan_insights/doctype/external_journal_entry/external_journal_entry.py": {
     "mtime": 1771917531.6109262,
     "seen": 1787208740.873231,
     "ast_hash": "c9dbea7601e38c346dc1c2a34d447f03",
     "semantic_hash": "c9dbea7601e38c346dc1c2a34d447f03"
-  },
-  "emkan_insights/emkan_insights/doctype/external_journal_entry/external_journal_entry_list.js": {
-    "mtime": 1774423649.9012856,
-    "seen": 1787208740.8732326,
-    "ast_hash": "16824619bfc7a758e7b5aa3c3650e3a1",
-    "semantic_hash": "16824619bfc7a758e7b5aa3c3650e3a1"
   },
   "emkan_insights/emkan_insights/doctype/external_journal_entry/test_external_journal_entry.py": {
     "mtime": 1771917531.6109262,
@@ -815,23 +509,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_lead/external_lead.js": {
-    "mtime": 1773142619.202076,
-    "seen": 1787208740.8732383,
-    "ast_hash": "093dfae538775642fc28c8a6f6d7d8e8",
-    "semantic_hash": "093dfae538775642fc28c8a6f6d7d8e8"
-  },
   "emkan_insights/emkan_insights/doctype/external_lead/external_lead.py": {
-    "mtime": 1785740499.1178856,
-    "seen": 1787208740.8732402,
-    "ast_hash": "a464e33c9e8a4f5577a5dc3dd29ad19d",
-    "semantic_hash": "a464e33c9e8a4f5577a5dc3dd29ad19d"
-  },
-  "emkan_insights/emkan_insights/doctype/external_lead/external_lead_list.js": {
-    "mtime": 1783508517.342236,
-    "seen": 1787208740.8732424,
-    "ast_hash": "515abc05c7cd077d5f7ded2ebee768b6",
-    "semantic_hash": "515abc05c7cd077d5f7ded2ebee768b6"
+    "mtime": 1788946504.042341,
+    "seen": 1789023014.2684126,
+    "ast_hash": "c4eb211cd305a2317768b474d3fdc845",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_lead/test_external_lead.py": {
     "mtime": 1773142619.202076,
@@ -845,23 +527,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_lead_source/external_lead_source.js": {
-    "mtime": 1773145062.80936,
-    "seen": 1787208740.8732479,
-    "ast_hash": "f3bb009dd94f6ae01dd544700a05325a",
-    "semantic_hash": "f3bb009dd94f6ae01dd544700a05325a"
-  },
   "emkan_insights/emkan_insights/doctype/external_lead_source/external_lead_source.py": {
     "mtime": 1773145062.80536,
     "seen": 1787208740.8732495,
     "ast_hash": "08fe319c658813082e2e2b074bf7dbeb",
     "semantic_hash": "08fe319c658813082e2e2b074bf7dbeb"
-  },
-  "emkan_insights/emkan_insights/doctype/external_lead_source/external_lead_source_list.js": {
-    "mtime": 1773640255.586568,
-    "seen": 1787208740.8732514,
-    "ast_hash": "03b22ed98ce8ceff5a09862c78c08e53",
-    "semantic_hash": "03b22ed98ce8ceff5a09862c78c08e53"
   },
   "emkan_insights/emkan_insights/doctype/external_lead_source/test_external_lead_source.py": {
     "mtime": 1773145062.80536,
@@ -875,23 +545,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_letter_head/external_letter_head.js": {
-    "mtime": 1772614502.4216356,
-    "seen": 1787208740.8732574,
-    "ast_hash": "a3822bfa2c6dfdb03ad7efe3c3e0f2d8",
-    "semantic_hash": "a3822bfa2c6dfdb03ad7efe3c3e0f2d8"
-  },
   "emkan_insights/emkan_insights/doctype/external_letter_head/external_letter_head.py": {
     "mtime": 1772614502.4216356,
     "seen": 1787208740.8732593,
     "ast_hash": "e01b6c1d53ebbf4359b1e66a65c27e6f",
     "semantic_hash": "e01b6c1d53ebbf4359b1e66a65c27e6f"
-  },
-  "emkan_insights/emkan_insights/doctype/external_letter_head/external_letter_head_list.js": {
-    "mtime": 1772627958.5153666,
-    "seen": 1787208740.8732612,
-    "ast_hash": "282cbb83ec4b2429e03f623d6c9f5510",
-    "semantic_hash": "282cbb83ec4b2429e03f623d6c9f5510"
   },
   "emkan_insights/emkan_insights/doctype/external_letter_head/test_external_letter_head.py": {
     "mtime": 1772614502.4216356,
@@ -905,23 +563,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_location/external_location.js": {
-    "mtime": 1770288252.6950464,
-    "seen": 1787208740.8732674,
-    "ast_hash": "f0b9a11dd35a18e38c523e62ae7b5ad4",
-    "semantic_hash": "f0b9a11dd35a18e38c523e62ae7b5ad4"
-  },
   "emkan_insights/emkan_insights/doctype/external_location/external_location.py": {
-    "mtime": 1785741663.7130976,
-    "seen": 1787208740.8732698,
-    "ast_hash": "c8558a0fd121f557469eea5771f36736",
-    "semantic_hash": "c8558a0fd121f557469eea5771f36736"
-  },
-  "emkan_insights/emkan_insights/doctype/external_location/external_location_list.js": {
-    "mtime": 1771482558.9930527,
-    "seen": 1787208740.8732717,
-    "ast_hash": "ee6cceafba91b58ed6b39a01295567cd",
-    "semantic_hash": "ee6cceafba91b58ed6b39a01295567cd"
+    "mtime": 1788946504.1823423,
+    "seen": 1789023014.2690048,
+    "ast_hash": "d8168c50c1a4e047832c356cba423713",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_location/test_external_location.py": {
     "mtime": 1770288252.6950464,
@@ -935,23 +581,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_manufacturer/external_manufacturer.js": {
-    "mtime": 1770287278.1178913,
-    "seen": 1787208740.8732781,
-    "ast_hash": "65cabe2ec7aa12f8b210b94c7595d0ef",
-    "semantic_hash": "65cabe2ec7aa12f8b210b94c7595d0ef"
-  },
   "emkan_insights/emkan_insights/doctype/external_manufacturer/external_manufacturer.py": {
-    "mtime": 1785741651.6809819,
-    "seen": 1787208740.87328,
-    "ast_hash": "a610e9294b2e47c31ff5cc5e498dffb5",
-    "semantic_hash": "a610e9294b2e47c31ff5cc5e498dffb5"
-  },
-  "emkan_insights/emkan_insights/doctype/external_manufacturer/external_manufacturer_list.js": {
-    "mtime": 1771482559.017053,
-    "seen": 1787208740.873282,
-    "ast_hash": "b543846c02ac206f80b580192600e02e",
-    "semantic_hash": "b543846c02ac206f80b580192600e02e"
+    "mtime": 1788946504.3143435,
+    "seen": 1789023014.2691545,
+    "ast_hash": "664edf58b2495d04e5c435742cdc303e",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_manufacturer/test_external_manufacturer.py": {
     "mtime": 1770287278.1178913,
@@ -965,29 +599,17 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_material_request/external_material_request.js": {
-    "mtime": 1772712440.7658439,
-    "seen": 1787208740.873288,
-    "ast_hash": "9ef04be9b6354cb141c5f049195b2620",
-    "semantic_hash": "9ef04be9b6354cb141c5f049195b2620"
-  },
   "emkan_insights/emkan_insights/doctype/external_material_request/external_material_request.py": {
     "mtime": 1772712440.7658439,
     "seen": 1787208740.87329,
     "ast_hash": "cfc673937a0245320dfd479fcdba91d9",
     "semantic_hash": "cfc673937a0245320dfd479fcdba91d9"
   },
-  "emkan_insights/emkan_insights/doctype/external_material_request/external_material_request_list.js": {
-    "mtime": 1782220225.2151163,
-    "seen": 1787208740.8732922,
-    "ast_hash": "ce7c1c1b11f80bcb07122f34ca2c9cd7",
-    "semantic_hash": "ce7c1c1b11f80bcb07122f34ca2c9cd7"
-  },
   "emkan_insights/emkan_insights/doctype/external_material_request/test_external_material_request.py": {
-    "mtime": 1772712440.7658439,
-    "seen": 1787208740.8732946,
-    "ast_hash": "eeec9c1d6d8bacc4ffa3b7a03ef4e600",
-    "semantic_hash": "eeec9c1d6d8bacc4ffa3b7a03ef4e600"
+    "mtime": 1788335940.1593337,
+    "seen": 1788349916.805638,
+    "ast_hash": "ee503e307388dca7daff88dc8a65fb55",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_mode_of_payment/__init__.py": {
     "mtime": 1773384588.279453,
@@ -995,23 +617,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_mode_of_payment/external_mode_of_payment.js": {
-    "mtime": 1773384588.283453,
-    "seen": 1787208740.8732984,
-    "ast_hash": "5cb64ef8b8af499739112b9859fb4ca4",
-    "semantic_hash": "5cb64ef8b8af499739112b9859fb4ca4"
-  },
   "emkan_insights/emkan_insights/doctype/external_mode_of_payment/external_mode_of_payment.py": {
-    "mtime": 1785740691.5917385,
-    "seen": 1787208740.8733003,
-    "ast_hash": "4733c17af0545d8cf9d56b627fee37e2",
-    "semantic_hash": "4733c17af0545d8cf9d56b627fee37e2"
-  },
-  "emkan_insights/emkan_insights/doctype/external_mode_of_payment/external_mode_of_payment_list.js": {
-    "mtime": 1784091709.184682,
-    "seen": 1787208740.8733022,
-    "ast_hash": "e4596fd85a45e35c4519ec3f9dd81ea8",
-    "semantic_hash": "e4596fd85a45e35c4519ec3f9dd81ea8"
+    "mtime": 1788946504.4503448,
+    "seen": 1789023014.2695222,
+    "ast_hash": "8a77b1dfee4ec9d39241c10dbfe03fff",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_mode_of_payment/test_external_mode_of_payment.py": {
     "mtime": 1773384588.283453,
@@ -1025,23 +635,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_opportunity/external_opportunity.js": {
-    "mtime": 1773211448.5293233,
-    "seen": 1787208740.87331,
-    "ast_hash": "18c19e61828e6e9db8983c8daed6721d",
-    "semantic_hash": "18c19e61828e6e9db8983c8daed6721d"
-  },
   "emkan_insights/emkan_insights/doctype/external_opportunity/external_opportunity.py": {
-    "mtime": 1785740733.8641455,
-    "seen": 1787208740.8733122,
-    "ast_hash": "fcf9fba0b075e5d9b96129682bee7488",
-    "semantic_hash": "fcf9fba0b075e5d9b96129682bee7488"
-  },
-  "emkan_insights/emkan_insights/doctype/external_opportunity/external_opportunity_list.js": {
-    "mtime": 1783511815.6055744,
-    "seen": 1787208740.8733141,
-    "ast_hash": "f109c6086fa32b0bdd50f0dbfe312c94",
-    "semantic_hash": "f109c6086fa32b0bdd50f0dbfe312c94"
+    "mtime": 1788946504.5863461,
+    "seen": 1789023014.269671,
+    "ast_hash": "c1f0867c056e04145b5d4aa02751ab25",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_opportunity/test_external_opportunity.py": {
     "mtime": 1773143346.745004,
@@ -1055,23 +653,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_payment_entry/external_payment_entry.js": {
-    "mtime": 1771916910.317091,
-    "seen": 1787208740.8733196,
-    "ast_hash": "621758bd91ad500a8751388e0064959f",
-    "semantic_hash": "621758bd91ad500a8751388e0064959f"
-  },
   "emkan_insights/emkan_insights/doctype/external_payment_entry/external_payment_entry.py": {
     "mtime": 1771916910.3130908,
     "seen": 1787208740.8733215,
     "ast_hash": "f4a437cd97892a2f1816127cbcbd3f78",
     "semantic_hash": "f4a437cd97892a2f1816127cbcbd3f78"
-  },
-  "emkan_insights/emkan_insights/doctype/external_payment_entry/external_payment_entry_list.js": {
-    "mtime": 1772534204.573678,
-    "seen": 1787208740.8733234,
-    "ast_hash": "099918c36afb5445a0a92c7a3a52f4ba",
-    "semantic_hash": "099918c36afb5445a0a92c7a3a52f4ba"
   },
   "emkan_insights/emkan_insights/doctype/external_payment_entry/test_external_payment_entry.py": {
     "mtime": 1771916910.3130908,
@@ -1085,23 +671,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_payment_request/external_payment_request.js": {
-    "mtime": 1783059807.8334994,
-    "seen": 1787208740.8733292,
-    "ast_hash": "6a349191c0ad0c3dbefc0783f12e61e8",
-    "semantic_hash": "6a349191c0ad0c3dbefc0783f12e61e8"
-  },
   "emkan_insights/emkan_insights/doctype/external_payment_request/external_payment_request.py": {
-    "mtime": 1784543977.8225904,
-    "seen": 1787208740.8733313,
-    "ast_hash": "1f5229267cbd777ab94bf9e8a2ce11bb",
-    "semantic_hash": "1f5229267cbd777ab94bf9e8a2ce11bb"
-  },
-  "emkan_insights/emkan_insights/doctype/external_payment_request/external_payment_request_list.js": {
-    "mtime": 1783061385.9160807,
-    "seen": 1787208740.873333,
-    "ast_hash": "39802f9efb3800c2f2197b604b625697",
-    "semantic_hash": "39802f9efb3800c2f2197b604b625697"
+    "mtime": 1788941714.1372197,
+    "seen": 1789023014.270196,
+    "ast_hash": "f5a871e5a76d650fce985ce0971ae40e",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_payment_request/test_external_payment_request.py": {
     "mtime": 1783059662.7121584,
@@ -1115,23 +689,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_payment_term/external_payment_term.js": {
-    "mtime": 1773380263.6458883,
-    "seen": 1787208740.873339,
-    "ast_hash": "95827ef0454d5eee773e63b7690403a3",
-    "semantic_hash": "95827ef0454d5eee773e63b7690403a3"
-  },
   "emkan_insights/emkan_insights/doctype/external_payment_term/external_payment_term.py": {
     "mtime": 1773380263.6458883,
     "seen": 1787208740.8733406,
     "ast_hash": "9c9913b48863ce50049e2f2b74612aae",
     "semantic_hash": "9c9913b48863ce50049e2f2b74612aae"
-  },
-  "emkan_insights/emkan_insights/doctype/external_payment_term/external_payment_term_list.js": {
-    "mtime": 1773382172.2282312,
-    "seen": 1787208740.8733425,
-    "ast_hash": "89e1f8c255550250a141beb333d9c944",
-    "semantic_hash": "89e1f8c255550250a141beb333d9c944"
   },
   "emkan_insights/emkan_insights/doctype/external_payment_term/test_external_payment_term.py": {
     "mtime": 1773380263.6458883,
@@ -1145,23 +707,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_payment_terms_template/external_payment_terms_template.js": {
-    "mtime": 1772618260.8047242,
-    "seen": 1787208740.8733487,
-    "ast_hash": "43d442cd14710014d19b27e9aef38831",
-    "semantic_hash": "43d442cd14710014d19b27e9aef38831"
-  },
   "emkan_insights/emkan_insights/doctype/external_payment_terms_template/external_payment_terms_template.py": {
     "mtime": 1772618260.8047242,
     "seen": 1787208740.8733506,
     "ast_hash": "2e4792a33d3610090300c6310f0e90dc",
     "semantic_hash": "2e4792a33d3610090300c6310f0e90dc"
-  },
-  "emkan_insights/emkan_insights/doctype/external_payment_terms_template/external_payment_terms_template_list.js": {
-    "mtime": 1774003099.5141988,
-    "seen": 1787208740.8733528,
-    "ast_hash": "5c56a36a4f5d8fa90ad5e7d755887dd3",
-    "semantic_hash": "5c56a36a4f5d8fa90ad5e7d755887dd3"
   },
   "emkan_insights/emkan_insights/doctype/external_payment_terms_template/test_external_payment_terms_template.py": {
     "mtime": 1772618260.8047242,
@@ -1175,23 +725,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_price_list/external_price_list.js": {
-    "mtime": 1771482558.9930527,
-    "seen": 1787208740.8733585,
-    "ast_hash": "1cd2523226d853af1f81c5cd3e527569",
-    "semantic_hash": "1cd2523226d853af1f81c5cd3e527569"
-  },
   "emkan_insights/emkan_insights/doctype/external_price_list/external_price_list.py": {
-    "mtime": 1785740977.4464905,
-    "seen": 1787208740.8733604,
-    "ast_hash": "6c16fc5eaf4b98d7c6d00275416e3392",
-    "semantic_hash": "6c16fc5eaf4b98d7c6d00275416e3392"
-  },
-  "emkan_insights/emkan_insights/doctype/external_price_list/external_price_list_list.js": {
-    "mtime": 1771482558.9890528,
-    "seen": 1787208740.8733628,
-    "ast_hash": "eb4f08953ef40511f2d979246c901e1d",
-    "semantic_hash": "eb4f08953ef40511f2d979246c901e1d"
+    "mtime": 1788946504.7383475,
+    "seen": 1789023014.270802,
+    "ast_hash": "ce8a09f5a686cb5ea2b01a063655880e",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_price_list/test_external_price_list.py": {
     "mtime": 1770293800.7551866,
@@ -1205,23 +743,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_production_plan/external_production_plan.js": {
-    "mtime": 1782464142.7987113,
-    "seen": 1787208740.8733685,
-    "ast_hash": "14f77c803b11ab0b6b0b02c800739806",
-    "semantic_hash": "14f77c803b11ab0b6b0b02c800739806"
-  },
   "emkan_insights/emkan_insights/doctype/external_production_plan/external_production_plan.py": {
-    "mtime": 1785741022.5629249,
-    "seen": 1787208740.8733704,
-    "ast_hash": "45ec93997fa5b15aacc96732f7294a99",
-    "semantic_hash": "45ec93997fa5b15aacc96732f7294a99"
-  },
-  "emkan_insights/emkan_insights/doctype/external_production_plan/external_production_plan_list.js": {
-    "mtime": 1782465498.4676445,
-    "seen": 1787208740.8733726,
-    "ast_hash": "c3be51ed2084f1e17fdec7da2a5dd352",
-    "semantic_hash": "c3be51ed2084f1e17fdec7da2a5dd352"
+    "mtime": 1788946504.898349,
+    "seen": 1789023014.2709563,
+    "ast_hash": "6fd0ebcdfe3782eeff81125fc20db7e1",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_production_plan/test_external_production_plan.py": {
     "mtime": 1782464142.7987113,
@@ -1235,23 +761,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_project/external_project.js": {
-    "mtime": 1772538256.2352245,
-    "seen": 1787208740.8733783,
-    "ast_hash": "2f5b3ed2870d76dd2ebcca02fcec0b52",
-    "semantic_hash": "2f5b3ed2870d76dd2ebcca02fcec0b52"
-  },
   "emkan_insights/emkan_insights/doctype/external_project/external_project.py": {
     "mtime": 1772537168.4251397,
     "seen": 1787208740.8733802,
     "ast_hash": "c5583c382b5796a2b005d64e9b400cda",
     "semantic_hash": "c5583c382b5796a2b005d64e9b400cda"
-  },
-  "emkan_insights/emkan_insights/doctype/external_project/external_project_list.js": {
-    "mtime": 1772538288.0875196,
-    "seen": 1787208740.8733819,
-    "ast_hash": "2990913ebac0d5fa975805d2a2fa9330",
-    "semantic_hash": "2990913ebac0d5fa975805d2a2fa9330"
   },
   "emkan_insights/emkan_insights/doctype/external_project/test_external_project.py": {
     "mtime": 1772537168.4291399,
@@ -1265,23 +779,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_project_type/external_project_type.js": {
-    "mtime": 1770288483.9652193,
-    "seen": 1787208740.8733876,
-    "ast_hash": "ff6504eeeec57edf3c7dd6584444177a",
-    "semantic_hash": "ff6504eeeec57edf3c7dd6584444177a"
-  },
   "emkan_insights/emkan_insights/doctype/external_project_type/external_project_type.py": {
-    "mtime": 1785741589.3403816,
-    "seen": 1787208740.8733895,
-    "ast_hash": "b941750b36e5c3e03b58e5f8216152dc",
-    "semantic_hash": "b941750b36e5c3e03b58e5f8216152dc"
-  },
-  "emkan_insights/emkan_insights/doctype/external_project_type/external_project_type_list.js": {
-    "mtime": 1771482558.9850526,
-    "seen": 1787208740.8733914,
-    "ast_hash": "9700a76192d8d4c1589121c5d04ce11a",
-    "semantic_hash": "9700a76192d8d4c1589121c5d04ce11a"
+    "mtime": 1788946505.0463502,
+    "seen": 1789023014.271359,
+    "ast_hash": "15d76bb52c9ae61f5a6d2fcdf2130be1",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_project_type/test_external_project_type.py": {
     "mtime": 1770288483.9652193,
@@ -1295,23 +797,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_prospect/external_prospect.js": {
-    "mtime": 1773144312.8742213,
-    "seen": 1787208740.8733966,
-    "ast_hash": "e03e84c089bdabd48af7f335b9722cfd",
-    "semantic_hash": "e03e84c089bdabd48af7f335b9722cfd"
-  },
   "emkan_insights/emkan_insights/doctype/external_prospect/external_prospect.py": {
-    "mtime": 1785741105.13572,
-    "seen": 1787208740.8733985,
-    "ast_hash": "c3001f53e55c6800c5940c00c67bf727",
-    "semantic_hash": "c3001f53e55c6800c5940c00c67bf727"
-  },
-  "emkan_insights/emkan_insights/doctype/external_prospect/external_prospect_list.js": {
-    "mtime": 1783515943.54488,
-    "seen": 1787208740.873401,
-    "ast_hash": "09260095f07e057c80642d8c4cd67e36",
-    "semantic_hash": "09260095f07e057c80642d8c4cd67e36"
+    "mtime": 1788946505.1983519,
+    "seen": 1789023014.2715101,
+    "ast_hash": "c1c076a66a1e2640d8d342e9a5d581e2",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_prospect/test_external_prospect.py": {
     "mtime": 1773144312.8742213,
@@ -1325,23 +815,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_invoice/external_purchase_invoice.js": {
-    "mtime": 1771916768.799765,
-    "seen": 1787208740.8734064,
-    "ast_hash": "13693b21415afc8679945321a92a45d9",
-    "semantic_hash": "13693b21415afc8679945321a92a45d9"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_invoice/external_purchase_invoice.py": {
     "mtime": 1771916763.883719,
     "seen": 1787208740.8734083,
     "ast_hash": "073d24c109215e08e14a01a7ca3dc67e",
     "semantic_hash": "073d24c109215e08e14a01a7ca3dc67e"
-  },
-  "emkan_insights/emkan_insights/doctype/external_purchase_invoice/external_purchase_invoice_list.js": {
-    "mtime": 1783017224.9826212,
-    "seen": 1787208740.87341,
-    "ast_hash": "452425732e88f74a1077a0b838774cf0",
-    "semantic_hash": "452425732e88f74a1077a0b838774cf0"
   },
   "emkan_insights/emkan_insights/doctype/external_purchase_invoice/test_external_purchase_invoice.py": {
     "mtime": 1771916331.2916658,
@@ -1355,29 +833,17 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_order/external_purchase_order.js": {
-    "mtime": 1772777697.6332216,
-    "seen": 1787208740.8734157,
-    "ast_hash": "ddbcaa4fe5aafc4b41ed2fd2418f148d",
-    "semantic_hash": "ddbcaa4fe5aafc4b41ed2fd2418f148d"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_order/external_purchase_order.py": {
     "mtime": 1772088370.8036282,
     "seen": 1787208740.8734174,
     "ast_hash": "fd67774f8c35c632a4b5535342c21cac",
     "semantic_hash": "fd67774f8c35c632a4b5535342c21cac"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_order/external_purchase_order_list.js": {
-    "mtime": 1772526407.145556,
-    "seen": 1787208740.873419,
-    "ast_hash": "3f0283bf5f7f43aa85107c92edc4b0d9",
-    "semantic_hash": "3f0283bf5f7f43aa85107c92edc4b0d9"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_order/test_external_purchase_order.py": {
-    "mtime": 1772088370.8036282,
-    "seen": 1787208740.873421,
-    "ast_hash": "e8eb34f3a053b94d4e5640a25d7caa1e",
-    "semantic_hash": "e8eb34f3a053b94d4e5640a25d7caa1e"
+    "mtime": 1788350920.2362607,
+    "seen": 1788351011.909939,
+    "ast_hash": "9b537c10b346c01b0c8729575a210adf",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_purchase_receipt/__init__.py": {
     "mtime": 1772088523.213091,
@@ -1385,29 +851,17 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_receipt/external_purchase_receipt.js": {
-    "mtime": 1772088523.2170908,
-    "seen": 1787208740.8734245,
-    "ast_hash": "26edd4145593abe5b4b22894e9365c20",
-    "semantic_hash": "26edd4145593abe5b4b22894e9365c20"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_receipt/external_purchase_receipt.py": {
     "mtime": 1772088523.213091,
     "seen": 1787208740.8734264,
     "ast_hash": "5e7be978b09afac00332a417c5bb2344",
     "semantic_hash": "5e7be978b09afac00332a417c5bb2344"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_receipt/external_purchase_receipt_list.js": {
-    "mtime": 1773396966.486386,
-    "seen": 1787208740.873428,
-    "ast_hash": "e19aa4e5583f0134ae882b9539a451f1",
-    "semantic_hash": "e19aa4e5583f0134ae882b9539a451f1"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_receipt/test_external_purchase_receipt.py": {
-    "mtime": 1772088523.213091,
-    "seen": 1787208740.8734303,
+    "mtime": 1788433006.162111,
+    "seen": 1788433070.8902452,
     "ast_hash": "6222d122e7051f2eaa0b4bc7823da524",
-    "semantic_hash": "6222d122e7051f2eaa0b4bc7823da524"
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_purchase_taxes_and_charges_template/__init__.py": {
     "mtime": 1772621327.701349,
@@ -1415,23 +869,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_purchase_taxes_and_charges_template/external_purchase_taxes_and_charges_template.js": {
-    "mtime": 1772621327.701349,
-    "seen": 1787208740.8734343,
-    "ast_hash": "f4e0536f0b192683e0c59d95d99dad0d",
-    "semantic_hash": "f4e0536f0b192683e0c59d95d99dad0d"
-  },
   "emkan_insights/emkan_insights/doctype/external_purchase_taxes_and_charges_template/external_purchase_taxes_and_charges_template.py": {
     "mtime": 1772621327.701349,
     "seen": 1787208740.8734362,
     "ast_hash": "0bfb95e26da1a37cd8607d659679bb74",
     "semantic_hash": "0bfb95e26da1a37cd8607d659679bb74"
-  },
-  "emkan_insights/emkan_insights/doctype/external_purchase_taxes_and_charges_template/external_purchase_taxes_and_charges_template_list.js": {
-    "mtime": 1772627190.0881648,
-    "seen": 1787208740.8734381,
-    "ast_hash": "22b55339f9beb68b5189f5ab51b8c990",
-    "semantic_hash": "22b55339f9beb68b5189f5ab51b8c990"
   },
   "emkan_insights/emkan_insights/doctype/external_purchase_taxes_and_charges_template/test_external_purchase_taxes_and_charges_template.py": {
     "mtime": 1772621327.701349,
@@ -1445,23 +887,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_quotation/external_quotation.js": {
-    "mtime": 1773216535.1767604,
-    "seen": 1787208740.873444,
-    "ast_hash": "845a1cf899a75281af3361a61b19ca62",
-    "semantic_hash": "845a1cf899a75281af3361a61b19ca62"
-  },
   "emkan_insights/emkan_insights/doctype/external_quotation/external_quotation.py": {
     "mtime": 1772088956.1892438,
     "seen": 1787208740.8734467,
     "ast_hash": "fce83fd395860e00cd12e0dce0d6fa02",
     "semantic_hash": "fce83fd395860e00cd12e0dce0d6fa02"
-  },
-  "emkan_insights/emkan_insights/doctype/external_quotation/external_quotation_list.js": {
-    "mtime": 1773312291.6358044,
-    "seen": 1787208740.8734486,
-    "ast_hash": "39dee693d8b4d7ccbb58eeb027df4026",
-    "semantic_hash": "39dee693d8b4d7ccbb58eeb027df4026"
   },
   "emkan_insights/emkan_insights/doctype/external_quotation/test_external_quotation.py": {
     "mtime": 1772088956.1892438,
@@ -1475,23 +905,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_request_for_quotation/external_request_for_quotation.js": {
-    "mtime": 1772088740.463175,
-    "seen": 1787208740.873454,
-    "ast_hash": "ca05d386a965b057420c49f90cedea9a",
-    "semantic_hash": "ca05d386a965b057420c49f90cedea9a"
-  },
   "emkan_insights/emkan_insights/doctype/external_request_for_quotation/external_request_for_quotation.py": {
     "mtime": 1772088740.463175,
     "seen": 1787208740.8734558,
     "ast_hash": "e816d8a784f6859a5195aca75f821b17",
     "semantic_hash": "e816d8a784f6859a5195aca75f821b17"
-  },
-  "emkan_insights/emkan_insights/doctype/external_request_for_quotation/external_request_for_quotation_list.js": {
-    "mtime": 1772785320.8767052,
-    "seen": 1787208740.8734577,
-    "ast_hash": "137fbc926fe7cc5c967896fbeca59d9b",
-    "semantic_hash": "137fbc926fe7cc5c967896fbeca59d9b"
   },
   "emkan_insights/emkan_insights/doctype/external_request_for_quotation/test_external_request_for_quotation.py": {
     "mtime": 1772088740.463175,
@@ -1505,23 +923,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_sales_invoice/external_sales_invoice.js": {
-    "mtime": 1772089279.9643474,
-    "seen": 1787208740.8734634,
-    "ast_hash": "c71d18aecdf648598ae711d8efb58f32",
-    "semantic_hash": "c71d18aecdf648598ae711d8efb58f32"
-  },
   "emkan_insights/emkan_insights/doctype/external_sales_invoice/external_sales_invoice.py": {
     "mtime": 1772089279.9643474,
     "seen": 1787208740.8734653,
     "ast_hash": "62acaaa9515bc94c32a19faf6b654068",
     "semantic_hash": "62acaaa9515bc94c32a19faf6b654068"
-  },
-  "emkan_insights/emkan_insights/doctype/external_sales_invoice/external_sales_invoice_list.js": {
-    "mtime": 1773404106.5307984,
-    "seen": 1787208740.8734672,
-    "ast_hash": "425f9d07dbe30eba67d47914f8a17cbc",
-    "semantic_hash": "425f9d07dbe30eba67d47914f8a17cbc"
   },
   "emkan_insights/emkan_insights/doctype/external_sales_invoice/test_external_sales_invoice.py": {
     "mtime": 1772089279.9643474,
@@ -1535,23 +941,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_sales_order/external_sales_order.js": {
-    "mtime": 1772089052.2741652,
-    "seen": 1787208740.8734725,
-    "ast_hash": "c6817bb5a0cd00ad48e9139301e446d7",
-    "semantic_hash": "c6817bb5a0cd00ad48e9139301e446d7"
-  },
   "emkan_insights/emkan_insights/doctype/external_sales_order/external_sales_order.py": {
     "mtime": 1772089052.2741652,
     "seen": 1787208740.8734744,
     "ast_hash": "155bafa79cdf3504b9962544ba0bbaf3",
     "semantic_hash": "155bafa79cdf3504b9962544ba0bbaf3"
-  },
-  "emkan_insights/emkan_insights/doctype/external_sales_order/external_sales_order_list.js": {
-    "mtime": 1773317826.5475671,
-    "seen": 1787208740.873476,
-    "ast_hash": "984ec59a04f027949f1603427fc25844",
-    "semantic_hash": "984ec59a04f027949f1603427fc25844"
   },
   "emkan_insights/emkan_insights/doctype/external_sales_order/test_external_sales_order.py": {
     "mtime": 1772089052.2741652,
@@ -1565,23 +959,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_sales_person/external_sales_person.js": {
-    "mtime": 1772618456.9985557,
-    "seen": 1787208740.8734818,
-    "ast_hash": "f95188af36d640c7efd3d0a1d1f29ecd",
-    "semantic_hash": "f95188af36d640c7efd3d0a1d1f29ecd"
-  },
   "emkan_insights/emkan_insights/doctype/external_sales_person/external_sales_person.py": {
     "mtime": 1772618456.9945557,
     "seen": 1787208740.8734834,
     "ast_hash": "63bd4c1c6b96a7ca120138b51654970e",
     "semantic_hash": "63bd4c1c6b96a7ca120138b51654970e"
-  },
-  "emkan_insights/emkan_insights/doctype/external_sales_person/external_sales_person_list.js": {
-    "mtime": 1772627939.0711842,
-    "seen": 1787208740.8734856,
-    "ast_hash": "8b8e71470929cbdb2d1f5f8f41b1bf9a",
-    "semantic_hash": "8b8e71470929cbdb2d1f5f8f41b1bf9a"
   },
   "emkan_insights/emkan_insights/doctype/external_sales_person/test_external_sales_person.py": {
     "mtime": 1772618456.9985557,
@@ -1595,23 +977,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_sales_stage/external_sales_stage.js": {
-    "mtime": 1773144803.7908978,
-    "seen": 1787208740.873491,
-    "ast_hash": "374d2671346cded0345194182231b082",
-    "semantic_hash": "374d2671346cded0345194182231b082"
-  },
   "emkan_insights/emkan_insights/doctype/external_sales_stage/external_sales_stage.py": {
     "mtime": 1773144803.7868977,
     "seen": 1787208740.8734927,
     "ast_hash": "86ec19bc11c3e2d43d803bef59da2f60",
     "semantic_hash": "86ec19bc11c3e2d43d803bef59da2f60"
-  },
-  "emkan_insights/emkan_insights/doctype/external_sales_stage/external_sales_stage_list.js": {
-    "mtime": 1773811090.0348756,
-    "seen": 1787208740.8734949,
-    "ast_hash": "7177ba32ff00af0b1ec638b07d8538e7",
-    "semantic_hash": "7177ba32ff00af0b1ec638b07d8538e7"
   },
   "emkan_insights/emkan_insights/doctype/external_sales_stage/test_external_sales_stage.py": {
     "mtime": 1773144803.7868977,
@@ -1625,23 +995,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_sales_taxes_and_charges_template/external_sales_taxes_and_charges_template.js": {
-    "mtime": 1772621467.418653,
-    "seen": 1787208740.8735,
-    "ast_hash": "03eb404a1d714a670d66be37f1c0b49a",
-    "semantic_hash": "03eb404a1d714a670d66be37f1c0b49a"
-  },
   "emkan_insights/emkan_insights/doctype/external_sales_taxes_and_charges_template/external_sales_taxes_and_charges_template.py": {
     "mtime": 1772621467.418653,
     "seen": 1787208740.873502,
     "ast_hash": "b2f1317e1602d00ae3521280131213b7",
     "semantic_hash": "b2f1317e1602d00ae3521280131213b7"
-  },
-  "emkan_insights/emkan_insights/doctype/external_sales_taxes_and_charges_template/external_sales_taxes_and_charges_template_list.js": {
-    "mtime": 1772627553.7915735,
-    "seen": 1787208740.8735037,
-    "ast_hash": "4172645cc56483f6c4caf67e7b51e938",
-    "semantic_hash": "4172645cc56483f6c4caf67e7b51e938"
   },
   "emkan_insights/emkan_insights/doctype/external_sales_taxes_and_charges_template/test_external_sales_taxes_and_charges_template.py": {
     "mtime": 1772621467.418653,
@@ -1656,28 +1014,22 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "emkan_insights/emkan_insights/doctype/external_site_configuration/external_site_configuration.js": {
-    "mtime": 1785324142.5029511,
-    "seen": 1787208740.87351,
-    "ast_hash": "8348b2954445f21e38ef13aeda92d3fa",
-    "semantic_hash": "8348b2954445f21e38ef13aeda92d3fa"
+    "mtime": 1789359994.915456,
+    "seen": 1789559004.4570863,
+    "ast_hash": "a1af827736061e725022fbef8fa6c0cb",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_site_configuration/external_site_configuration.py": {
-    "mtime": 1787208350.555148,
-    "seen": 1787208740.8735118,
-    "ast_hash": "cc89ab0c107c8650bc5063356d0e47da",
-    "semantic_hash": "cc89ab0c107c8650bc5063356d0e47da"
-  },
-  "emkan_insights/emkan_insights/doctype/external_site_configuration/se_pr_sync.py": {
-    "mtime": 1784786054.2497401,
-    "seen": 1787208740.8735137,
-    "ast_hash": "3359282b0045a73a2de651bdb6de4f9d",
-    "semantic_hash": "3359282b0045a73a2de651bdb6de4f9d"
+    "mtime": 1789360707.5821521,
+    "seen": 1789559004.4570894,
+    "ast_hash": "9fb68f35c42bf74c7055390ad1c40fca",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_site_configuration/test_external_site_configuration.py": {
-    "mtime": 1783945707.4037368,
-    "seen": 1787208740.8735158,
-    "ast_hash": "af97cfb45dab1d68e8baf1ea1e312eca",
-    "semantic_hash": "af97cfb45dab1d68e8baf1ea1e312eca"
+    "mtime": 1789562474.0880003,
+    "seen": 1789562726.2847884,
+    "ast_hash": "f2821e43361f1712064f78ec051d4d04",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_site_configuration_ct/__init__.py": {
     "mtime": 1770200263.635998,
@@ -1697,29 +1049,17 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_stock_entry/external_stock_entry.js": {
-    "mtime": 1772089388.7573917,
-    "seen": 1787208740.8735232,
-    "ast_hash": "e692c540b5cfa637f0fe360a658ec09f",
-    "semantic_hash": "e692c540b5cfa637f0fe360a658ec09f"
-  },
   "emkan_insights/emkan_insights/doctype/external_stock_entry/external_stock_entry.py": {
     "mtime": 1772089388.7573917,
     "seen": 1787208740.8735251,
     "ast_hash": "036a8d822d0913ca12ce85ec4e663cb2",
     "semantic_hash": "036a8d822d0913ca12ce85ec4e663cb2"
   },
-  "emkan_insights/emkan_insights/doctype/external_stock_entry/external_stock_entry_list.js": {
-    "mtime": 1785482870.4922907,
-    "seen": 1787208740.873527,
-    "ast_hash": "5d76f7c0633b35add226a692dfaac84b",
-    "semantic_hash": "5d76f7c0633b35add226a692dfaac84b"
-  },
   "emkan_insights/emkan_insights/doctype/external_stock_entry/test_external_stock_entry.py": {
-    "mtime": 1772089388.7573917,
-    "seen": 1787208740.8735287,
-    "ast_hash": "82f629af4be5a9d470ff998ed63f6a41",
-    "semantic_hash": "82f629af4be5a9d470ff998ed63f6a41"
+    "mtime": 1788779207.421487,
+    "seen": 1788779301.7818003,
+    "ast_hash": "eed32f28da19617448f6add92222536a",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_stock_reconciliation/__init__.py": {
     "mtime": 1784783358.3441682,
@@ -1727,29 +1067,17 @@
     "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
     "semantic_hash": "68b329da9893e34099c7d8ad5cb9c940"
   },
-  "emkan_insights/emkan_insights/doctype/external_stock_reconciliation/external_stock_reconciliation.js": {
-    "mtime": 1784783358.336168,
-    "seen": 1787208740.8735328,
-    "ast_hash": "5a221866a91c827f0db8310a65700208",
-    "semantic_hash": "5a221866a91c827f0db8310a65700208"
-  },
   "emkan_insights/emkan_insights/doctype/external_stock_reconciliation/external_stock_reconciliation.py": {
     "mtime": 1784783358.3441682,
     "seen": 1787208740.8735344,
     "ast_hash": "5c9d152182d52361960b0060f5b1355a",
     "semantic_hash": "5c9d152182d52361960b0060f5b1355a"
   },
-  "emkan_insights/emkan_insights/doctype/external_stock_reconciliation/external_stock_reconciliation_list.js": {
-    "mtime": 1784783358.336168,
-    "seen": 1787208740.8735363,
-    "ast_hash": "87ebb45763f5f1b44293d33347afdd91",
-    "semantic_hash": "87ebb45763f5f1b44293d33347afdd91"
-  },
   "emkan_insights/emkan_insights/doctype/external_stock_reconciliation/test_external_stock_reconciliation.py": {
-    "mtime": 1784783358.336168,
-    "seen": 1787208740.8735383,
-    "ast_hash": "9fc2506a5c4b11b75019b13120cdac92",
-    "semantic_hash": "9fc2506a5c4b11b75019b13120cdac92"
+    "mtime": 1788761357.207446,
+    "seen": 1788779301.7820954,
+    "ast_hash": "a95a7d8e907481f42856390bd2c9b73b",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_supplier/__init__.py": {
     "mtime": 1770201470.4673026,
@@ -1757,23 +1085,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_supplier/external_supplier.js": {
-    "mtime": 1770720698.2124965,
-    "seen": 1787208740.873542,
-    "ast_hash": "bb2f739317c9b9fc849b2e7c420348db",
-    "semantic_hash": "bb2f739317c9b9fc849b2e7c420348db"
-  },
   "emkan_insights/emkan_insights/doctype/external_supplier/external_supplier.py": {
-    "mtime": 1785741498.1675038,
-    "seen": 1787208740.8735442,
-    "ast_hash": "015d55ae062b007486c49e5bda0d5c9c",
-    "semantic_hash": "015d55ae062b007486c49e5bda0d5c9c"
-  },
-  "emkan_insights/emkan_insights/doctype/external_supplier/external_supplier_list.js": {
-    "mtime": 1786435091.1112869,
-    "seen": 1787208740.873546,
-    "ast_hash": "fd5d10b16976c631623288453b7782dc",
-    "semantic_hash": "fd5d10b16976c631623288453b7782dc"
+    "mtime": 1788946505.3543532,
+    "seen": 1789023014.2749302,
+    "ast_hash": "dd2094cb9d59d7a9ff76152b178f2085",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_supplier/test_external_supplier.py": {
     "mtime": 1770201470.4673026,
@@ -1787,23 +1103,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_supplier_group/external_supplier_group.js": {
-    "mtime": 1770282783.1076481,
-    "seen": 1787208740.8735516,
-    "ast_hash": "02d6db0cffa0b3a79afb9b4d004a19bc",
-    "semantic_hash": "02d6db0cffa0b3a79afb9b4d004a19bc"
-  },
   "emkan_insights/emkan_insights/doctype/external_supplier_group/external_supplier_group.py": {
-    "mtime": 1785741480.835337,
-    "seen": 1787208740.8735535,
-    "ast_hash": "d79767a7e5224eb261cdf603a7691049",
-    "semantic_hash": "d79767a7e5224eb261cdf603a7691049"
-  },
-  "emkan_insights/emkan_insights/doctype/external_supplier_group/external_supplier_group_list.js": {
-    "mtime": 1771482559.013053,
-    "seen": 1787208740.8735552,
-    "ast_hash": "72ec05835c3ed38721e7d72bac27f313",
-    "semantic_hash": "72ec05835c3ed38721e7d72bac27f313"
+    "mtime": 1788946505.4983544,
+    "seen": 1789023014.275108,
+    "ast_hash": "51672c53ddde8da3daa1593384fda041",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_supplier_group/test_external_supplier_group.py": {
     "mtime": 1770282783.1076481,
@@ -1817,29 +1121,17 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_supplier_quotation/external_supplier_quotation.js": {
-    "mtime": 1772088637.8061907,
-    "seen": 1787208740.8735611,
-    "ast_hash": "df95588f27cfdc65db3e7fde9bda8c48",
-    "semantic_hash": "df95588f27cfdc65db3e7fde9bda8c48"
-  },
   "emkan_insights/emkan_insights/doctype/external_supplier_quotation/external_supplier_quotation.py": {
-    "mtime": 1773915325.8290958,
-    "seen": 1787208740.8735628,
-    "ast_hash": "42764328ef7d8ca1d9a9e2313f585b8d",
-    "semantic_hash": "42764328ef7d8ca1d9a9e2313f585b8d"
-  },
-  "emkan_insights/emkan_insights/doctype/external_supplier_quotation/external_supplier_quotation_list.js": {
-    "mtime": 1782194624.2291126,
-    "seen": 1787208740.8735647,
-    "ast_hash": "011c9ef885b3bf99fcb2ff65478c0231",
-    "semantic_hash": "011c9ef885b3bf99fcb2ff65478c0231"
+    "mtime": 1788946505.6383557,
+    "seen": 1789023014.2752595,
+    "ast_hash": "8a3c89ee9e0b5f5489587addb8511ea3",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_supplier_quotation/test_external_supplier_quotation.py": {
-    "mtime": 1772088637.8061907,
-    "seen": 1787208740.8735664,
-    "ast_hash": "bff2c0093efe41e1398260fbb532cdf5",
-    "semantic_hash": "bff2c0093efe41e1398260fbb532cdf5"
+    "mtime": 1788346305.222726,
+    "seen": 1788349916.8144426,
+    "ast_hash": "d130b7c3c793bbf755bf7565c5082a3e",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_tax_category/__init__.py": {
     "mtime": 1782377702.9743109,
@@ -1847,23 +1139,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_tax_category/external_tax_category.js": {
-    "mtime": 1782377702.9783108,
-    "seen": 1787208740.87357,
-    "ast_hash": "91f32cfb64f6a74605d7afbeea3391e1",
-    "semantic_hash": "91f32cfb64f6a74605d7afbeea3391e1"
-  },
   "emkan_insights/emkan_insights/doctype/external_tax_category/external_tax_category.py": {
     "mtime": 1782377702.9783108,
     "seen": 1787208740.8735719,
     "ast_hash": "0e3b5d12b4a15695e66d5d6d20446be6",
     "semantic_hash": "0e3b5d12b4a15695e66d5d6d20446be6"
-  },
-  "emkan_insights/emkan_insights/doctype/external_tax_category/external_tax_category_list.js": {
-    "mtime": 1782378543.526366,
-    "seen": 1787208740.8735735,
-    "ast_hash": "fdf0435e5b761a25cccfa341c7ec631c",
-    "semantic_hash": "fdf0435e5b761a25cccfa341c7ec631c"
   },
   "emkan_insights/emkan_insights/doctype/external_tax_category/test_external_tax_category.py": {
     "mtime": 1782377702.9783108,
@@ -1877,23 +1157,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_terms_and_conditions/external_terms_and_conditions.js": {
-    "mtime": 1772619954.7525377,
-    "seen": 1787208740.8735795,
-    "ast_hash": "e4a9395dbb0a694f21db3ffa6c437bc9",
-    "semantic_hash": "e4a9395dbb0a694f21db3ffa6c437bc9"
-  },
   "emkan_insights/emkan_insights/doctype/external_terms_and_conditions/external_terms_and_conditions.py": {
     "mtime": 1772619954.7485378,
     "seen": 1787208740.8735816,
     "ast_hash": "87332126da1c832887f38e02941d8258",
     "semantic_hash": "87332126da1c832887f38e02941d8258"
-  },
-  "emkan_insights/emkan_insights/doctype/external_terms_and_conditions/external_terms_and_conditions_list.js": {
-    "mtime": 1772627727.673203,
-    "seen": 1787208740.8735833,
-    "ast_hash": "1772449b87876ddd4345bfcb8c1c42d6",
-    "semantic_hash": "1772449b87876ddd4345bfcb8c1c42d6"
   },
   "emkan_insights/emkan_insights/doctype/external_terms_and_conditions/test_external_terms_and_conditions.py": {
     "mtime": 1772619954.7525377,
@@ -1907,23 +1175,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_territory/external_territory.js": {
-    "mtime": 1770289419.0940056,
-    "seen": 1787208740.8735888,
-    "ast_hash": "1fe463bd8ee116f8cb3cab2b20c17d03",
-    "semantic_hash": "1fe463bd8ee116f8cb3cab2b20c17d03"
-  },
   "emkan_insights/emkan_insights/doctype/external_territory/external_territory.py": {
-    "mtime": 1785741440.0829446,
-    "seen": 1787208740.8735907,
-    "ast_hash": "f8ca6cf210836b1d33c9e9c88727e81b",
-    "semantic_hash": "f8ca6cf210836b1d33c9e9c88727e81b"
-  },
-  "emkan_insights/emkan_insights/doctype/external_territory/external_territory_list.js": {
-    "mtime": 1771482559.013053,
-    "seen": 1787208740.8735926,
-    "ast_hash": "c052e91812cf6b29fd79106e6c9bcb34",
-    "semantic_hash": "c052e91812cf6b29fd79106e6c9bcb34"
+    "mtime": 1788946505.7783573,
+    "seen": 1789023014.2758543,
+    "ast_hash": "ce5d25b852bf9fabfca6ea09589b6105",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_territory/test_external_territory.py": {
     "mtime": 1770289419.0940056,
@@ -1937,23 +1193,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_uom/external_uom.js": {
-    "mtime": 1770293643.9377124,
-    "seen": 1787208740.8735979,
-    "ast_hash": "faee5c5fac70508518777b520da32c53",
-    "semantic_hash": "faee5c5fac70508518777b520da32c53"
-  },
   "emkan_insights/emkan_insights/doctype/external_uom/external_uom.py": {
-    "mtime": 1785741423.4707847,
-    "seen": 1787208740.8735995,
-    "ast_hash": "dd66e33070de3bbb60a09852a9ccfd63",
-    "semantic_hash": "dd66e33070de3bbb60a09852a9ccfd63"
-  },
-  "emkan_insights/emkan_insights/doctype/external_uom/external_uom_list.js": {
-    "mtime": 1771482559.0010529,
-    "seen": 1787208740.8736012,
-    "ast_hash": "6b5a415cb17b7ba9775c3f652b61a098",
-    "semantic_hash": "6b5a415cb17b7ba9775c3f652b61a098"
+    "mtime": 1788946505.9183586,
+    "seen": 1789023014.2760026,
+    "ast_hash": "b33e2877419aa116526b3e666789ea48",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_uom/test_external_uom.py": {
     "mtime": 1770293643.9377124,
@@ -1966,12 +1210,6 @@
     "seen": 1787208740.8736048,
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
-  },
-  "emkan_insights/emkan_insights/doctype/external_vehicle/external_vehicle.js": {
-    "mtime": 1782736583.7036064,
-    "seen": 1787208740.8736067,
-    "ast_hash": "0274098c89df6180995d3c063789b39c",
-    "semantic_hash": "0274098c89df6180995d3c063789b39c"
   },
   "emkan_insights/emkan_insights/doctype/external_vehicle/external_vehicle.py": {
     "mtime": 1782736583.6996064,
@@ -1991,23 +1229,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_warehouse/external_warehouse.js": {
-    "mtime": 1770288369.5721445,
-    "seen": 1787208740.873614,
-    "ast_hash": "1e62abf6a160d0dbdc0fa714f71a80b0",
-    "semantic_hash": "1e62abf6a160d0dbdc0fa714f71a80b0"
-  },
   "emkan_insights/emkan_insights/doctype/external_warehouse/external_warehouse.py": {
-    "mtime": 1785733744.2378683,
-    "seen": 1787208740.873616,
-    "ast_hash": "31f8c955533e7a3ee190176e88ce9a41",
-    "semantic_hash": "31f8c955533e7a3ee190176e88ce9a41"
-  },
-  "emkan_insights/emkan_insights/doctype/external_warehouse/external_warehouse_list.js": {
-    "mtime": 1771482558.9890528,
-    "seen": 1787208740.873618,
-    "ast_hash": "1af5fdbb12e758521d9493bfb9b18e90",
-    "semantic_hash": "1af5fdbb12e758521d9493bfb9b18e90"
+    "mtime": 1788946506.0583599,
+    "seen": 1789023014.2763705,
+    "ast_hash": "010c2834276ab7da0ac8e3828f193428",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_warehouse/test_external_warehouse.py": {
     "mtime": 1770288369.5721445,
@@ -2021,23 +1247,11 @@
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
-  "emkan_insights/emkan_insights/doctype/external_work_order/external_work_order.js": {
-    "mtime": 1782459366.5091448,
-    "seen": 1787208740.8736234,
-    "ast_hash": "a64885a3f121fbf221825fc6b2fc2ab3",
-    "semantic_hash": "a64885a3f121fbf221825fc6b2fc2ab3"
-  },
   "emkan_insights/emkan_insights/doctype/external_work_order/external_work_order.py": {
-    "mtime": 1786352805.5581796,
-    "seen": 1787208740.8736253,
-    "ast_hash": "d09d2c2ac336b0cdc32d8729a40827f3",
-    "semantic_hash": "d09d2c2ac336b0cdc32d8729a40827f3"
-  },
-  "emkan_insights/emkan_insights/doctype/external_work_order/external_work_order_list.js": {
-    "mtime": 1783923332.3429036,
-    "seen": 1787208740.8736272,
-    "ast_hash": "9f8fbc36246446a20426ced006ca67fc",
-    "semantic_hash": "9f8fbc36246446a20426ced006ca67fc"
+    "mtime": 1788946506.194361,
+    "seen": 1789023014.2765195,
+    "ast_hash": "ebb43a123a6c8e79034d8347f7556dac",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/doctype/external_work_order/test_external_work_order.py": {
     "mtime": 1782459366.5091448,
@@ -2190,160 +1404,160 @@
     "semantic_hash": "03b3fa7d185263738564794da67e869c"
   },
   "emkan_insights/emkan_insights/external_asset_sync.py": {
-    "mtime": 1787133824.5492642,
-    "seen": 1787208740.8736787,
-    "ast_hash": "dca255dda30d49468cf3e6b5b56751f5",
-    "semantic_hash": "dca255dda30d49468cf3e6b5b56751f5"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.7517858,
+    "ast_hash": "b8ac5d90d268d37945abd200357f3798",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_bom_sync.py": {
-    "mtime": 1786167144.3414142,
-    "seen": 1787208740.87368,
-    "ast_hash": "ee42f51ab18f7043a38381c7c7b47369",
-    "semantic_hash": "ee42f51ab18f7043a38381c7c7b47369"
+    "mtime": 1788584317.0711212,
+    "seen": 1788584481.7517893,
+    "ast_hash": "f97265bdb524c7d8410c849150571cce",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_contact_sync.py": {
-    "mtime": 1786167223.0021644,
-    "seen": 1787208740.873682,
-    "ast_hash": "3b4182e3931d2931b64d02bc6e21dcbb",
-    "semantic_hash": "3b4182e3931d2931b64d02bc6e21dcbb"
+    "mtime": 1788584317.047121,
+    "seen": 1788584481.7517931,
+    "ast_hash": "d8260b70041dae51c9f1850ed79b2617",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_cost_center_sync.py": {
-    "mtime": 1785733784.370248,
-    "seen": 1787208740.8736835,
-    "ast_hash": "6fc47e0f2562ba263d356a267f3aa792",
-    "semantic_hash": "6fc47e0f2562ba263d356a267f3aa792"
+    "mtime": 1788257869.867727,
+    "seen": 1788349916.8182414,
+    "ast_hash": "3b84b9c7263627179e6564d07a5256fb",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_delivery_note_sync.py": {
-    "mtime": 1787047347.78444,
-    "seen": 1787208740.8736854,
-    "ast_hash": "1586120b8bf81be1b21f96511b1dbbc9",
-    "semantic_hash": "1586120b8bf81be1b21f96511b1dbbc9"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.751861,
+    "ast_hash": "7bc3332ff5b308d6cf0833abdf7b8dde",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_item_price.py": {
-    "mtime": 1785734119.501418,
-    "seen": 1787208740.873687,
-    "ast_hash": "f955923c84d2f4233306685dd7801414",
-    "semantic_hash": "f955923c84d2f4233306685dd7801414"
+    "mtime": 1787638483.6371558,
+    "seen": 1787667966.2515075,
+    "ast_hash": "6bdb2f4ac39685226a96713c3759e2a6",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_item_sync.py": {
-    "mtime": 1786168888.9500487,
-    "seen": 1787208740.8736892,
-    "ast_hash": "7ff9c426ebffc4f79fc5ac198c23214a",
-    "semantic_hash": "7ff9c426ebffc4f79fc5ac198c23214a"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.7519279,
+    "ast_hash": "33feb9aaefd9c86a0de916912d231ee1",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_item_tax_template_sync.py": {
-    "mtime": 1785773554.353411,
-    "seen": 1787208740.8736906,
-    "ast_hash": "820c0794f0c482891f55c4dc9a642a1e",
-    "semantic_hash": "820c0794f0c482891f55c4dc9a642a1e"
+    "mtime": 1787740073.2733603,
+    "seen": 1788349916.8183074,
+    "ast_hash": "e6555930beeddd9eaf5756d51deffe9f",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_journal_entry_sync.py": {
-    "mtime": 1786605325.9518266,
-    "seen": 1787208740.8736925,
-    "ast_hash": "1f5550b4095c3a5233bac2f10eeb475c",
-    "semantic_hash": "1f5550b4095c3a5233bac2f10eeb475c"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.751994,
+    "ast_hash": "04b2595d1b25c45a6edebfea226df0ba",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_material_request_sync.py": {
-    "mtime": 1787208367.9673128,
-    "seen": 1787208740.873694,
-    "ast_hash": "b56ea5c05fb6d29ee157a2f15f0f2b2c",
-    "semantic_hash": "b56ea5c05fb6d29ee157a2f15f0f2b2c"
+    "mtime": 1788584360.2315319,
+    "seen": 1788584481.7519972,
+    "ast_hash": "04d2c411ee3356f301861995b66dd101",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_payment_entry_sync.py": {
-    "mtime": 1786621566.7992866,
-    "seen": 1787208740.8736959,
-    "ast_hash": "ae306fcf701d3729a4a88f98203d1d7f",
-    "semantic_hash": "ae306fcf701d3729a4a88f98203d1d7f"
+    "mtime": 1788584317.0511212,
+    "seen": 1788584481.7520006,
+    "ast_hash": "5e42c1653c68830f5c6c453bb74805df",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_payment_request_sync.py": {
-    "mtime": 1786343359.230242,
-    "seen": 1787208740.8736975,
-    "ast_hash": "2f0abdf6fb87fb6051ec0c5bec00c99d",
-    "semantic_hash": "2f0abdf6fb87fb6051ec0c5bec00c99d"
+    "mtime": 1788584317.0511212,
+    "seen": 1788584481.7520034,
+    "ast_hash": "f01643cd341ebc13eebdce42b62cad3a",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_payment_term_template_sync.py": {
-    "mtime": 1785773572.1655815,
-    "seen": 1787208740.8736997,
-    "ast_hash": "6dca598a8b64a925656ed3a984abd461",
-    "semantic_hash": "6dca598a8b64a925656ed3a984abd461"
+    "mtime": 1787652357.9782557,
+    "seen": 1787667966.2515392,
+    "ast_hash": "84985ccb5bcedd8f8c5e662e6b5b8fd8",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_pi_sync.py": {
-    "mtime": 1787046458.0039356,
-    "seen": 1787208740.873701,
-    "ast_hash": "92af72ffe7405821b797c33de2f1dce5",
-    "semantic_hash": "92af72ffe7405821b797c33de2f1dce5"
+    "mtime": 1788759002.3890345,
+    "seen": 1788779301.7883108,
+    "ast_hash": "aed19fd6553a9573673c5e41665184c0",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_po_sync.py": {
-    "mtime": 1786949144.7233157,
-    "seen": 1787208740.873703,
-    "ast_hash": "4b19f1bfe7d4871f42a37e017a9aba22",
-    "semantic_hash": "4b19f1bfe7d4871f42a37e017a9aba22"
+    "mtime": 1788584317.0511212,
+    "seen": 1788584481.7520742,
+    "ast_hash": "eeb366e19459696c3685a488869bc9d2",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_pr_sync.py": {
-    "mtime": 1787047271.5877118,
-    "seen": 1787208740.8737044,
-    "ast_hash": "3304656bceb2b40ee3ccc2bb9ecc634b",
-    "semantic_hash": "3304656bceb2b40ee3ccc2bb9ecc634b"
+    "mtime": 1788759036.989364,
+    "seen": 1788779301.7883768,
+    "ast_hash": "b9e10bdfd0af9843885184e1b4668909",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_project_sync.py": {
-    "mtime": 1785773580.145658,
-    "seen": 1787208740.8737063,
-    "ast_hash": "d10b68769e7e6b8b12af6c59e99bb352",
-    "semantic_hash": "d10b68769e7e6b8b12af6c59e99bb352"
+    "mtime": 1787552286.7272046,
+    "seen": 1787667966.2515528,
+    "ast_hash": "a57131bb2da097dc3d767c641fb78f30",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_quotation_sync.py": {
-    "mtime": 1786353048.9005756,
-    "seen": 1787208740.8737078,
-    "ast_hash": "592855180ffa76a2cabbd6adc3159c63",
-    "semantic_hash": "592855180ffa76a2cabbd6adc3159c63"
+    "mtime": 1788584317.047121,
+    "seen": 1788584481.7521427,
+    "ast_hash": "2db9682e6b5875be142ca86f46331b42",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_rfq_sync.py": {
-    "mtime": 1786621483.2984598,
-    "seen": 1787208740.8737097,
-    "ast_hash": "758c85099f00e2130c33e1c7cd263da3",
-    "semantic_hash": "758c85099f00e2130c33e1c7cd263da3"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.7521458,
+    "ast_hash": "1386f9b1f71e9f72bf3c21586aae538b",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_sales_order_sync.py": {
-    "mtime": 1786621531.9669418,
-    "seen": 1787208740.873711,
-    "ast_hash": "366d4edea2fbc98fcbdff11b5d806f8f",
-    "semantic_hash": "366d4edea2fbc98fcbdff11b5d806f8f"
+    "mtime": 1788584395.4438667,
+    "seen": 1788584481.7521486,
+    "ast_hash": "c851bac931e18cba5902715ac1ad9048",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_si_sync.py": {
-    "mtime": 1787047336.0323277,
-    "seen": 1787208740.8737128,
-    "ast_hash": "c30dc65e19d9c14aa3c9bafa7da523aa",
-    "semantic_hash": "c30dc65e19d9c14aa3c9bafa7da523aa"
+    "mtime": 1788584317.0551212,
+    "seen": 1788584481.7521517,
+    "ast_hash": "cd75c5a0ec3ded464376bd73b30775b8",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_stock_entry_sync.py": {
-    "mtime": 1787208406.235675,
-    "seen": 1787208740.8737147,
-    "ast_hash": "e5f1defb17bac118b3b71f26a4605bc0",
-    "semantic_hash": "e5f1defb17bac118b3b71f26a4605bc0"
+    "mtime": 1788779263.3500226,
+    "seen": 1788779301.788697,
+    "ast_hash": "5177c452efcf9deb75721da27da03211",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_stock_reconciliation_sync.py": {
-    "mtime": 1786612341.9421906,
-    "seen": 1787208740.873716,
-    "ast_hash": "ea40b27f5d26904fb3608167dc011a2c",
-    "semantic_hash": "ea40b27f5d26904fb3608167dc011a2c"
+    "mtime": 1788761357.0634446,
+    "seen": 1788779301.7887006,
+    "ast_hash": "f90357f272c798dc3d18b3ac18889a12",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_supplier_quotation_sync.py": {
-    "mtime": 1786621675.7603655,
-    "seen": 1787208740.8737183,
-    "ast_hash": "e30add44b794be8cb56a9e2253dcf2f6",
-    "semantic_hash": "e30add44b794be8cb56a9e2253dcf2f6"
+    "mtime": 1788584395.587868,
+    "seen": 1788584481.7521598,
+    "ast_hash": "192375d5860aa66990bc08d17f050771",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_sync.py": {
-    "mtime": 1787134764.6222095,
-    "seen": 1787208740.8737202,
-    "ast_hash": "96fb6735be9bbb8de4081f3f756d7df1",
-    "semantic_hash": "96fb6735be9bbb8de4081f3f756d7df1"
+    "mtime": 1788437485.2732804,
+    "seen": 1788437581.185413,
+    "ast_hash": "6cc965d2bd47f2aeeee0e1caeecd86b3",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/external_tax_category_sync.py": {
-    "mtime": 1785773588.3337364,
-    "seen": 1787208740.8737218,
-    "ast_hash": "6fbfb56cc14074b977974b6e60802b60",
-    "semantic_hash": "6fbfb56cc14074b977974b6e60802b60"
+    "mtime": 1787740049.333133,
+    "seen": 1788349916.8184693,
+    "ast_hash": "6942040ee66f8ad84c0a5ef73562c02e",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/override/__init__.py": {
     "mtime": 1770190903.2128396,
@@ -2352,10 +1566,10 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "emkan_insights/emkan_insights/override/contact.py": {
-    "mtime": 1773823293.9586792,
-    "seen": 1787208740.8737252,
-    "ast_hash": "0be076e05356a9b54e06ed7bcbd9dceb",
-    "semantic_hash": "0be076e05356a9b54e06ed7bcbd9dceb"
+    "mtime": 1787213381.3667753,
+    "seen": 1787667966.2516484,
+    "ast_hash": "efb2019deabf1373da479c887fac3647",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/override/lead.py": {
     "mtime": 1773820414.759408,
@@ -2375,17 +1589,11 @@
     "ast_hash": "fdd6200a512803d17fcb17b220ca990c",
     "semantic_hash": "fdd6200a512803d17fcb17b220ca990c"
   },
-  "emkan_insights/emkan_insights/registry/fetch_registry.py": {
-    "mtime": 1785414391.199733,
-    "seen": 1787208740.873732,
-    "ast_hash": "f79e4b1d060975683d390b1e8b3eedcd",
-    "semantic_hash": "f79e4b1d060975683d390b1e8b3eedcd"
-  },
   "emkan_insights/emkan_insights/registry/sync_registry.py": {
-    "mtime": 1786434951.6099355,
-    "seen": 1787208740.8737335,
-    "ast_hash": "bcacda3ff36d055e765949e61efc4594",
-    "semantic_hash": "bcacda3ff36d055e765949e61efc4594"
+    "mtime": 1788946704.576208,
+    "seen": 1789023014.2809381,
+    "ast_hash": "a807eda8569529d679d90f4f5a09422d",
+    "semantic_hash": ""
   },
   "emkan_insights/emkan_insights/report/__init__.py": {
     "mtime": 1781776489.732614,
@@ -2411,83 +1619,11 @@
     "ast_hash": "1a95dd7378e75cbdc98734ec2fc355e1",
     "semantic_hash": "1a95dd7378e75cbdc98734ec2fc355e1"
   },
-  "emkan_insights/emkan_insights/scheduler.py": {
-    "mtime": 1787140310.7751107,
-    "seen": 1787208740.8737426,
-    "ast_hash": "8f03a43ebf1314a78372ede88029e858",
-    "semantic_hash": "8f03a43ebf1314a78372ede88029e858"
-  },
-  "emkan_insights/emkan_insights/sync_cost_centers_from_remote.py": {
-    "mtime": 1786364036.6549852,
-    "seen": 1787208740.873744,
-    "ast_hash": "f65e5f5d25e1e887fe0cdf1ff3b08911",
-    "semantic_hash": "f65e5f5d25e1e887fe0cdf1ff3b08911"
-  },
-  "emkan_insights/emkan_insights/sync_journal_entry_from_remote.py": {
-    "mtime": 1787055535.1226983,
-    "seen": 1787208740.873746,
-    "ast_hash": "2fdec250bafec2e600a734eeffa1fbc8",
-    "semantic_hash": "2fdec250bafec2e600a734eeffa1fbc8"
-  },
-  "emkan_insights/emkan_insights/sync_leads_from_remote.py": {
-    "mtime": 1786365509.197408,
-    "seen": 1787208740.8737478,
-    "ast_hash": "a851847e11e35a176a13153281024ed3",
-    "semantic_hash": "a851847e11e35a176a13153281024ed3"
-  },
-  "emkan_insights/emkan_insights/sync_material_requests_from_remote.py": {
-    "mtime": 1787208488.148451,
-    "seen": 1787208740.8737493,
-    "ast_hash": "bfff02b114e30170a2b6731706b1b82f",
-    "semantic_hash": "bfff02b114e30170a2b6731706b1b82f"
-  },
-  "emkan_insights/emkan_insights/sync_payment_request_from_remote.py": {
-    "mtime": 1785233127.255053,
-    "seen": 1787208740.873751,
-    "ast_hash": "192449f3aad4b49438c69f17525ee3c1",
-    "semantic_hash": "192449f3aad4b49438c69f17525ee3c1"
-  },
-  "emkan_insights/emkan_insights/sync_purchase_invoice_from_remote.py": {
-    "mtime": 1785233527.5749109,
-    "seen": 1787208740.8737526,
-    "ast_hash": "7c25e4d40c024ae802899e1d468aefb9",
-    "semantic_hash": "7c25e4d40c024ae802899e1d468aefb9"
-  },
-  "emkan_insights/emkan_insights/sync_purchase_receipt_from_remote.py": {
-    "mtime": 1786015816.5826178,
-    "seen": 1787208740.8737547,
-    "ast_hash": "572bf1984864617c85de8f84200ecd2d",
-    "semantic_hash": "572bf1984864617c85de8f84200ecd2d"
-  },
-  "emkan_insights/emkan_insights/sync_quotation_from_remote.py": {
-    "mtime": 1786353120.7652833,
-    "seen": 1787208740.8737564,
-    "ast_hash": "714215190084c481569ba15acdf53473",
-    "semantic_hash": "714215190084c481569ba15acdf53473"
-  },
-  "emkan_insights/emkan_insights/sync_request_for_quotation_from_remote.py": {
-    "mtime": 1787055435.881749,
-    "seen": 1787208740.8737583,
-    "ast_hash": "0921711858162af81e10287fe051408c",
-    "semantic_hash": "0921711858162af81e10287fe051408c"
-  },
-  "emkan_insights/emkan_insights/sync_stock_entry_from_remote.py": {
-    "mtime": 1787208511.9286764,
-    "seen": 1787208740.8737597,
-    "ast_hash": "9e44a9ebc22e503bf3a508dff75be40a",
-    "semantic_hash": "9e44a9ebc22e503bf3a508dff75be40a"
-  },
-  "emkan_insights/emkan_insights/sync_stock_reconciliation_from_remote.py": {
-    "mtime": 1786360596.4652076,
-    "seen": 1787208740.8737617,
-    "ast_hash": "b264bc7e21544783bf31f9ca920050f9",
-    "semantic_hash": "b264bc7e21544783bf31f9ca920050f9"
-  },
   "emkan_insights/hooks.py": {
-    "mtime": 1785746153.688253,
-    "seen": 1787208740.873763,
-    "ast_hash": "6175257894e511bae078ab4673da5476",
-    "semantic_hash": "6175257894e511bae078ab4673da5476"
+    "mtime": 1789558822.5723245,
+    "seen": 1789559004.465548,
+    "ast_hash": "149e8d71c89f7c6498d932392d1bd9d6",
+    "semantic_hash": ""
   },
   "emkan_insights/patches/__init__.py": {
     "mtime": 1784783358.3441682,
@@ -2507,12 +1643,6 @@
     "ast_hash": "0a9b1f6ef2323927d41db2f48efec0de",
     "semantic_hash": "0a9b1f6ef2323927d41db2f48efec0de"
   },
-  "emkan_insights/public/js/external_sync_global.js": {
-    "mtime": 1770787168.0910544,
-    "seen": 1787208740.8737698,
-    "ast_hash": "f2b68a3a13dbd0415f823d185c240609",
-    "semantic_hash": "f2b68a3a13dbd0415f823d185c240609"
-  },
   "emkan_insights/templates/__init__.py": {
     "mtime": 1770190903.2128396,
     "seen": 1787208740.8737712,
@@ -2524,5 +1654,557 @@
     "seen": 1787208740.8737729,
     "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "emkan_insights/emkan_insights/account_resolver.py": {
+    "mtime": 1788182657.5271175,
+    "seen": 1788349916.7954164,
+    "ast_hash": "8bf60940f2082deed5785d261ef0e28e",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/sync_guard.py": {
+    "mtime": 1788765840.977989,
+    "seen": 1788779301.7902393,
+    "ast_hash": "cf919291179aa705e07ed558a073122d",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/uom_resolver.py": {
+    "mtime": 1787643701.6272254,
+    "seen": 1787667966.2525768,
+    "ast_hash": "345d5ae14be1cd66a94aacbffc246be8",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/backfill_last_synced_on.py": {
+    "mtime": 1788584201.0300179,
+    "seen": 1788584481.7546988,
+    "ast_hash": "628b2fab708180d007c351f1e8d91b03",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/fix_rfq_double_company_prefix.py": {
+    "mtime": 1788584201.0300179,
+    "seen": 1788584481.7547023,
+    "ast_hash": "c65e5b1cdf01da275df290eab5aa20d2",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/SKILL.md": {
+    "mtime": 1787208769.5071168,
+    "seen": 1787667966.2530794,
+    "ast_hash": "212b55d95333d84e14262f8ec83faa2b",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/add-watch.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2530835,
+    "ast_hash": "d59d027fe449f06aa03905a01184e779",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/exports.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2530856,
+    "ast_hash": "9da2a2152e60a22f07f05fed5158f287",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/extraction-spec.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.253088,
+    "ast_hash": "bf895ec4d4e40f5f66f7d31c2a9bd4a7",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/github-and-merge.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2530918,
+    "ast_hash": "cde13df085e4c492aeb7ba298a996d0d",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/hooks.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2530951,
+    "ast_hash": "3f545db6ce646650bb9de588f5512a27",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/query.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2530985,
+    "ast_hash": "3c46f8ad006874260614ed8657d02307",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/transcribe.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.2531018,
+    "ast_hash": "67b6a5fa6c0974e18f60db9f8932fbd8",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/update.md": {
+    "mtime": 1787207556.735631,
+    "seen": 1787667966.253106,
+    "ast_hash": "9378bd03d56baaf78bd738ab3848f142",
+    "semantic_hash": ""
+  },
+  ".pre-commit-config.yaml": {
+    "mtime": 1770190903.2128396,
+    "seen": 1787667966.253111,
+    "ast_hash": "9a124883573220fea12105a7b5a6933b",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1770190903.7368443,
+    "seen": 1787667966.253119,
+    "ast_hash": "4098ae8d09a7f952de0ac07618b46055",
+    "semantic_hash": ""
+  },
+  "emkan_insights/modules.txt": {
+    "mtime": 1788258645.811148,
+    "seen": 1788349916.821428,
+    "ast_hash": "9786d171b5143ba911ea4a52939e18cf",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches.txt": {
+    "mtime": 1789564676.2531605,
+    "seen": 1789564775.3234353,
+    "ast_hash": "2bb360e6321dbf66cd6b8528f18e1ec2",
+    "semantic_hash": ""
+  },
+  "license.txt": {
+    "mtime": 1770190903.7368443,
+    "seen": 1787667966.2531283,
+    "ast_hash": "57d76440fc5c9183c79d1747d18d2410",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/sync_validation.py": {
+    "mtime": 1788584235.1743424,
+    "seen": 1788584481.7539566,
+    "ast_hash": "7c88916dee20581375a801aa64d0d2de",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/fetch_log.py": {
+    "mtime": 1788851934.9961488,
+    "seen": 1788852153.681525,
+    "ast_hash": "82176315e65e901a0545f4d48625018c",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/_run.py": {
+    "mtime": 1787678183.6974688,
+    "seen": 1787679697.1271899,
+    "ast_hash": "fdf61d1134bd1d5e47f90fcd272b5850",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/normalize_source_site_values.py": {
+    "mtime": 1788584201.0300179,
+    "seen": 1788584481.7547054,
+    "ast_hash": "32692ec5c776540fdc80d9a3e2e6e39d",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/suffix_synced_departments.py": {
+    "mtime": 1788584201.0340178,
+    "seen": 1788584481.754708,
+    "ast_hash": "adb7b342af6384b0259098b57d2a7924",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/external_sync_utils.py": {
+    "mtime": 1788584395.291865,
+    "seen": 1788584481.7522268,
+    "ast_hash": "feb85c42834adb255e383a8f90850f7d",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/rebuild_valuation_sync.py": {
+    "mtime": 1788584201.0380177,
+    "seen": 1788584481.7527628,
+    "ast_hash": "fce1d0ee7bc9530d3da0aeeea7095c6f",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/repair_stock_entry_rates.py": {
+    "mtime": 1788584201.0340178,
+    "seen": 1788584481.7529674,
+    "ast_hash": "ebaebbfbfc239e4f62b28f0ed8684459",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/repair_stock_entry_timestamps.py": {
+    "mtime": 1788584201.0340178,
+    "seen": 1788584481.7529707,
+    "ast_hash": "6783112538af94c5ef6caff3659d3ce0",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_sync.py": {
+    "mtime": 1788437552.2419567,
+    "seen": 1788437581.187556,
+    "ast_hash": "f53ae68f23dac3ae7087e1c58d24d243",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_scheduler.py": {
+    "mtime": 1788854984.897119,
+    "seen": 1788855014.8292835,
+    "ast_hash": "a352e5fdae8a8330b9dff73983c2a006",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_sync_guard.py": {
+    "mtime": 1788765824.8138354,
+    "seen": 1788779301.7913888,
+    "ast_hash": "bc33f561c2f5a37900187b426a86a6d2",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_tree_sync.py": {
+    "mtime": 1788257817.5392268,
+    "seen": 1788349916.8198907,
+    "ast_hash": "5db6bf7dc346f2a46b400e3a5992dff9",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/tree_sync.py": {
+    "mtime": 1788257869.623725,
+    "seen": 1788349916.819893,
+    "ast_hash": "55d99c0ff5e8db3d56d7c9fb31821e16",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/__init__.py": {
+    "mtime": 1789558555.461775,
+    "seen": 1789559004.4665182,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/__init__.py": {
+    "mtime": 1789558569.1859062,
+    "seen": 1789559004.4665215,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_pr_sync.py": {
+    "mtime": 1788509301.8776674,
+    "seen": 1788526259.2334306,
+    "ast_hash": "bf30f2df34677de7ed73a5bd73bdc7e4",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260903_122756_why_does_external_pr_sync_throw_when_strict_and_th.md": {
+    "mtime": 1788438476.3312902,
+    "seen": 1788439375.4181828,
+    "ast_hash": "36a9be7e263bb46e10bc56e0ebc3705b",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/override/accounts_controller.py": {
+    "mtime": 1788505471.6495936,
+    "seen": 1788526259.2317145,
+    "ast_hash": "8db7181b2d0223149232fd3c451b64d4",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/override/test_accounts_controller.py": {
+    "mtime": 1788506240.2528243,
+    "seen": 1788526259.2319276,
+    "ast_hash": "446cc6a464a2131061e0c6de695e34ae",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_pi_sync.py": {
+    "mtime": 1788518659.1826406,
+    "seen": 1788526259.2334263,
+    "ast_hash": "c4447817f5f01f621c57717bc0d9bc9e",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260903_124310_traceback__unknown_column_remote_id_in_where_durin.md": {
+    "mtime": 1788439390.1484187,
+    "seen": 1788526259.2368305,
+    "ast_hash": "6f9f8a2f9cbf2850c1581f33365551de",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260904_064257_check_validate_company_linked_addresses_and_valida.md": {
+    "mtime": 1788504177.1534157,
+    "seen": 1788526259.2368338,
+    "ast_hash": "724078f41c7ae53cd3ae7f5c59c31584",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260904_111720_how_does_external_stock_entry_sync_temporarily_ena.md": {
+    "mtime": 1788520640.6015599,
+    "seen": 1788526259.236837,
+    "ast_hash": "1d9215e754ca07a5626c472d3b771ab3",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260905_045238_action_failed__querydeadlockerror_while_submitting.md": {
+    "mtime": 1788583958.8557148,
+    "seen": 1788584481.7569816,
+    "ast_hash": "dcab991868e7525dac68477d88006528",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/override/stock_entry.py": {
+    "mtime": 1788762286.9282944,
+    "seen": 1788779301.7893531,
+    "ast_hash": "231b5237e1ea755231303244f1d341fe",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/override/test_stock_entry.py": {
+    "mtime": 1788762335.8647602,
+    "seen": 1788779301.7894306,
+    "ast_hash": "1dfc81349d6f8b630ad0590a8408c577",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260905_050122_remove_frappe_db_commit_and_ignore_validate_everyw.md": {
+    "mtime": 1788584482.0886905,
+    "seen": 1788779301.7946136,
+    "ast_hash": "290e7c617dc7be5ff9d2b16373e629f4",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_blanket_order/__init__.py": {
+    "mtime": 1788783705.104556,
+    "seen": 1788783771.942196,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_blanket_order/external_blanket_order.py": {
+    "mtime": 1788783705.2445576,
+    "seen": 1788783771.9421992,
+    "ast_hash": "f36c6eabfd9726074a626bc7a379296b",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_gl_entry/__init__.py": {
+    "mtime": 1788783150.847248,
+    "seen": 1788783771.946776,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_gl_entry/external_gl_entry.py": {
+    "mtime": 1788783150.9872496,
+    "seen": 1788783771.9467795,
+    "ast_hash": "81c9f8e5751c19ddd7cc30ef1c51301b",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_payment_ledger_entry/__init__.py": {
+    "mtime": 1788783151.355253,
+    "seen": 1788783771.9519362,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_payment_ledger_entry/external_payment_ledger_entry.py": {
+    "mtime": 1788783151.4872544,
+    "seen": 1788783771.9519396,
+    "ast_hash": "67ec1db315b9ee98870328eb8d296981",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_stock_ledger_entry/__init__.py": {
+    "mtime": 1788783151.859258,
+    "seen": 1788783771.959873,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_stock_ledger_entry/external_stock_ledger_entry.py": {
+    "mtime": 1788783152.0032592,
+    "seen": 1788783771.959876,
+    "ast_hash": "22c7c5af474e03cdf3f96a86bc83ac9a",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/add_fetch_only_doctypes.py": {
+    "mtime": 1788785376.3525615,
+    "seen": 1788785431.1150062,
+    "ast_hash": "4cebc8e3f9199499648196ac02d93b2c",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_period_closing_voucher/__init__.py": {
+    "mtime": 1788870042.396837,
+    "seen": 1789023014.270714,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_period_closing_voucher/external_period_closing_voucher.py": {
+    "mtime": 1788870042.5528386,
+    "seen": 1789023014.2707179,
+    "ast_hash": "4a131fa61664366a885afff4158e2327",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/external_data_bulk_insert.py": {
+    "mtime": 1789129832.5761905,
+    "seen": 1789559004.4620342,
+    "ast_hash": "89cc966f924c112163d78827eae1505d",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/external_data_fetch.py": {
+    "mtime": 1789022296.4458382,
+    "seen": 1789023014.2787008,
+    "ast_hash": "7536f6bfd16da452403081ca14050aad",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/scheduler/__init__.py": {
+    "mtime": 1789125208.0721881,
+    "seen": 1789559004.4647825,
+    "ast_hash": "3c3dffa10a7fe70d6573ebab9777cf80",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/scheduler/external_site_configuration_scheduler.py": {
+    "mtime": 1789127265.0957527,
+    "seen": 1789559004.4647858,
+    "ast_hash": "21f3f20a8cf11e3f3c68d3d495ae56c2",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/scheduler/test_external_site_configuration_scheduler.py": {
+    "mtime": 1789125283.4729052,
+    "seen": 1789559004.464789,
+    "ast_hash": "d6003edd27bf12991ac8c1361c73e5da",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_data_bulk_insert.py": {
+    "mtime": 1789022927.1238341,
+    "seen": 1789023014.2815042,
+    "ast_hash": "4c1c9d2c1b90fef9489d2bc0118aaf70",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_data_fetch.py": {
+    "mtime": 1789022296.7818415,
+    "seen": 1789023014.2815073,
+    "ast_hash": "e5a2413b98e80df0ebc7babceeeb44d6",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/add_period_closing_voucher_fetch.py": {
+    "mtime": 1788870042.1408346,
+    "seen": 1789023014.2822871,
+    "ast_hash": "21c66a0258bb6f21d3869699954031ec",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/backfill_cpc_source_site.py": {
+    "mtime": 1788869528.7239356,
+    "seen": 1789023014.2822902,
+    "ast_hash": "b15657426978bf467efd44b945f28162",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/remove_temporary_ledger_duplicates.py": {
+    "mtime": 1789022834.4749532,
+    "seen": 1789023014.2825,
+    "ast_hash": "fcf79bab4a9c5ed6524bbcbbe30d63c0",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/test_backfill_cpc_source_site.py": {
+    "mtime": 1788869553.9561765,
+    "seen": 1789023014.2825706,
+    "ast_hash": "8a478eecc5d2d5e2fba5541ad90a1a5a",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/test_remove_temporary_ledger_duplicates.py": {
+    "mtime": 1789022927.2598352,
+    "seen": 1789023014.2825732,
+    "ast_hash": "5fa827a6fe23dcbe41c8d70f943d261a",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/doctype/external_site_configuration/external_site_configuration_list.js": {
+    "mtime": 1789359947.6910124,
+    "seen": 1789559004.4570932,
+    "ast_hash": "1e5f90d4618a59511461dc5eeb429d14",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/external_data_deletion.py": {
+    "mtime": 1789129832.724192,
+    "seen": 1789559004.4620376,
+    "ast_hash": "41fc4be9f74b198db77bf9d6eae2c786",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/reconcile_missing_records.py": {
+    "mtime": 1789131607.937097,
+    "seen": 1789559004.4642212,
+    "ast_hash": "2e39e16b3976450571a7bdde175f3462",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_external_data_deletion.py": {
+    "mtime": 1789129876.2126062,
+    "seen": 1789559004.4649818,
+    "ast_hash": "b5e6490f2e4346cafb6ee7ff918ebab7",
+    "semantic_hash": ""
+  },
+  "emkan_insights/emkan_insights/test_reconciliation_queue.py": {
+    "mtime": 1789129876.3606076,
+    "seen": 1789559004.4652338,
+    "ast_hash": "5137a7acb661831445f917e37f5d7e08",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/sap_doctype_mapping/__init__.py": {
+    "mtime": 1789558569.5339093,
+    "seen": 1789559004.4665248,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/sap_doctype_mapping/sap_doctype_mapping.js": {
+    "mtime": 1789558569.5379095,
+    "seen": 1789559004.4665277,
+    "ast_hash": "30efbc2dbae79ebc9971e1dd30d44725",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/sap_doctype_mapping/sap_doctype_mapping.py": {
+    "mtime": 1789562473.7839975,
+    "seen": 1789562726.2952576,
+    "ast_hash": "f5d2f6d18e3936e7e445d5e8a7d0a119",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/sap_doctype_mapping/test_sap_doctype_mapping.py": {
+    "mtime": 1789564598.6724017,
+    "seen": 1789564775.3222418,
+    "ast_hash": "0ec673300f6aa91d36426b19f7e9c724",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/__init__.py": {
+    "mtime": 1789562845.291552,
+    "seen": 1789562945.0539095,
+    "ast_hash": "1c047b9cc9e544c1c4b1e29339c5dc14",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/client.py": {
+    "mtime": 1789562737.6105218,
+    "seen": 1789562781.9684494,
+    "ast_hash": "2ae15532dbd842273b842734fb2f4b91",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/fetch.py": {
+    "mtime": 1789564598.092396,
+    "seen": 1789564775.322386,
+    "ast_hash": "53d86c3d9950745323740d1a840183c7",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/mapper.py": {
+    "mtime": 1789564598.2363975,
+    "seen": 1789564775.3223898,
+    "ast_hash": "0dba9f4baa9ce76f9e33ab1ebc5fcb1b",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/transforms.py": {
+    "mtime": 1789564598.3803988,
+    "seen": 1789564775.3224614,
+    "ast_hash": "0d8f753fad7e2ee9bdc8c20f13385863",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/services/staging.py": {
+    "mtime": 1789562655.0457318,
+    "seen": 1789562726.2954874,
+    "ast_hash": "d266e22c8f78d8b3df6c5d56704d82bb",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/migrate_sap_integration_settings.py": {
+    "mtime": 1789562585.449066,
+    "seen": 1789562726.294533,
+    "ast_hash": "0d13ad51bd679fb711dd2c6f340cf20c",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/external_sap_configuration/__init__.py": {
+    "mtime": 1789562432.4796023,
+    "seen": 1789562726.2950828,
+    "ast_hash": "68b329da9893e34099c7d8ad5cb9c940",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/external_sap_configuration/external_sap_configuration.js": {
+    "mtime": 1789562844.9915493,
+    "seen": 1789562945.05352,
+    "ast_hash": "7741b5ce2d6b7c0784b11e11270ce6f1",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/external_sap_configuration/external_sap_configuration.py": {
+    "mtime": 1789564598.5244002,
+    "seen": 1789564775.3219209,
+    "ast_hash": "009d567f93c6e2e75e43e35c45d362d5",
+    "semantic_hash": ""
+  },
+  "emkan_insights/sap/doctype/external_sap_configuration/test_external_sap_configuration.py": {
+    "mtime": 1789562845.1395507,
+    "seen": 1789562945.0535262,
+    "ast_hash": "2ceecdfec73b61ff1f33086e57e37306",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/use_external_site_configuration_child_for_sap.py": {
+    "mtime": 1789562867.319763,
+    "seen": 1789562945.053229,
+    "ast_hash": "a8dc50faeaf0b66ff7196afcd3305c59",
+    "semantic_hash": ""
+  },
+  "emkan_insights/patches/v0_0_1/add_sap_master_mappings.py": {
+    "mtime": 1789564676.089159,
+    "seen": 1789564775.3208632,
+    "ast_hash": "133d1fe1178a93371436371887042128",
+    "semantic_hash": ""
   }
 }

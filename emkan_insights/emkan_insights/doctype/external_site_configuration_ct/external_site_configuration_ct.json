@@ -8,10 +8,12 @@
  "field_order": [
   "ref_doctype",
   "exported_doctype",
+  "sap_mapping",
   "last_sync",
   "fetch_started_at",
   "fetch_completed_at",
   "fetch_data",
+  "sync_data",
   "abbr_required"
  ],
  "fields": [
@@ -22,6 +24,13 @@
    "label": "Ref Doctype",
    "options": "DocType",
    "reqd": 1
+  },
+  {
+   "fieldname": "sap_mapping",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SAP Mapping",
+   "options": "SAP Doctype Mapping"
   },
   {
    "fieldname": "last_sync",
@@ -48,6 +57,12 @@
    "fieldtype": "Button",
    "in_list_view": 1,
    "label": "fetch data"
+  },
+  {
+   "fieldname": "sync_data",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Sync Data"
   },
   {
    "fieldname": "exported_doctype",

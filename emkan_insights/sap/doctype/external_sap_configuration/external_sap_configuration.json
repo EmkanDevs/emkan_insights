@@ -1,0 +1,113 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:configuration_name",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "configuration_name",
+  "company",
+  "base_url",
+  "company_db",
+  "username",
+  "password",
+  "session_timeout_minutes",
+  "session_id",
+  "check_connection",
+  "mapping_section",
+  "mappings"
+ ],
+ "fields": [
+  {
+   "fieldname": "configuration_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Configuration Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "label": "Base URL",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_db",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company DB",
+   "reqd": 1
+  },
+  {
+   "fieldname": "username",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Username",
+   "reqd": 1
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "Password",
+   "reqd": 1
+  },
+  {
+   "default": "25",
+   "fieldname": "session_timeout_minutes",
+   "fieldtype": "Int",
+   "label": "Session Timeout (Minutes)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Password",
+   "label": "Session ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "check_connection",
+   "fieldtype": "Button",
+   "label": "Check Connection"
+  },
+  {
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "SAP Mappings"
+  },
+  {
+   "fieldname": "mappings",
+   "fieldtype": "Table",
+   "label": "Mappings",
+   "options": "External Site Configuration CT"
+  }
+ ],
+ "links": [],
+ "module": "SAP",
+ "name": "External SAP Configuration",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

@@ -1669,6 +1669,14 @@ def _sanitize_item_group_default_accounts(src, tgt) -> None:
 
 
 def _get_source_configuration_company(src) -> str | None:
+    sap_configuration = src.get("external_sap_configuration")
+    if sap_configuration:
+        return frappe.db.get_value(
+            "External SAP Configuration",
+            sap_configuration,
+            "company",
+        )
+
     source_site = src.get("source_site")
     if not source_site:
         return None

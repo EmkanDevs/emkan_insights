@@ -41,26 +41,31 @@ def auto_map_entities(entity_type=None, key_field=None):
         doc.key_field = key_field
 
     # 3. Fetch only the unmapped records for these shared IDs
+    fields = ["name", key_field, "source_site"]
+    if frappe.get_meta(entity_type).has_field("external_sap_configuration"):
+        fields.append("external_sap_configuration")
+
     records = frappe.get_all(
         entity_type,
         filters={
             key_field: ["in", shared_ids],
-            "is_mapped": 0
+            "is_mapped": 0,
         },
-        fields=["name", key_field, "source_site"],
-        order_by=f"`{key_field}` asc"
+        fields=fields,
+        order_by=f"`{key_field}` asc",
     )
 
     # 4. Populate and Save
     for r in records:
-        doc.append("mapping", {
-            "entity_type": entity_type,
-            "entity_name": r.name,
-            "key_value": r.get(key_field),
-            "source_site": r.get("source_site")
-            
-        })
-
+        doc.append(
+            "mapping",
+            {
+                "entity_type": entity_type,
+                "entity_name": r.name,
+                "key_value": r.get(key_field),
+                "source_site": r.get("external_sap_configuration") or r.get("source_site"),
+            },
+        )
 
     doc.save(ignore_permissions=True)
 
