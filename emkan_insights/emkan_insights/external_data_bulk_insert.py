@@ -9,6 +9,7 @@ from frappe.utils import cint, now_datetime
 from frappe.utils.nestedset import rebuild_tree
 
 from emkan_insights.emkan_insights.external_data_fetch import is_deferred_naming_pending
+from emkan_insights.emkan_insights.import_field_rules import apply_field_rules, parse_field_rules
 
 
 PAGE_SIZE = 500
@@ -25,6 +26,7 @@ class BulkInsertContext:
 	abbr_doctypes: frozenset[str]
 	requested_by: str
 	source_site_url: str = ""
+	field_rules: dict | None = None
 
 
 @frappe.whitelist(methods=["POST"])
@@ -175,7 +177,7 @@ def _get_context(child_docname: str, requested_by: str | None = None) -> BulkIns
 	row = frappe.db.get_value(
 		"External Site Configuration CT",
 		child_docname,
-		["parent", "ref_doctype", "exported_doctype"],
+		["parent", "ref_doctype", "exported_doctype", "field_rules"],
 		as_dict=True,
 	)
 	if not row:
@@ -207,6 +209,7 @@ def _get_context(child_docname: str, requested_by: str | None = None) -> BulkIns
 		abbr_doctypes=abbr_doctypes,
 		requested_by=requested_by or frappe.session.user,
 		source_site_url=configuration.site_url or "",
+		field_rules=parse_field_rules(row.field_rules, row.ref_doctype),
 	)
 
 
@@ -332,7 +335,7 @@ def _prepare_document_tree(context: BulkInsertContext, raw: dict) -> dict[str, l
 	parent = _prepare_standard_fields(raw, context.requested_by, now)
 	parent = transform_row(
 		context.target_doctype,
-		parent,
+		apply_field_rules(parent, context.field_rules or {}),
 		context.company_abbr,
 		context.abbr_doctypes,
 	)
@@ -429,7 +432,12 @@ def _insert_document_trees(documents: list[dict]) -> int:
 
 	for doctype, rows in rows_by_doctype.items():
 		insert_columns = _get_import_columns(doctype)
-		values = [tuple(row.get(fieldname) for fieldname in insert_columns) for row in rows]
+		defaults = _get_non_nullable_defaults(doctype)
+		values = [
+			tuple(row.get(fieldname) if row.get(fieldname) is not None else defaults.get(fieldname)
+				for fieldname in insert_columns)
+			for row in rows
+		]
 		frappe.db.bulk_insert(
 			doctype,
 			fields=insert_columns,
@@ -446,6 +454,18 @@ def _get_import_columns(doctype: str) -> list[str]:
 	if doctype == "Account":
 		return [fieldname for fieldname in columns if fieldname not in ACCOUNT_EXCLUDED_FIELDS]
 	return columns
+
+
+def _get_non_nullable_defaults(doctype: str) -> dict[str, str]:
+	rows = frappe.db.sql(
+		"""SELECT COLUMN_NAME, COLUMN_DEFAULT
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
+		AND IS_NULLABLE = 'NO' AND COLUMN_DEFAULT IS NOT NULL""",
+		(f"tab{doctype}",),
+		as_dict=True,
+	)
+	return {row.COLUMN_NAME: row.COLUMN_DEFAULT for row in rows}
 
 
 def _parse_json(value, source_name: str) -> dict:

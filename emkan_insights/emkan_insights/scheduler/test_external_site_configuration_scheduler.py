@@ -101,7 +101,7 @@ class TestExternalSiteConfigurationScheduler(FrappeTestCase):
 		enqueue_deletion_batch,
 		logger,
 	):
-		get_all.return_value = ["CPC", "Esacon"]
+		get_all.side_effect = [["CPC", "Esacon"], ["CPC", "Esacon"]]
 		events = []
 		fetch_configuration.side_effect = lambda name: events.append(("fetch", name)) or {
 			"status": "complete"
@@ -137,6 +137,26 @@ class TestExternalSiteConfigurationScheduler(FrappeTestCase):
 		)
 		logger.return_value.info.assert_called_once()
 
+	@patch(f"{MODULE}.frappe.logger")
+	@patch(f"{MODULE}.enqueue_external_data_deletion_batch")
+	@patch(f"{MODULE}.sync_external_site_configuration_sequence_job")
+	@patch(f"{MODULE}.fetch_external_site_configuration_sequence_job")
+	@patch(f"{MODULE}.frappe.get_all")
+	def test_skips_configurations_without_fetch_rows(
+		self, get_all, fetch_configuration, sync_configuration, enqueue_deletion_batch, _logger
+	):
+		get_all.side_effect = [["CPC", "SAP - Sap Company"], ["CPC"]]
+		fetch_configuration.return_value = {"status": "complete"}
+		sync_configuration.return_value = {"status": "complete"}
+		enqueue_deletion_batch.return_value = {"status": "queued"}
+
+		result = run_external_site_configuration_scheduler()
+
+		self.assertEqual(result["configurations"], 1)
+		fetch_configuration.assert_called_once_with("CPC")
+		sync_configuration.assert_called_once_with("CPC", enqueue_deletion=False)
+		enqueue_deletion_batch.assert_called_once_with(["CPC"], enqueue_after_commit=False)
+
 	@patch(f"{MODULE}.frappe.log_error")
 	@patch(f"{MODULE}.frappe.get_traceback", return_value="fetch error")
 	@patch(f"{MODULE}.frappe.db.rollback")
@@ -156,7 +176,7 @@ class TestExternalSiteConfigurationScheduler(FrappeTestCase):
 		get_traceback,
 		log_error,
 	):
-		get_all.return_value = ["CPC", "Esacon"]
+		get_all.side_effect = [["CPC", "Esacon"], ["CPC", "Esacon"]]
 		fetch_configuration.side_effect = [
 			RuntimeError("unavailable"),
 			{"status": "complete"},

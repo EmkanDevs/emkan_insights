@@ -49,15 +49,70 @@ def check_connection(name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def fetch_configuration(name: str) -> dict:
+	configuration = frappe.get_doc("External SAP Configuration", name)
+	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
+
+	from emkan_insights.sap.tasks import (
+		CONFIGURATION_SYNC_TIMEOUT,
+		_configuration_synchronization_job_id,
+		synchronize_sap_configuration,
+	)
+
+	job = frappe.enqueue(
+		synchronize_sap_configuration,
+		queue="long",
+		timeout=CONFIGURATION_SYNC_TIMEOUT,
+		job_id=_configuration_synchronization_job_id(configuration.name),
+		deduplicate=True,
+		configuration_name=configuration.name,
+	)
+	return {"status": "queued" if job else "already_queued", "company": configuration.company}
+
+
+@frappe.whitelist(methods=["POST"])
+def fetch_review_configuration(name: str) -> dict:
+	configuration = frappe.get_doc("External SAP Configuration", name)
+	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
+
+	from emkan_insights.sap.tasks import (
+		CONFIGURATION_SYNC_TIMEOUT,
+		fetch_sap_review_configuration,
+		_configuration_synchronization_job_id,
+	)
+
+	job = frappe.enqueue(
+		fetch_sap_review_configuration,
+		queue="long",
+		timeout=CONFIGURATION_SYNC_TIMEOUT,
+		job_id=f"{_configuration_synchronization_job_id(configuration.name)}_review",
+		deduplicate=True,
+		configuration_name=configuration.name,
+	)
+	return {"status": "queued" if job else "already_queued", "company": configuration.company}
+
+
+@frappe.whitelist(methods=["POST"])
 def fetch_mapping(row_name: str) -> dict:
 	row = frappe.get_doc("External Site Configuration CT", row_name)
 	if row.parenttype != "External SAP Configuration" or row.parentfield != "mappings":
 		raise frappe.ValidationError("The selected row does not belong to an External SAP Configuration.")
 	frappe.has_permission("External SAP Configuration", "write", doc=row.parent, throw=True)
 
-	from emkan_insights.sap.tasks import fetch_sap_data
+	from emkan_insights.sap.tasks import FETCH_LOCK_TTL, _job_id, synchronize_sap_data
 
-	return fetch_sap_data(row.name)
+	job = frappe.enqueue(
+		synchronize_sap_data,
+		queue="long",
+		timeout=FETCH_LOCK_TTL,
+		job_id=_job_id(row.name),
+		deduplicate=True,
+		row_name=row.name,
+	)
+	return {
+		"status": "queued" if job else "already_queued",
+		"mapping": row.sap_mapping,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -73,7 +128,6 @@ def queue_sync_mapping(row_name: str) -> dict:
 		sync_sap_data,
 		queue="long",
 		timeout=FETCH_LOCK_TTL,
-		enqueue_after_commit=True,
 		job_id=f"sap_manual_sync_{row.name}",
 		deduplicate=True,
 		row_name=row.name,

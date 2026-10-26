@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
-from frappe.utils import now_datetime
+from frappe.utils import cint, now_datetime
 from frappe.utils.nestedset import rebuild_tree
 
 from emkan_insights.emkan_insights.external_data_bulk_insert import (
@@ -16,7 +16,27 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	_partition_document_trees,
 	_prepare_document_tree,
 	_update_document_trees,
+	add_prefix,
 )
+from emkan_insights.sap.services.exclusions import (
+	allowed_staged_id_condition,
+	get_excluded_sap_id_prefixes,
+)
+from emkan_insights.sap.services.mapper import Mapper
+from emkan_insights.sap.services.mapper import parse_mapping
+from emkan_insights.emkan_insights.import_field_rules import parse_field_rules
+from emkan_insights.sap.link_validation import resolve_account_links, validate_document_links
+
+
+PERSISTENT_LOG_STATUSES = {
+	"Started", "DocType Creation Completed", "Failed",
+	"Skipped Duplicate Item Group", "Skipped Duplicate Unique Value",
+}
+
+LEDGER_POSTING_DOCTYPES = {
+	"Journal Entry", "Payment Entry", "Purchase Invoice", "Sales Invoice",
+	"Purchase Receipt", "Delivery Note", "Stock Entry", "Stock Reconciliation",
+}
 
 
 @dataclass(frozen=True)
@@ -27,7 +47,9 @@ class SAPSyncContext:
 	source_doctype: str
 	target_doctype: str
 	erp_sap_id_fieldname: str | None
+	sap_id_prefix: str
 	bulk: BulkInsertContext
+	excluded_sap_id_prefixes: tuple[str, ...] = ()
 
 
 def sync_mapping(row_name: str) -> dict:
@@ -37,6 +59,7 @@ def sync_mapping(row_name: str) -> dict:
 	_validate_source(context)
 	inserted = 0
 	updated = 0
+	skipped = 0
 
 	_log(context, "Started", pending=_count_pending_rows(context, started_at))
 	while True:
@@ -49,12 +72,27 @@ def sync_mapping(row_name: str) -> dict:
 			_prepare_source_row(context, row, target_names.get(str(row.remote_id)))
 			for row in source_rows
 		]
-		new_documents, existing_documents = _partition_document_trees(
-			context.target_doctype,
-			documents,
+		accepted_rows, documents, unique_skipped = _skip_conflicting_unique_values(
+			context, source_rows, documents
 		)
-		inserted += _insert_document_trees(new_documents)
-		updated += _update_document_trees(context.target_doctype, existing_documents)
+		documents, group_skipped = _skip_duplicate_item_groups(context, accepted_rows, documents)
+		batch_skipped = unique_skipped + group_skipped
+		skipped += batch_skipped
+		if documents:
+			try:
+				resolve_account_links(documents)
+				validate_document_links(documents)
+				new_documents, existing_documents = _partition_document_trees(
+					context.target_doctype,
+					documents,
+				)
+				updated += _update_document_trees(context.target_doctype, existing_documents)
+				inserted += _insert_document_trees(new_documents)
+			except Exception:
+				traceback = frappe.get_traceback(with_context=False)
+				frappe.db.rollback()
+				_log(context, "Failed", remote_ids=[str(row.remote_id) for row in source_rows], traceback=traceback)
+				raise
 		_mark_rows_synced(context.source_doctype, source_rows)
 		frappe.db.commit()
 
@@ -69,8 +107,9 @@ def sync_mapping(row_name: str) -> dict:
 		"target_doctype": context.target_doctype,
 		"inserted": inserted,
 		"updated": updated,
+		"skipped": skipped,
 	}
-	_log(context, "Completed", inserted=inserted, updated=updated)
+	_log(context, "DocType Creation Completed", inserted=inserted, updated=updated, skipped=skipped)
 	return result
 
 
@@ -84,6 +123,8 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 	mapping = frappe.get_doc("SAP Doctype Mapping", row.sap_mapping)
 	if not mapping.enabled:
 		raise frappe.ValidationError(f"SAP mapping {mapping.name} is disabled.")
+	if mapping.fetch_only:
+		raise frappe.ValidationError(f"SAP mapping {mapping.name} is fetch only.")
 	configuration = frappe.get_doc("External SAP Configuration", row.parent)
 	abbr_doctypes = frozenset(
 		frappe.get_all(
@@ -110,6 +151,14 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 		company_abbr=company_abbr,
 		abbr_doctypes=abbr_doctypes,
 		requested_by=frappe.session.user,
+		field_rules={
+			**{
+				fieldname: {"default": rule["default"]}
+				for fieldname, rule in parse_mapping(mapping.field_mapping).items()
+				if isinstance(rule, dict) and "default" in rule
+			},
+			**parse_field_rules(getattr(row, "field_rules", None), mapping.erp_doctype),
+		},
 	)
 	return SAPSyncContext(
 		row_name=row.name,
@@ -118,7 +167,9 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 		source_doctype=mapping.external_doctype,
 		target_doctype=mapping.erp_doctype,
 		erp_sap_id_fieldname=mapping.erp_sap_id_fieldname,
+		sap_id_prefix=getattr(mapping, "sap_id_prefix", None) or "",
 		bulk=bulk_context,
+		excluded_sap_id_prefixes=get_excluded_sap_id_prefixes(mapping),
 	)
 
 
@@ -144,9 +195,12 @@ def _count_pending_rows(context: SAPSyncContext, started_at) -> int:
 
 
 def _pending_condition(source, context: SAPSyncContext, started_at):
-	return (
+	condition = (
 		(source.external_sap_configuration == context.configuration)
 		& (source.json != "")
+		& allowed_staged_id_condition(
+			source.remote_id, context.sap_id_prefix, context.excluded_sap_id_prefixes
+		)
 		& (source.modified <= started_at)
 		& (
 			source.last_synced_on.isnull()
@@ -154,6 +208,13 @@ def _pending_condition(source, context: SAPSyncContext, started_at):
 			| (source.modified > source.last_synced_on)
 		)
 	)
+	if context.mapping_name in {
+		"SAP Sales Invoice", "SAP Purchase Invoice",
+		"SAP Payment Entry Incoming", "SAP Payment Entry Outgoing",
+		"SAP Account",
+	}:
+		condition &= source.sap_sync_hold_reason.isnull() | (source.sap_sync_hold_reason == "")
+	return condition
 
 
 def _prepare_source_row(
@@ -167,16 +228,55 @@ def _prepare_source_row(
 		frappe.throw(_("Invalid JSON in {0}.").format(source_row.name))
 	if not isinstance(raw, dict):
 		frappe.throw(_("JSON in {0} must contain a document object.").format(source_row.name))
+	if "record" in raw and raw.get("sap_mapping"):
+		raise frappe.ValidationError("A held SAP record needs a verified ERP mapping before sync.")
+	if context.target_doctype in LEDGER_POSTING_DOCTYPES and cint(raw.get("docstatus")) != 0:
+		raise frappe.ValidationError(
+			f"SAP {context.target_doctype} must use ERPNext submission to create ledger entries."
+		)
 
 	raw = dict(raw)
-	raw.setdefault("name", target_name or str(source_row.remote_id or source_row.name))
+	if context.target_doctype == "Item":
+		item_name = raw.get("item_name")
+		if isinstance(item_name, str) and len(item_name) > 140:
+			raw.setdefault("custom_sap_full_item_name", item_name)
+			raw["item_name"] = item_name[:140]
+	if context.target_doctype == "Account":
+		raw["name"] = target_name or raw.get("account_name") or str(source_row.remote_id or source_row.name)
+	else:
+		raw.setdefault("name", target_name or str(source_row.remote_id or source_row.name))
 	if context.erp_sap_id_fieldname:
 		raw[context.erp_sap_id_fieldname] = str(source_row.remote_id)
-	return _prepare_document_tree(context.bulk, raw)
+	Mapper.fill_item_uoms(context.target_doctype, raw)
+	document = _prepare_document_tree(context.bulk, raw)
+	if context.target_doctype in LEDGER_POSTING_DOCTYPES:
+		parent = document[context.target_doctype][0]
+		if cint(parent.get("docstatus")) != 0:
+			raise frappe.ValidationError(
+				f"SAP {context.target_doctype} must use ERPNext submission to create ledger entries."
+			)
+	return document
 
 
 def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -> dict[str, str]:
 	if not context.erp_sap_id_fieldname:
+		if context.target_doctype == "Account":
+			legacy_names = {
+				str(row.remote_id): (
+					add_prefix(str(row.remote_id), context.bulk.company_abbr)
+					if "Account" in context.bulk.abbr_doctypes else str(row.remote_id)
+				)
+				for row in source_rows
+			}
+			existing = set(frappe.get_all(
+				"Account",
+				filters={"name": ["in", list(legacy_names.values())]},
+				pluck="name",
+				limit_page_length=0,
+			))
+			return {
+				remote_id: name for remote_id, name in legacy_names.items() if name in existing
+			}
 		return {}
 	remote_ids = [str(row.remote_id) for row in source_rows]
 	rows = frappe.get_all(
@@ -190,6 +290,108 @@ def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -
 		for row in rows
 		if row.get(context.erp_sap_id_fieldname) not in (None, "")
 	}
+
+
+def _skip_conflicting_unique_values(
+	context: SAPSyncContext, source_rows: list, documents: list
+) -> tuple[list, list, int]:
+	unique_fields = [field.fieldname for field in frappe.get_meta(context.target_doctype).fields if field.unique]
+	if not unique_fields:
+		return source_rows, documents, 0
+
+	owners_by_field = {}
+	for fieldname in unique_fields:
+		values = {
+			tree[context.target_doctype][0].get(fieldname)
+			for tree in documents
+			if tree[context.target_doctype][0].get(fieldname) not in (None, "")
+		}
+		owners_by_field[fieldname] = {
+			_unique_value_key(row.get(fieldname)): row.name
+			for row in frappe.get_all(
+				context.target_doctype,
+				filters={fieldname: ["in", list(values)]},
+				fields=["name", fieldname],
+				limit_page_length=0,
+			)
+		} if values else {}
+
+	accepted_rows, accepted_documents = [], []
+	for source_row, tree in zip(source_rows, documents, strict=True):
+		parent = tree[context.target_doctype][0]
+		conflict = next((
+			(fieldname, owner)
+			for fieldname in unique_fields
+			if (value := parent.get(fieldname)) not in (None, "")
+			and (owner := owners_by_field[fieldname].get(_unique_value_key(value)))
+			and owner != parent["name"]
+		), None)
+		if conflict:
+			fieldname, owner = conflict
+			_log(
+				context, "Skipped Duplicate Unique Value",
+				source_row=source_row.name,
+				remote_id=source_row.remote_id,
+				field=fieldname,
+				value=parent[fieldname],
+				existing_document=owner,
+			)
+			continue
+		accepted_rows.append(source_row)
+		accepted_documents.append(tree)
+		for fieldname in unique_fields:
+			if (value := parent.get(fieldname)) not in (None, ""):
+				owners_by_field[fieldname][_unique_value_key(value)] = parent["name"]
+	return accepted_rows, accepted_documents, len(source_rows) - len(accepted_rows)
+
+
+def _unique_value_key(value):
+	return value.rstrip().casefold() if isinstance(value, str) else value
+
+
+def _skip_duplicate_item_groups(context: SAPSyncContext, source_rows: list, documents: list) -> tuple[list, int]:
+	if context.target_doctype != "Item Group":
+		return documents, 0
+
+	group_names = {
+		tree["Item Group"][0].get("item_group_name")
+		for tree in documents
+		if tree["Item Group"][0].get("item_group_name")
+	}
+	existing = {
+		_item_group_name_key(row.item_group_name): row.name
+		for row in frappe.get_all(
+			"Item Group",
+			filters={"item_group_name": ["in", list(group_names)]},
+			fields=["name", "item_group_name"],
+			limit_page_length=0,
+		)
+	} if group_names else {}
+
+	accepted = []
+	skipped = 0
+	for source_row, tree in zip(source_rows, documents, strict=True):
+		item_group = tree["Item Group"][0]
+		group_name = item_group.get("item_group_name")
+		group_key = _item_group_name_key(group_name) if group_name else None
+		owner = existing.get(group_key)
+		if owner and owner.casefold() != item_group["name"].casefold():
+			skipped += 1
+			_log(
+				context, "Skipped Duplicate Item Group",
+				source_row=source_row.name,
+				item_group_name=group_name,
+				existing_item_group=owner,
+			)
+			continue
+		accepted.append(tree)
+		if group_key:
+			existing[group_key] = item_group["name"]
+	return accepted, skipped
+
+
+def _item_group_name_key(value: str) -> str:
+	return value.rstrip().casefold()
 
 
 def _mark_rows_synced(source_doctype: str, source_rows: list) -> None:
@@ -211,6 +413,12 @@ def _validate_source(context: SAPSyncContext) -> None:
 
 	columns = set(frappe.db.get_table_columns(context.source_doctype))
 	required = {"remote_id", "external_sap_configuration", "last_synced_on", "json"}
+	if context.mapping_name in {
+		"SAP Sales Invoice", "SAP Purchase Invoice",
+		"SAP Payment Entry Incoming", "SAP Payment Entry Outgoing",
+		"SAP Account",
+	}:
+		required.add("sap_sync_hold_reason")
 	missing = required - columns
 	if missing:
 		frappe.throw(
@@ -239,10 +447,17 @@ def _log(context: SAPSyncContext, status: str, **details) -> None:
 		f"ERPNext DocType: {context.target_doctype}",
 	]
 	lines.extend(f"{key.replace('_', ' ').title()}: {value}" for key, value in details.items())
+	title = (
+		f"SAP DocType Creation Completed: {context.target_doctype}"
+		if status == "DocType Creation Completed"
+		else f"SAP Sync {status}: {context.mapping_name}"
+	)
 	frappe.log_error(
-		title=f"SAP Sync {status}: {context.mapping_name}"[:140],
+		title=title[:140],
 		message="\n".join(lines),
 		reference_doctype="External SAP Configuration",
 		reference_name=context.configuration,
-		defer_insert=True,
+		defer_insert=status not in PERSISTENT_LOG_STATUSES,
 	)
+	if status in PERSISTENT_LOG_STATUSES:
+		frappe.db.commit()

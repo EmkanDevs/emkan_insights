@@ -36,6 +36,13 @@ def run_external_site_configuration_scheduler():
 		pluck="name",
 		order_by="creation asc, name asc",
 	)
+	configured = set(frappe.get_all(
+		"External Site Configuration CT",
+		filters={"parenttype": "External Site Configuration", "parentfield": "fetch_data"},
+		pluck="parent",
+		limit_page_length=0,
+	))
+	config_names = [name for name in config_names if name in configured]
 	results = {
 		"status": "complete",
 		"configurations": len(config_names),

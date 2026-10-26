@@ -1,0 +1,71 @@
+{
+  "site": "sapinsight.emkan-dev.com",
+  "audit_date": "2026-10-23",
+  "status": "review",
+  "change_count": 9,
+  "changes": [
+    {
+      "name": "100",
+      "old_customer": "V00042",
+      "new_supplier": "V00042",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "118",
+      "old_customer": "V00017",
+      "new_supplier": "V00017",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "123",
+      "old_customer": "V00017",
+      "new_supplier": "V00017",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "163",
+      "old_customer": "V00062",
+      "new_supplier": "V00062",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "171",
+      "old_customer": "V00001",
+      "new_supplier": "V00001",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "173",
+      "old_customer": "V00006",
+      "new_supplier": "V00006",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "52",
+      "old_customer": "V00012",
+      "new_supplier": "V00012",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "57",
+      "old_customer": "V00012",
+      "new_supplier": "V00012",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    },
+    {
+      "name": "82",
+      "old_customer": "V00004",
+      "new_supplier": "V00004",
+      "new_blanket_order_type": "Purchasing",
+      "new_naming_series": "MFG-BLR-.YYYY.-"
+    }
+  ]
+}

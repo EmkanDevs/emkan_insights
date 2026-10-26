@@ -14,8 +14,15 @@
   "erp_doctype",
   "sap_filter",
   "source_array_field",
+  "fetch_only",
+  "raw_payload",
+  "fetch_limit",
+  "full_snapshot_sync",
+  "creation_date_filter_field",
   "date_filter_field",
   "sap_id_field",
+  "sap_id_prefix",
+  "excluded_sap_id_prefixes",
   "erp_sap_id_fieldname",
   "mapping_section",
   "field_mapping"
@@ -73,15 +80,66 @@
    "label": "Source Array Field"
   },
   {
+   "default": "0",
+   "description": "Store SAP data for review without creating ERPNext documents or ledger entries.",
+   "fieldname": "fetch_only",
+   "fieldtype": "Check",
+   "label": "Fetch Only"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.fetch_only",
+   "description": "Store the complete SAP response record in the external staging DocType.",
+   "fieldname": "raw_payload",
+   "fieldtype": "Check",
+   "label": "Store Raw SAP Payload"
+  },
+  {
+   "default": "0",
+   "description": "Maximum SAP records per fetch. Use zero for all records.",
+   "fieldname": "fetch_limit",
+   "fieldtype": "Int",
+   "label": "Fetch Limit"
+  },
+  {
+   "default": "1",
+   "description": "Fetch every SAP record on each run. Use this when reliable creation and update dates are unavailable.",
+   "fieldname": "full_snapshot_sync",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Full Snapshot Sync"
+  },
+  {
+   "description": "SAP creation date field used with the update date field for incremental fetches.",
+   "depends_on": "eval:!doc.full_snapshot_sync",
+   "fieldname": "creation_date_filter_field",
+   "fieldtype": "Data",
+   "label": "SAP Creation Date Filter Field"
+  },
+  {
+   "description": "SAP update date field. Incremental fetches use either creation or update date.",
+   "depends_on": "eval:!doc.full_snapshot_sync",
    "fieldname": "date_filter_field",
    "fieldtype": "Data",
-   "label": "SAP Date Filter Field"
+   "label": "SAP Update Date Filter Field"
   },
   {
    "fieldname": "sap_id_field",
    "fieldtype": "Data",
    "label": "SAP ID Field",
    "reqd": 1
+  },
+  {
+   "description": "Optional prefix for SAP IDs when several SAP endpoints share one staging DocType.",
+   "fieldname": "sap_id_prefix",
+   "fieldtype": "Data",
+   "label": "SAP ID Prefix"
+  },
+  {
+   "description": "Comma-separated SAP ID prefixes excluded from ERP sync and deletion. Excluded SAP Accounts are kept in raw staging for review. Example: 7,9,A.",
+   "fieldname": "excluded_sap_id_prefixes",
+   "fieldtype": "Data",
+   "label": "Excluded SAP ID Prefixes"
   },
   {
    "fieldname": "erp_sap_id_fieldname",
@@ -95,12 +153,12 @@
    "label": "Field Mapping"
   },
   {
-   "description": "ERPNext fieldnames are keys. Direct values are SAP fieldnames. Child tables use {\"fieldname\": \"SAPArray\", \"mapping\": [{\"erp_field\": \"SAPField\"}] }.",
+   "description": "ERPNext fieldnames are keys. For values such as SAP tYES/tNO, use {\"fieldname\":\"Active\",\"transform\":\"value_map\",\"transform_config\":{\"mapping\":{\"tYES\":true,\"tNO\":false},\"strict\":true}}. Child tables use a mapping rule.",
    "fieldname": "field_mapping",
    "fieldtype": "Code",
    "label": "ERPNext-first JSON Mapping",
    "options": "JSON",
-   "reqd": 1
+   "mandatory_depends_on": "eval:!doc.raw_payload"
   }
  ],
  "grid_page_length": 50,

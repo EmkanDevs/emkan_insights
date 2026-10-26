@@ -1,0 +1,658 @@
+[
+  {
+    "name": "SAP Stock Posting Detail",
+    "enabled": false,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Stock Counting Detail",
+    "enabled": false,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Opportunity",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Project",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Item",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Contact",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Journal Entry",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Purchase Invoice Detail",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Sales Invoice Detail",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Outgoing Allocation Detail",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Incoming Allocation Detail",
+    "enabled": true,
+    "parent_count": 2,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Outgoing Detail",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Incoming Detail",
+    "enabled": true,
+    "parent_count": 2,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Transfer Receipt Detail",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Stock Transfer Detail",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Stock Goods Issue Detail",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Goods Receipt Detail",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Delivery Detail",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Purchase Receipt Detail",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Item Warehouse Detail",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 6,
+    "mapped_count": 6,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP GL Journal Detail",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 8,
+    "mapped_count": 8,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Production Plan",
+    "enabled": false,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Project Type",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Warehouse Location",
+    "enabled": false,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Designation (EmployeesInfo)",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Purchase Taxes and Charges Template",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Taxes and Charges Template",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Fixed Asset",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Address (Business Partner)",
+    "enabled": false,
+    "parent_count": 3,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Account",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Entry Receipt",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Stock Entry Issue",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Invoice",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 0,
+    "held_count": 3,
+    "status": "held_service_invoice"
+  },
+  {
+    "name": "SAP Delivery Note",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Order",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Quotation",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Purchase Invoice",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Purchase Receipt",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Purchase Order",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Supplier Quotation",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Material Request",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Designation",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Blanket Order",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Inventory Posting",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Inventory Transfer Request",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Stock Reconciliation",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Stock Entry Transfer",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Work Order",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Payment Entry Outgoing",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Entry Incoming",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Supplier",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Customer",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP UOM",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Item Group",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Warehouse",
+    "enabled": true,
+    "parent_count": 2,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Cost Center",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Bank",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Employee",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Customer Group",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Supplier Group",
+    "enabled": true,
+    "parent_count": 2,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Lead",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Manufacturer",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Price List",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Asset Category",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Person",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Payment Term",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Contract",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Bank Account",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Department",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Territory",
+    "enabled": true,
+    "parent_count": 3,
+    "row_count": 3,
+    "mapped_count": 3,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Stage",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Sales Tax Code",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Lead Source",
+    "enabled": true,
+    "parent_count": 1,
+    "row_count": 1,
+    "mapped_count": 1,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP Mode of Payment",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  },
+  {
+    "name": "SAP Location",
+    "enabled": false,
+    "parent_count": 2,
+    "row_count": 2,
+    "mapped_count": 2,
+    "held_count": 0,
+    "status": "mapped"
+  },
+  {
+    "name": "SAP BOM",
+    "enabled": true,
+    "parent_count": 0,
+    "row_count": 0,
+    "status": "no_rows"
+  }
+]

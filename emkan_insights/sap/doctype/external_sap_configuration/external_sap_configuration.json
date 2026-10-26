@@ -2,6 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "field:configuration_name",
+ "creation": "2026-09-17 12:00:46.965512",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -84,6 +85,7 @@
    "label": "SAP Mappings"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "mappings",
    "fieldtype": "Table",
    "label": "Mappings",
@@ -91,8 +93,12 @@
   }
  ],
  "links": [],
+ "modified": "2026-10-20 13:37:22.397223",
+ "modified_by": "Administrator",
  "module": "SAP",
  "name": "External SAP Configuration",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -107,7 +113,9 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

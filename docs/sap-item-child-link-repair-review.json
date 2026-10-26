@@ -1,0 +1,101 @@
+{
+  "site": "sapinsight.emkan-dev.com",
+  "audit_date": "2026-10-23",
+  "status": "review",
+  "change_count": 11,
+  "counts_by_field": {
+    "Item Supplier.supplier": 3,
+    "Item Default.default_supplier": 3,
+    "Item Default.default_warehouse": 5
+  },
+  "changes": [
+    {
+      "doctype": "Item Supplier",
+      "name": "2b88e5490c",
+      "parent": "CO000089",
+      "field": "supplier",
+      "old_value": "Kalam Telecom Company Bahrain Branch",
+      "new_value": "V00005"
+    },
+    {
+      "doctype": "Item Supplier",
+      "name": "654cdc4ab0",
+      "parent": "CO000078",
+      "field": "supplier",
+      "old_value": "EZ oeder office supplies",
+      "new_value": "V00001"
+    },
+    {
+      "doctype": "Item Supplier",
+      "name": "e447c76f27",
+      "parent": "CO000076",
+      "field": "supplier",
+      "old_value": "SoftTrend International LTD Company",
+      "new_value": "V00003"
+    },
+    {
+      "doctype": "Item Default",
+      "name": "058b8e8027",
+      "parent": "CO000076",
+      "field": "default_supplier",
+      "old_value": "SoftTrend International LTD Company",
+      "new_value": "V00003"
+    },
+    {
+      "doctype": "Item Default",
+      "name": "72b02e2433",
+      "parent": "CO000078",
+      "field": "default_supplier",
+      "old_value": "EZ oeder office supplies",
+      "new_value": "V00001"
+    },
+    {
+      "doctype": "Item Default",
+      "name": "a275718ad9",
+      "parent": "CO000089",
+      "field": "default_supplier",
+      "old_value": "Kalam Telecom Company Bahrain Branch",
+      "new_value": "V00005"
+    },
+    {
+      "doctype": "Item Default",
+      "name": "1928881b1d",
+      "parent": "104",
+      "field": "default_warehouse",
+      "old_value": "bomcw_BOM",
+      "new_value": null
+    },
+    {
+      "doctype": "Item Default",
+      "name": "232dae79bc",
+      "parent": "109",
+      "field": "default_warehouse",
+      "old_value": "bomcw_BOM",
+      "new_value": null
+    },
+    {
+      "doctype": "Item Default",
+      "name": "82f126664e",
+      "parent": "108",
+      "field": "default_warehouse",
+      "old_value": "bomcw_BOM",
+      "new_value": null
+    },
+    {
+      "doctype": "Item Default",
+      "name": "a4e88e0101",
+      "parent": "110",
+      "field": "default_warehouse",
+      "old_value": "bomcw_BOM",
+      "new_value": null
+    },
+    {
+      "doctype": "Item Default",
+      "name": "dfd965a092",
+      "parent": "107",
+      "field": "default_warehouse",
+      "old_value": "bomcw_BOM",
+      "new_value": null
+    }
+  ]
+}

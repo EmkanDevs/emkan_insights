@@ -1,0 +1,197 @@
+{
+  "site": "sapinsight.emkan-dev.com",
+  "audit_date": "2026-10-23",
+  "status": "review",
+  "broken_designations": 39,
+  "resolvable_count": 29,
+  "unresolved_count": 10,
+  "changes": [
+    {
+      "employee": "102",
+      "old_value": "CFO",
+      "new_value": "4"
+    },
+    {
+      "employee": "61",
+      "old_value": "President Assistant",
+      "new_value": "24"
+    },
+    {
+      "employee": "62",
+      "old_value": "Office Boy",
+      "new_value": "21"
+    },
+    {
+      "employee": "63",
+      "old_value": "Legal Affairs VP",
+      "new_value": "19"
+    },
+    {
+      "employee": "64",
+      "old_value": "New Ventures VP",
+      "new_value": "20"
+    },
+    {
+      "employee": "65",
+      "old_value": "Senior VP",
+      "new_value": "27"
+    },
+    {
+      "employee": "66",
+      "old_value": "Business Sust. VP",
+      "new_value": "3"
+    },
+    {
+      "employee": "67",
+      "old_value": "CFO",
+      "new_value": "4"
+    },
+    {
+      "employee": "68",
+      "old_value": "Digital Transf. Supp",
+      "new_value": "13"
+    },
+    {
+      "employee": "69",
+      "old_value": "Business Dev. TL",
+      "new_value": "1"
+    },
+    {
+      "employee": "70",
+      "old_value": "HR Specialist",
+      "new_value": "18"
+    },
+    {
+      "employee": "71",
+      "old_value": "Corporate HR Dir.",
+      "new_value": "9"
+    },
+    {
+      "employee": "72",
+      "old_value": "Business Dev. VP",
+      "new_value": "2"
+    },
+    {
+      "employee": "73",
+      "old_value": "Office Boy",
+      "new_value": "21"
+    },
+    {
+      "employee": "74",
+      "old_value": "Payroll Supervisor",
+      "new_value": "22"
+    },
+    {
+      "employee": "75",
+      "old_value": "Office Boy",
+      "new_value": "21"
+    },
+    {
+      "employee": "76",
+      "old_value": "General Accountant",
+      "new_value": "15"
+    },
+    {
+      "employee": "77",
+      "old_value": "Driver",
+      "new_value": "14"
+    },
+    {
+      "employee": "78",
+      "old_value": "Corp. Contract Dir.",
+      "new_value": "8"
+    },
+    {
+      "employee": "79",
+      "old_value": "Corp. Compliance Dir",
+      "new_value": "7"
+    },
+    {
+      "employee": "80",
+      "old_value": "Coordinator",
+      "new_value": "5"
+    },
+    {
+      "employee": "81",
+      "old_value": "Corp. Risk & Per Dir",
+      "new_value": "12"
+    },
+    {
+      "employee": "82",
+      "old_value": "Corp. BDD",
+      "new_value": "6"
+    },
+    {
+      "employee": "83",
+      "old_value": "General Admin.Writer",
+      "new_value": "16"
+    },
+    {
+      "employee": "84",
+      "old_value": "Corporate PR Dir.",
+      "new_value": "11"
+    },
+    {
+      "employee": "85",
+      "old_value": "HR Assistant",
+      "new_value": "17"
+    },
+    {
+      "employee": "86",
+      "old_value": "Receptionist",
+      "new_value": "25"
+    },
+    {
+      "employee": "88",
+      "old_value": "Corporate IT Manager",
+      "new_value": "10"
+    },
+    {
+      "employee": "97",
+      "old_value": "CFO",
+      "new_value": "4"
+    }
+  ],
+  "unresolved": [
+    {
+      "employee": "100",
+      "job_title": "Sen. HR Manager"
+    },
+    {
+      "employee": "101",
+      "job_title": "Legal Consultant"
+    },
+    {
+      "employee": "103",
+      "job_title": "Cost Control Manager"
+    },
+    {
+      "employee": "104",
+      "job_title": "B.D. Director"
+    },
+    {
+      "employee": "106",
+      "job_title": "Internal Auditor"
+    },
+    {
+      "employee": "91",
+      "job_title": "Coordination Head"
+    },
+    {
+      "employee": "93",
+      "job_title": "Legal Assistant"
+    },
+    {
+      "employee": "95",
+      "job_title": "Corporate IT"
+    },
+    {
+      "employee": "96",
+      "job_title": "Light Driver"
+    },
+    {
+      "employee": "98",
+      "job_title": "Contracts Specialist"
+    }
+  ]
+}

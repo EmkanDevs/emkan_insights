@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe.utils.nestedset import rebuild_tree
 
 from emkan_insights.emkan_insights.external_data_bulk_insert import PAGE_SIZE, add_prefix
 from emkan_insights.emkan_insights.external_data_deletion import _delete_rows_with_children
 from emkan_insights.sap.services.client import SAPB1Client
+from emkan_insights.sap.services.exclusions import allowed_staged_id_condition
 from emkan_insights.sap.services.fetch import fetch
 from emkan_insights.sap.sync import SAPSyncContext, get_sync_context
 
@@ -14,12 +17,13 @@ class SAPDeletionError(frappe.ValidationError):
 	pass
 
 
-def reconcile_mapping_deletions(row_name: str) -> dict:
+def reconcile_mapping_deletions(row_name: str, remote_ids: set[str] | None = None) -> dict:
 	"""Delete staged and target rows that no longer exist in SAP."""
 	context = get_sync_context(row_name)
 	mapping = frappe.get_doc("SAP Doctype Mapping", context.mapping_name)
-	client = SAPB1Client.from_configuration(context.configuration)
-	remote_ids = _fetch_remote_ids(client, mapping)
+	if remote_ids is None:
+		client = SAPB1Client.from_configuration(context.configuration)
+		remote_ids = _fetch_remote_ids(client, mapping)
 	staging_by_remote_id = _get_staging_rows(context)
 	_validate_snapshot(context, remote_ids, staging_by_remote_id)
 	missing_ids = set(staging_by_remote_id) - remote_ids
@@ -54,20 +58,23 @@ def _fetch_remote_ids(client: SAPB1Client, mapping) -> set[str]:
 			raise SAPDeletionError(
 				f"SAP {mapping.sap_doctype} returned a row without {mapping.sap_id_field}."
 			)
-		remote_ids.add(str(remote_id))
+		remote_ids.add(f"{getattr(mapping, 'sap_id_prefix', '') or ''}{remote_id}")
 	return remote_ids
 
 
 def _get_staging_rows(context: SAPSyncContext) -> dict[str, list[str]]:
 	source = frappe.qb.DocType(context.source_doctype)
+	condition = (
+		(source.external_sap_configuration == context.configuration)
+		& source.remote_id.notnull()
+		& allowed_staged_id_condition(
+			source.remote_id, context.sap_id_prefix, context.excluded_sap_id_prefixes
+		)
+	)
 	rows = (
 		frappe.qb.from_(source)
 		.select(source.name, source.remote_id)
-		.where(
-			(source.external_sap_configuration == context.configuration)
-			& source.remote_id.notnull()
-			& (source.remote_id != "")
-		)
+		.where(condition)
 	).run(as_dict=True)
 	result = {}
 	for row in rows:
@@ -124,6 +131,8 @@ def _get_target_names(context: SAPSyncContext, remote_ids: list[str]) -> list[st
 		else remote_id
 		for remote_id in remote_ids
 	]
+	if context.target_doctype == "Account":
+		names.extend(_account_names_by_remote_id(context, remote_ids).values())
 	return frappe.get_all(
 		context.target_doctype,
 		filters={"name": ["in", names]},
@@ -138,9 +147,15 @@ def _order_missing_ids(context: SAPSyncContext, remote_ids: set[str]) -> list[st
 		return ordered
 
 	target_to_remote = {}
+	account_names = (
+		_account_names_by_remote_id(context, ordered)
+		if context.target_doctype == "Account" else {}
+	)
 	for remote_id_batch in _batches(ordered):
 		for target_name in _get_target_names(context, remote_id_batch):
-			target_to_remote[target_name] = _remote_id_for_target(context, target_name, remote_id_batch)
+			target_to_remote[target_name] = _remote_id_for_target(
+				context, target_name, remote_id_batch, account_names
+			)
 	rows = frappe.get_all(
 		context.target_doctype,
 		filters={"name": ["in", list(target_to_remote)]},
@@ -155,6 +170,7 @@ def _remote_id_for_target(
 	context: SAPSyncContext,
 	target_name: str,
 	remote_ids: list[str],
+	account_names: dict[str, str] | None = None,
 ) -> str:
 	if context.erp_sap_id_fieldname:
 		value = frappe.db.get_value(
@@ -164,6 +180,8 @@ def _remote_id_for_target(
 		)
 		return str(value)
 	for remote_id in remote_ids:
+		if account_names and account_names.get(remote_id) == target_name:
+			return remote_id
 		name = (
 			add_prefix(remote_id, context.bulk.company_abbr)
 			if context.target_doctype in context.bulk.abbr_doctypes
@@ -172,6 +190,27 @@ def _remote_id_for_target(
 		if name == target_name:
 			return remote_id
 	return target_name
+
+
+def _account_names_by_remote_id(context: SAPSyncContext, remote_ids: list[str]) -> dict[str, str]:
+	rows = frappe.get_all(
+		context.source_doctype,
+		filters={
+			"external_sap_configuration": context.configuration,
+			"remote_id": ["in", remote_ids],
+		},
+		fields=["remote_id", "json"],
+		limit_page_length=0,
+	)
+	names = {}
+	for row in rows:
+		raw = json.loads(row.json) if isinstance(row.json, str) else row.json
+		if isinstance(raw, dict) and raw.get("account_name"):
+			name = raw["account_name"]
+			if "Account" in context.bulk.abbr_doctypes:
+				name = add_prefix(name, context.bulk.company_abbr)
+			names[str(row.remote_id)] = name
+	return names
 
 
 def _rebuild_tree(doctype: str) -> None:

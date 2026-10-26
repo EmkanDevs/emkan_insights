@@ -1,0 +1,382 @@
+[
+  {
+    "name": "SAP Stock Posting Detail",
+    "entity_type": "InventoryPostingLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Counting Detail",
+    "entity_type": "InventoryCountingLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Opportunity",
+    "entity_type": "SalesOpportunities",
+    "missing": []
+  },
+  {
+    "name": "SAP Project",
+    "entity_type": "Project",
+    "missing": []
+  },
+  {
+    "name": "SAP Item",
+    "entity_type": "Item",
+    "missing": []
+  },
+  {
+    "name": "SAP Contact",
+    "entity_type": "ContactEmployee",
+    "missing": []
+  },
+  {
+    "name": "SAP Journal Entry",
+    "entity_type": "JournalEntry",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Purchase Invoice Detail",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Sales Invoice Detail",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Outgoing Allocation Detail",
+    "entity_type": "PaymentInvoice",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Incoming Allocation Detail",
+    "entity_type": "PaymentInvoice",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Outgoing Detail",
+    "entity_type": "Payment",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Incoming Detail",
+    "entity_type": "Payment",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Transfer Receipt Detail",
+    "entity_type": "StockTransferLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Transfer Detail",
+    "entity_type": "StockTransferLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Goods Issue Detail",
+    "entity_type": "DocumentLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Goods Receipt Detail",
+    "entity_type": "DocumentLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Delivery Detail",
+    "entity_type": "DocumentLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Purchase Receipt Detail",
+    "entity_type": "DocumentLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Item Warehouse Detail",
+    "entity_type": "ItemWarehouseInfo",
+    "missing": []
+  },
+  {
+    "name": "SAP GL Journal Detail",
+    "entity_type": "JournalEntryLine",
+    "missing": []
+  },
+  {
+    "name": "SAP Production Plan",
+    "entity_type": "ProductionOrder",
+    "missing": []
+  },
+  {
+    "name": "SAP Project Type",
+    "entity_type": "Project",
+    "missing": []
+  },
+  {
+    "name": "SAP Warehouse Location",
+    "entity_type": "WarehouseLocation",
+    "missing": []
+  },
+  {
+    "name": "SAP Designation (EmployeesInfo)",
+    "entity_type": "EmployeeInfo",
+    "missing": []
+  },
+  {
+    "name": "SAP Purchase Taxes and Charges Template",
+    "entity_type": "VatGroup",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Taxes and Charges Template",
+    "entity_type": "VatGroup",
+    "missing": []
+  },
+  {
+    "name": "SAP Fixed Asset",
+    "entity_type": "Item",
+    "missing": []
+  },
+  {
+    "name": "SAP Address (Business Partner)",
+    "entity_type": "BPAddress",
+    "missing": []
+  },
+  {
+    "name": "SAP Account",
+    "entity_type": "ChartOfAccount",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Entry Receipt",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Entry Issue",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Invoice",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Delivery Note",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Order",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Quotation",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Purchase Invoice",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Purchase Receipt",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Purchase Order",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Supplier Quotation",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Material Request",
+    "entity_type": "Document",
+    "missing": []
+  },
+  {
+    "name": "SAP Designation",
+    "entity_type": "EmployeePosition",
+    "missing": []
+  },
+  {
+    "name": "SAP Blanket Order",
+    "entity_type": "BlanketAgreement",
+    "missing": []
+  },
+  {
+    "name": "SAP Inventory Posting",
+    "entity_type": "InventoryPosting",
+    "missing": []
+  },
+  {
+    "name": "SAP Inventory Transfer Request",
+    "entity_type": "StockTransfer",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Reconciliation",
+    "entity_type": "InventoryCounting",
+    "missing": []
+  },
+  {
+    "name": "SAP Stock Entry Transfer",
+    "entity_type": "StockTransfer",
+    "missing": []
+  },
+  {
+    "name": "SAP Work Order",
+    "entity_type": "ProductionOrder",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Entry Outgoing",
+    "entity_type": "Payment",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Entry Incoming",
+    "entity_type": "Payment",
+    "missing": []
+  },
+  {
+    "name": "SAP Supplier",
+    "entity_type": "BusinessPartner",
+    "missing": []
+  },
+  {
+    "name": "SAP Customer",
+    "entity_type": "BusinessPartner",
+    "missing": []
+  },
+  {
+    "name": "SAP UOM",
+    "entity_type": "UnitOfMeasurement",
+    "missing": []
+  },
+  {
+    "name": "SAP Item Group",
+    "entity_type": "ItemGroups",
+    "missing": []
+  },
+  {
+    "name": "SAP Warehouse",
+    "entity_type": "Warehouse",
+    "missing": []
+  },
+  {
+    "name": "SAP Cost Center",
+    "entity_type": "ProfitCenter",
+    "missing": []
+  },
+  {
+    "name": "SAP Bank",
+    "entity_type": "Bank",
+    "missing": []
+  },
+  {
+    "name": "SAP Employee",
+    "entity_type": "EmployeeInfo",
+    "missing": []
+  },
+  {
+    "name": "SAP Customer Group",
+    "entity_type": "BusinessPartnerGroup",
+    "missing": []
+  },
+  {
+    "name": "SAP Supplier Group",
+    "entity_type": "BusinessPartnerGroup",
+    "missing": []
+  },
+  {
+    "name": "SAP Lead",
+    "entity_type": "BusinessPartner",
+    "missing": []
+  },
+  {
+    "name": "SAP Manufacturer",
+    "entity_type": "Manufacturer",
+    "missing": []
+  },
+  {
+    "name": "SAP Price List",
+    "entity_type": "PriceList",
+    "missing": []
+  },
+  {
+    "name": "SAP Asset Category",
+    "entity_type": "AssetClass",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Person",
+    "entity_type": "SalesPerson",
+    "missing": []
+  },
+  {
+    "name": "SAP Payment Term",
+    "entity_type": "PaymentTermsType",
+    "missing": []
+  },
+  {
+    "name": "SAP Contract",
+    "entity_type": "ServiceContract",
+    "missing": []
+  },
+  {
+    "name": "SAP Bank Account",
+    "entity_type": "HouseBankAccount",
+    "missing": []
+  },
+  {
+    "name": "SAP Department",
+    "entity_type": "Department",
+    "missing": []
+  },
+  {
+    "name": "SAP Territory",
+    "entity_type": "Territory",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Stage",
+    "entity_type": "SalesStage",
+    "missing": []
+  },
+  {
+    "name": "SAP Sales Tax Code",
+    "entity_type": "SalesTaxCode",
+    "missing": []
+  },
+  {
+    "name": "SAP Lead Source",
+    "entity_type": "SalesOpportunitySourceSetup",
+    "missing": []
+  },
+  {
+    "name": "SAP Mode of Payment",
+    "entity_type": "WizardPaymentMethod",
+    "missing": []
+  },
+  {
+    "name": "SAP Location",
+    "entity_type": "Warehouse",
+    "missing": []
+  },
+  {
+    "name": "SAP BOM",
+    "entity_type": "ProductTree",
+    "missing": []
+  }
+]

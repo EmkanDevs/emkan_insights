@@ -6,8 +6,10 @@ from urllib.parse import urljoin
 
 import frappe
 import requests
-from frappe.utils import cint
+from frappe.utils import cint, escape_html
 from frappe.utils.password import set_encrypted_password
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class SAPB1Client:
@@ -33,6 +35,15 @@ class SAPB1Client:
 		}
 		self.session_timeout_seconds = max(cint(session_timeout_minutes), 1) * 60
 		self.session = requests.Session()
+		self.session.mount(
+			"https://",
+			HTTPAdapter(max_retries=Retry(
+				total=2,
+				status_forcelist=(502, 503, 504),
+				allowed_methods=frozenset({"GET", "POST"}),
+				backoff_factor=0.5,
+			)),
+		)
 		self.session.verify = verify_ssl
 		self.configuration_name = configuration_name
 		self.logged_in_at: float | None = monotonic() if session_id else None
@@ -53,8 +64,30 @@ class SAPB1Client:
 		)
 
 	def login(self) -> dict[str, Any]:
+		# A saved SAP session must not be sent with a new login request.
+		self.session.cookies.clear()
+		self.logged_in_at = None
 		response = self.session.post(self._url("Login"), json=self.credentials, timeout=30)
-		response.raise_for_status()
+		try:
+			response.raise_for_status()
+		except requests.HTTPError as exc:
+			try:
+				error = response.json().get("error", {})
+			except (ValueError, AttributeError):
+				raise exc
+			message = error.get("message", {}) if isinstance(error, dict) else {}
+			if isinstance(message, dict):
+				message = message.get("value")
+			if not isinstance(message, str) or not message:
+				raise exc
+			password = self.credentials["Password"]
+			if password:
+				message = message.replace(password, "[redacted]")
+			message = escape_html(message)
+			code = escape_html(str(error.get("code", "unknown")))
+			raise frappe.ValidationError(
+				f"SAP Service Layer login failed (HTTP {response.status_code}, SAP code {code}): {message}"
+			) from exc
 		payload = response.json()
 		if session_id := payload.get("SessionId"):
 			self.session.cookies.set("B1SESSION", session_id)
@@ -71,7 +104,12 @@ class SAPB1Client:
 		response.raise_for_status()
 		return response.json()
 
-	def fetch_all(self, endpoint: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+	def fetch_all(
+		self,
+		endpoint: str,
+		params: dict[str, Any] | None = None,
+		max_records: int | None = None,
+	) -> list[dict[str, Any]]:
 		records = []
 		next_endpoint: str | None = endpoint
 		next_params = params
@@ -82,6 +120,8 @@ class SAPB1Client:
 			if not isinstance(page, list):
 				raise ValueError("SAP OData response 'value' must be an array.")
 			records.extend(page)
+			if max_records is not None and len(records) >= max_records:
+				return records[:max_records]
 			next_endpoint = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
 			next_params = None
 
@@ -118,6 +158,6 @@ class SAPB1Client:
 		base_url = (base_url or "").rstrip("/")
 		if not base_url:
 			raise ValueError("SAP base URL is required.")
-		if not base_url.endswith("/b1s/v1"):
-			base_url = f"{base_url}/b1s/v1"
+		if not base_url.endswith(("/b1s/v1", "/b1s/v2")):
+			base_url = f"{base_url}/b1s/v2"
 		return base_url

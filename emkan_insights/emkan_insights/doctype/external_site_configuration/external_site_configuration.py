@@ -5,8 +5,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from emkan_insights.emkan_insights.import_field_rules import parse_field_rules
+
 class ExternalSiteConfiguration(Document):
-	pass
+	def validate(self):
+		for row in self.fetch_data or []:
+			if row.ref_doctype:
+				parse_field_rules(row.field_rules, row.ref_doctype)
 
 
 @frappe.whitelist(methods=["POST"])

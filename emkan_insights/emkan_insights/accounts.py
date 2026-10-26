@@ -63,16 +63,17 @@ def sync_external_account(external_name, company, sync_stack=None):
 
     external = frappe.get_doc("External Account", external_name)
 
-    # REQUIREMENT: the id synced onto Account must be the remote_id from
-    # the External Account doc. Fall back to the External Account's own
-    # document name if it doesn't have a remote_id field, so this still
-    # works before that field is added.
     remote_id = external.get("remote_id") or external.name
     company_abbr = frappe.db.get_value("Company", company, "abbr") or ""
+    account_name = (external.account_name or "").strip()
+    if not account_name:
+        frappe.throw(f"Account name is required for External Account {external.name}")
 
-    # Check if already synced under either the raw remote_id or the
-    # company-prefixed variant (see collision handling below).
-    existing = _find_existing_account(remote_id, company)
+    existing = _find_existing_account(account_name, company)
+    if not existing and company_abbr:
+        existing = _find_existing_account(f"{account_name} - {company_abbr}", company)
+    if not existing:
+        existing = _find_existing_account(remote_id, company)
     if not existing and company_abbr:
         existing = _find_existing_account(f"{company_abbr}-{remote_id}", company)
     if not existing:
@@ -86,14 +87,13 @@ def sync_external_account(external_name, company, sync_stack=None):
         frappe.throw(f"Circular External Account hierarchy: {' -> '.join(cycle)}")
     sync_stack.append(external_name)
 
-    # Prefer the raw remote_id as the new Account's name. Only prefix
-    # with the company abbreviation if that raw name is already taken -
-    # by construction that means it belongs to a DIFFERENT company
-    # (the same-company case was already returned above), so we need a
-    # distinct name to avoid a global name collision.
-    target_name = remote_id
+    target_name = account_name
     if frappe.db.exists("Account", target_name):
-        target_name = f"{company_abbr}-{remote_id}" if company_abbr else remote_id
+        if not company_abbr:
+            frappe.throw(f"Account name {account_name} already exists in another company")
+        target_name = f"{account_name} - {company_abbr}"
+        if frappe.db.exists("Account", target_name):
+            frappe.throw(f"Account name {target_name} already exists in another company")
 
     # Resolve Parent from External
     external_parent = external.parent_account
@@ -133,11 +133,7 @@ def sync_external_account(external_name, company, sync_stack=None):
         }
     )
 
-    # FIX: force the Account's name to the External Account's remote_id
-    # instead of letting ERPNext's autoname() derive it from
-    # account_name/account_number + company abbr. flags.name_set = True
-    # tells Frappe's naming logic to respect the name we've already set,
-    # the same mechanism used for Journal Entry in the JE sync.
+    # ERPNext autoname would add account_number and the company abbreviation.
     account.name = target_name
     account.flags.name_set = True
 

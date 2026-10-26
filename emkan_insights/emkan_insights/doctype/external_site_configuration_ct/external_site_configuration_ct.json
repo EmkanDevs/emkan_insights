@@ -14,7 +14,8 @@
   "fetch_completed_at",
   "fetch_data",
   "sync_data",
-  "abbr_required"
+  "abbr_required",
+  "field_rules"
  ],
  "fields": [
   {
@@ -79,6 +80,13 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Abbr Required"
+  },
+  {
+   "description": "JSON rules for missing target fields. Example: {\"weight_per_unit\": {\"default\": 0}, \"full_name\": {\"join\": [\"first_name\", \"last_name\"], \"separator\": \" \"}}. A join runs only when every source field has a value.",
+   "fieldname": "field_rules",
+   "fieldtype": "Code",
+   "label": "Import Field Rules",
+   "options": "JSON"
   }
  ],
  "grid_page_length": 50,

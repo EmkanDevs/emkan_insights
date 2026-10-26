@@ -1,0 +1,2093 @@
+{
+  "site": "sapinsight.emkan-dev.com",
+  "audit_date": "2026-10-23",
+  "affected_items": 414,
+  "proposed_group_counts": {
+    "104": 268,
+    "107": 123,
+    "108": 16,
+    "109": 7
+  },
+  "current_group_counts": {
+    "*": 16,
+    "CONSUMABLES": 268,
+    "FIXED ASSETS": 7,
+    "MATERIALS": 123
+  },
+  "unresolved_items": [],
+  "changes": [
+    {
+      "item_code": "CO000001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000004",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000005",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000006",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000007",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000008",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000009",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000010",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000011",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000012",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000013",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000014",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000015",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000016",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000017",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000018",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000019",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000020",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000021",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000022",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000023",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000024",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000025",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000026",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000027",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000028",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000029",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000030",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000031",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000032",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000033",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000034",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000035",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000036",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000037",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000038",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000039",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000040",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000041",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000042",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000043",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000044",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000045",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000046",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000047",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000048",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000049",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000050",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000051",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000052",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000053",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000054",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000055",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000056",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000057",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000058",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000059",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000060",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000061",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000062",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000063",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000064",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000065",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000066",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000067",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000068",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000069",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000070",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000071",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000072",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000073",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000074",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000075",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000076",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000077",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000078",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000079",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000080",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000081",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000082",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000083",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000084",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000085",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000086",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000087",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000088",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000089",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000090",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000091",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000092",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000093",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000094",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000095",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000096",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000097",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000098",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000099",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000100",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000101",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000102",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000103",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000104",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000105",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000106",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000107",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000108",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000109",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000110",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000111",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000112",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000113",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000114",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000115",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000116",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000117",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000118",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000119",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000120",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000121",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000122",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000123",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000124",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000125",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000126",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000127",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000128",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000129",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000130",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000131",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000132",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000133",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000134",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000135",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000136",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000137",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000138",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000139",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000140",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000142",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000143",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000144",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000145",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "CO000146",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00004",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00005",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00006",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH1-00007",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00004",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00005",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00006",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00007",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00008",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00009",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00010",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00011",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00012",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00013",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00014",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00015",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00016",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00017",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00018",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00019",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00020",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00021",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00022",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00024",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00025",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00026",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00027",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00028",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00029",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00030",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00031",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00032",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00033",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00034",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00035",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00036",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00037",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00038",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00039",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00040",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00041",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00042",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00043",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00044",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00045",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00046",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00047",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00048",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00049",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00050",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00051",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00052",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00053",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00054",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00055",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00056",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00057",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00058",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00059",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00060",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00061",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00062",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00063",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00064",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00065",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00066",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00067",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00068",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00069",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00070",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00071",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00072",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00073",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00074",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00075",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH15-00076",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH15-00077",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH15-00078",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH15-00079",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "EH15-00080",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "EH15-00081",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH15-00082",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "EH15-00083",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "EH16-00001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00004",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00005",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00006",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00007",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00008",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00009",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00010",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00011",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH16-00012",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH2-00001",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH2-00002",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH2-00003",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH2-00004",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "EH27-00001",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "EH3-00001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH3-00002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH3-00003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH5-00001",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH5-00002",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH5-00003",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH5-00004",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "EH5-00005",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000001",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000002",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000003",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000004",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000005",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000006",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000007",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000008",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000009",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000010",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000011",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000012",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000013",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000014",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000015",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000016",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000017",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000018",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000019",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000020",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000021",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000022",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000023",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000024",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000025",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000026",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000027",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000028",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000029",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000030",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000031",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000032",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000033",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000034",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000035",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000036",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000037",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000038",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000039",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000040",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000041",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000042",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000043",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000044",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000045",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000046",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000047",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000048",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000049",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000050",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000051",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000052",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000053",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000054",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000055",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000056",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000057",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000058",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000059",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000060",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000061",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000062",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000063",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000064",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000065",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000066",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000067",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000068",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000069",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000070",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000071",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000072",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000073",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000074",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000075",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000076",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000077",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000078",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000079",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000080",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000081",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000082",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000083",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000084",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000085",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000086",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000087",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000088",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000089",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000090",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000091",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000092",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000093",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000094",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000095",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000096",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000097",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000098",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000099",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "MA000100",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000101",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000102",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000103",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000104",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000105",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000106",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000107",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000108",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000109",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000110",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000111",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000112",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000113",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000114",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000115",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000116",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000117",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000118",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000119",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000120",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000121",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000122",
+      "current_group": "CONSUMABLES",
+      "proposed_group": "104"
+    },
+    {
+      "item_code": "MA000123",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000124",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000125",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000126",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000127",
+      "current_group": "FIXED ASSETS",
+      "proposed_group": "109"
+    },
+    {
+      "item_code": "MA000128",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000129",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000130",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000131",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000132",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000133",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000134",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000135",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000136",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000137",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000138",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "MA000139",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000140",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000141",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000142",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000143",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000144",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "MA000145",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "SR000080",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "SR000090",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000091",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000123",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    },
+    {
+      "item_code": "SR000132",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000133",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000134",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000135",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000136",
+      "current_group": "*",
+      "proposed_group": "108"
+    },
+    {
+      "item_code": "SR000143",
+      "current_group": "MATERIALS",
+      "proposed_group": "107"
+    }
+  ],
+  "status": "applied",
+  "backup_completed_at": "2026-10-23 14:25:33",
+  "post_repair_invalid_item_group_links": 0
+}

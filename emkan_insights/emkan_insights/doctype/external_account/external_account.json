@@ -9,7 +9,8 @@
   "source_site",
   "external_sap_configuration",
   "last_synced_on",
-  "json"
+  "json",
+  "sap_sync_hold_reason"
  ],
  "fields": [
   {
@@ -42,6 +43,12 @@
    "fieldname": "json",
    "fieldtype": "JSON",
    "label": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sap_sync_hold_reason",
+   "fieldtype": "Data",
+   "label": "SAP Sync Hold Reason",
    "read_only": 1
   }
  ],

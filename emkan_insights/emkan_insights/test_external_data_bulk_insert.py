@@ -12,6 +12,7 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	_ordered_configuration_rows,
 	_partition_document_trees,
 	_pending_source_condition,
+	_prepare_document_tree,
 	_prepare_standard_fields,
 	_source_site_condition,
 	_summarize_results,
@@ -20,9 +21,42 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	transform_row,
 )
 from emkan_insights.emkan_insights.external_data_fetch import is_deferred_naming_pending
+from emkan_insights.emkan_insights.import_field_rules import apply_field_rules, parse_field_rules
 
 
 class TestExternalDataBulkInsert(FrappeTestCase):
+	def test_import_field_rules_fill_missing_defaults_and_join_names(self):
+		item_rules = parse_field_rules('{"weight_per_unit": {"default": 0}}', "Item")
+		self.assertEqual(apply_field_rules({"weight_per_unit": None}, item_rules)["weight_per_unit"], 0)
+		self.assertEqual(apply_field_rules({"weight_per_unit": 2}, item_rules)["weight_per_unit"], 2)
+
+		name_rules = parse_field_rules(
+			{"full_name": {"join": ["first_name", "last_name"], "separator": " "}},
+			"Contact",
+		)
+		self.assertEqual(
+			apply_field_rules({"first_name": "Ada", "last_name": "Lovelace"}, name_rules)["full_name"],
+			"Ada Lovelace",
+		)
+		self.assertNotIn("full_name", apply_field_rules({"first_name": "Ada"}, name_rules))
+
+	def test_import_field_rules_reject_unknown_fields(self):
+		with self.assertRaises(frappe.ValidationError):
+			parse_field_rules({"weight_per_unit": {"join": ["missing", "stock_uom"]}}, "Item")
+
+	def test_prepare_document_tree_applies_configured_default(self):
+		context = BulkInsertContext(
+			configuration="Remote Site",
+			source_doctype="External Item",
+			target_doctype="Item",
+			company_abbr="",
+			abbr_doctypes=frozenset(),
+			requested_by="Administrator",
+			field_rules={"weight_per_unit": {"default": 0}},
+		)
+		result = _prepare_document_tree(context, {"name": "ITEM-1", "weight_per_unit": None})
+		self.assertEqual(result["Item"][0]["weight_per_unit"], 0)
+
 	def test_temporary_ledger_rows_are_not_ready_for_import(self):
 		self.assertTrue(is_deferred_naming_pending("GL Entry", {"to_rename": 1}))
 		self.assertTrue(is_deferred_naming_pending("Stock Ledger Entry", {"to_rename": "1"}))
@@ -228,6 +262,20 @@ class TestExternalDataBulkInsert(FrappeTestCase):
 			ignore_duplicates=True,
 			chunk_size=500,
 		)
+
+	def test_bulk_insert_uses_database_default_for_null_non_nullable_field(self):
+		documents = [{"Item": [{"name": "ITEM-1", "weight_per_unit": None}]}]
+		with (
+			patch.object(frappe.db, "get_table_columns", return_value=["name", "weight_per_unit"]),
+			patch.object(
+				frappe.db, "sql",
+				return_value=[_dict(COLUMN_NAME="weight_per_unit", COLUMN_DEFAULT="0.000000000")],
+			),
+			patch.object(frappe.db, "bulk_insert") as bulk_insert,
+		):
+			_insert_document_trees(documents)
+
+		self.assertEqual(bulk_insert.call_args.kwargs["values"], [("ITEM-1", "0.000000000")])
 
 	def test_account_bulk_insert_excludes_nested_set_fields(self):
 		documents = [{

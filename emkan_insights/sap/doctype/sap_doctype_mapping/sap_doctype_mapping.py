@@ -5,19 +5,38 @@ import json
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import cint
 
 from emkan_insights.sap.services.mapper import parse_mapping
+from emkan_insights.sap.services.exclusions import get_excluded_sap_id_prefixes
 
 
 class SAPDoctypeMapping(Document):
 	def validate(self):
+		self._validate_sync_mode()
+		if cint(getattr(self, "fetch_limit", 0)) < 0:
+			raise frappe.ValidationError("Fetch Limit cannot be negative.")
+		if getattr(self, "raw_payload", False) and not getattr(self, "fetch_only", False):
+			raise frappe.ValidationError("Raw SAP payloads must use Fetch Only.")
+		self.excluded_sap_id_prefixes = ",".join(get_excluded_sap_id_prefixes(self))
+		self._validate_external_doctype()
+		if getattr(self, "raw_payload", False):
+			return
+
 		mapping = parse_mapping(self.field_mapping)
 		meta = frappe.get_meta(self.erp_doctype)
-
-		self._validate_external_doctype()
 		self._validate_sap_id_field(meta)
 		self._validate_target_fields(meta, mapping)
 		self.field_mapping = json.dumps(mapping, indent=2)
+
+	def _validate_sync_mode(self):
+		if not self.full_snapshot_sync and not (
+			self.creation_date_filter_field or self.date_filter_field
+		):
+			raise frappe.ValidationError(
+				"Incremental sync requires a SAP creation or update date field. "
+				"Enable Full Snapshot Sync when neither field is available."
+			)
 
 	def _validate_external_doctype(self):
 		meta = frappe.get_meta(self.external_doctype)
@@ -47,6 +66,12 @@ class SAPDoctypeMapping(Document):
 
 	def _validate_target_fields(self, meta, mapping):
 		for target_field, rule in mapping.items():
+			if target_field == "docstatus":
+				if not meta.is_submittable:
+					raise frappe.ValidationError(f"ERPNext DocType '{meta.name}' is not submittable.")
+				if isinstance(rule, dict) and ("mapping" in rule or "rows" in rule):
+					raise frappe.ValidationError("ERPNext docstatus cannot use a child mapping.")
+				continue
 			field = meta.get_field(target_field)
 			if not field:
 				raise frappe.ValidationError(

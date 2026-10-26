@@ -179,10 +179,7 @@ scheduler_events = {
 			"emkan_insights.emkan_insights.scheduler.external_site_configuration_scheduler.enqueue_external_site_configuration_scheduler"
 		],
 		"0 3 * * *": [
-			"emkan_insights.sap.tasks.enqueue_incremental_master_fetch"
-		],
-		"0 4 * * *": [
-			"emkan_insights.sap.tasks.enqueue_sap_master_sync"
+			"emkan_insights.sap.tasks.enqueue_sap_synchronization"
 		],
         # # Phase 1 – fetch from remote site (enqueues background API calls)
         # "0 * * * *": [
