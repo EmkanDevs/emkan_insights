@@ -3685,7 +3685,7 @@
       "docstatus": {
         "transform": "constant",
         "transform_config": {
-          "value": 0
+          "value": 1
         }
       },
       "due_date": {

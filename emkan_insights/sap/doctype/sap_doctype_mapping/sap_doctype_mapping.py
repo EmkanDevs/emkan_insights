@@ -68,7 +68,7 @@ class SAPDoctypeMapping(Document):
 	def _validate_target_fields(self, meta, mapping):
 		for target_field, rule in mapping.items():
 			if target_field == "docstatus":
-				if not meta.is_submittable:
+				if not meta.is_submittable and meta.name != "GL Entry":
 					raise frappe.ValidationError(f"ERPNext DocType '{meta.name}' is not submittable.")
 				if isinstance(rule, dict) and ("mapping" in rule or "rows" in rule):
 					raise frappe.ValidationError("ERPNext docstatus cannot use a child mapping.")

@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import lru_cache
 
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
 from frappe.utils import money_in_words, now_datetime
 from frappe.utils.nestedset import rebuild_tree
+from erpnext.accounts.utils import get_fiscal_year
 
 from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	PAGE_SIZE,
@@ -22,6 +24,7 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 from emkan_insights.sap.services.mapper import Mapper
 from emkan_insights.sap.services.mapper import parse_mapping
 from emkan_insights.sap.services.staging import SYNC_MAPPING_ERRORS_KEY
+from emkan_insights.sap.services.transforms import journal_against, journal_target
 from emkan_insights.emkan_insights.import_field_rules import parse_field_rules
 from emkan_insights.sap.link_validation import resolve_account_links
 
@@ -53,6 +56,8 @@ def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 	_recover_missing_target(context)
 	if context.target_doctype == "Journal Entry":
 		_recover_incomplete_journals(context)
+	elif context.target_doctype == "GL Entry":
+		_recover_mislinked_gl_entries(context)
 	inserted = 0
 	updated = 0
 	skipped = 0
@@ -254,12 +259,18 @@ def _prepare_source_row(
 		raw[context.erp_sap_id_fieldname] = str(source_row.remote_id)
 	if context.target_doctype == "Journal Entry":
 		_fill_journal_entry_fields(raw, str(source_row.remote_id))
+	elif context.target_doctype == "GL Entry":
+		_fill_gl_entry_fields(context, raw, str(source_row.remote_id))
 	Mapper.fill_item_uoms(context.target_doctype, raw)
 	document = _prepare_document_tree(context.bulk, raw)
+	if context.target_doctype == "Journal Entry":
+		for account in document.get("Journal Entry Account", []):
+			account["docstatus"] = 1
 	return document
 
 
 def _fill_journal_entry_fields(raw: dict, sap_id: str) -> None:
+	raw["docstatus"] = 1
 	accounts = raw.get("accounts") or []
 	debit = sum((Decimal(str(row.get("debit") or 0)) for row in accounts), Decimal(0))
 	credit = sum((Decimal(str(row.get("credit") or 0)) for row in accounts), Decimal(0))
@@ -311,6 +322,30 @@ def _fill_journal_entry_fields(raw: dict, sap_id: str) -> None:
 		raw["total_amount"] = amount
 		raw["total_amount_currency"] = currency
 		raw["total_amount_in_words"] = money_in_words(float(amount), currency)
+
+
+def _fill_gl_entry_fields(context: SAPSyncContext, raw: dict, remote_id: str) -> None:
+	try:
+		_, sap_journal_id, _ = remote_id.split(":", 2)
+	except ValueError as error:
+		raise frappe.ValidationError(f"Invalid SAP GL row ID: {remote_id}") from error
+	raw["docstatus"] = 1
+	raw["voucher_type"] = "Journal Entry"
+	raw["voucher_no"] = journal_target(raw.get("company"), sap_journal_id)
+	raw["against"] = journal_against(raw.get("against"), {"company": raw.get("company")})
+	raw["fiscal_year"] = _fiscal_year(raw.get("posting_date"), raw.get("company"))
+	raw["is_opening"] = "No"
+	raw["transaction_currency"] = frappe.get_cached_value(
+		"Company", raw.get("company"), "default_currency"
+	)
+	raw["transaction_exchange_rate"] = 1
+	raw["debit_in_transaction_currency"] = raw.get("debit") or 0
+	raw["credit_in_transaction_currency"] = raw.get("credit") or 0
+
+
+@lru_cache(maxsize=2048)
+def _fiscal_year(posting_date: str, company: str) -> str:
+	return get_fiscal_year(posting_date, company=company)[0]
 
 
 def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -> dict[str, str]:
@@ -521,6 +556,8 @@ def _recover_incomplete_journals(context: SAPSyncContext) -> None:
 				(journal.total_debit = 0 AND (account.debit != 0 OR account.credit != 0))
 				OR (journal.total_amount = 0 AND account.party_type IN ('Customer', 'Supplier')
 					AND account.party IS NOT NULL)
+				OR journal.docstatus != 1
+				OR account.docstatus != 1
 			)
 		""",
 		(prefix, context.configuration),
@@ -533,6 +570,26 @@ def _recover_incomplete_journals(context: SAPSyncContext) -> None:
 		.set(source.last_synced_on, None)
 		.where(source.name.isin([name for name, in broken]))
 	).run()
+	frappe.db.commit()
+
+
+def _recover_mislinked_gl_entries(context: SAPSyncContext) -> None:
+	prefix = (
+		f"{context.bulk.company_abbr}-"
+		if "GL Entry" in context.bulk.abbr_doctypes else ""
+	)
+	frappe.db.sql(
+		"""
+		UPDATE `tabExternal GL Entry` staged
+		JOIN `tabGL Entry` entry ON entry.name = CONCAT(%s, staged.remote_id)
+		LEFT JOIN `tabJournal Entry` journal ON journal.name = entry.voucher_no
+		SET staged.last_synced_on = NULL
+		WHERE staged.external_sap_configuration = %s
+			AND (entry.docstatus != 1 OR entry.voucher_type != 'Journal Entry'
+				OR journal.name IS NULL OR entry.fiscal_year IS NULL)
+		""",
+		(prefix, context.configuration),
+	)
 	frappe.db.commit()
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from typing import Any
 
 import frappe
@@ -90,6 +91,8 @@ def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | 
 		return journal_cost_center(value, context or {})
 	if transform == "journal_staged_voucher":
 		return journal_staged_voucher(value, context or {})
+	if transform == "journal_against":
+		return journal_against(value, context or {})
 	if transform == "staged_document":
 		return staged_document(value, rule, context or {})
 	if transform == "payment_ledger_amount":
@@ -170,17 +173,38 @@ def journal_cost_center(value: Any, context: dict[str, Any]) -> str | None:
 
 
 def journal_staged_voucher(value: Any, context: dict[str, Any]) -> str:
-	configuration_name = context.get("configuration_name")
-	if value in (None, "") or not configuration_name:
-		raise frappe.ValidationError("SAP journal voucher needs an ID and configuration.")
+	company = context.get("company")
+	if value in (None, "") or not company:
+		raise frappe.ValidationError("SAP journal voucher needs an ID and company.")
+	return journal_target(company, str(value))
+
+
+@lru_cache(maxsize=4096)
+def journal_target(company: str, sap_journal_id: str) -> str:
 	name = frappe.db.get_value(
-		"External Journal Entry",
-		{"remote_id": str(value), "external_sap_configuration": configuration_name},
-		"name",
+		"Journal Entry", {"company": company, "custom_sap_jdt_num": sap_journal_id}, "name"
 	)
 	if not name:
-		raise frappe.ValidationError(f"SAP journal {value} is missing from External Journal Entry staging.")
+		raise frappe.ValidationError(f"SAP journal {sap_journal_id} has no ERPNext Journal Entry.")
 	return name
+
+
+def journal_against(value: Any, context: dict[str, Any]) -> str | None:
+	return _journal_against(context.get("company"), str(value) if value else None)
+
+
+@lru_cache(maxsize=4096)
+def _journal_against(company: str, value: str | None) -> str | None:
+	if not value:
+		return value
+	account = frappe.db.get_value(
+		"Account", {"company": company, "account_number": value}, "name"
+	)
+	if account:
+		return account
+	if frappe.db.exists("Supplier", value) or frappe.db.exists("Customer", value):
+		return value
+	raise frappe.ValidationError(f"SAP journal against account or party {value} was not found.")
 
 
 def staged_document(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str:

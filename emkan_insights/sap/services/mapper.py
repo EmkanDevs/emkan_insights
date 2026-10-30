@@ -228,6 +228,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"journal_party",
 		"journal_cost_center",
 		"journal_staged_voucher",
+		"journal_against",
 		"staged_document",
 		"payment_ledger_amount",
 		"sap_opportunity_party",
