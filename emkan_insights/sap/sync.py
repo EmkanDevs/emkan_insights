@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 
 import frappe
 from frappe import _
@@ -50,6 +51,8 @@ def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 	started_at = now_datetime()
 	_validate_source(context)
 	_recover_missing_target(context)
+	if context.target_doctype == "Journal Entry":
+		_recover_incomplete_journals(context)
 	inserted = 0
 	updated = 0
 	skipped = 0
@@ -249,9 +252,45 @@ def _prepare_source_row(
 		raw.setdefault("name", target_name or str(source_row.remote_id or source_row.name))
 	if context.erp_sap_id_fieldname:
 		raw[context.erp_sap_id_fieldname] = str(source_row.remote_id)
+	if context.target_doctype == "Journal Entry":
+		_fill_journal_entry_fields(raw, str(source_row.remote_id))
 	Mapper.fill_item_uoms(context.target_doctype, raw)
 	document = _prepare_document_tree(context.bulk, raw)
 	return document
+
+
+def _fill_journal_entry_fields(raw: dict, sap_id: str) -> None:
+	accounts = raw.get("accounts") or []
+	debit = sum((Decimal(str(row.get("debit") or 0)) for row in accounts), Decimal(0))
+	credit = sum((Decimal(str(row.get("credit") or 0)) for row in accounts), Decimal(0))
+	raw["total_debit"] = debit
+	raw["total_credit"] = credit
+	raw["difference"] = debit - credit
+	raw["custom_sap_jdt_num"] = sap_id
+	if accounts:
+		raw.setdefault("title", accounts[0].get("account"))
+	if raw.get("user_remark"):
+		raw.setdefault("remark", f"Note: {raw['user_remark']}")
+	raw.setdefault("is_opening", "No")
+
+	debit_accounts = {row.get("party") or row.get("account") for row in accounts if row.get("debit")}
+	credit_accounts = {row.get("party") or row.get("account") for row in accounts if row.get("credit")}
+	company_currency = frappe.get_cached_value("Company", raw.get("company"), "default_currency")
+	raw["multi_currency"] = int(any(
+		row.get("account_currency") and row.get("account_currency") != company_currency
+		for row in accounts
+	))
+	for row in accounts:
+		if row.get("debit"):
+			row["against_account"] = ", ".join(sorted(name for name in credit_accounts if name))
+		elif row.get("credit"):
+			row["against_account"] = ", ".join(sorted(name for name in debit_accounts if name))
+		account = row.get("account")
+		if account:
+			row["account_type"] = frappe.get_cached_value("Account", account, "account_type")
+		account_amount = Decimal(str(row.get("debit_in_account_currency") or row.get("credit_in_account_currency") or 0))
+		base_amount = Decimal(str(row.get("debit") or row.get("credit") or 0))
+		row["exchange_rate"] = base_amount / account_amount if account_amount else Decimal(1)
 
 
 def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -> dict[str, str]:
@@ -435,6 +474,36 @@ def _recover_missing_target(context: SAPSyncContext) -> None:
 	else:
 		missing = not frappe.db.count(context.target_doctype)
 	if not missing:
+		return
+	source = frappe.qb.DocType(context.source_doctype)
+	(
+		frappe.qb.update(source)
+		.set(source.last_synced_on, None)
+		.where(source.external_sap_configuration == context.configuration)
+	).run()
+	frappe.db.commit()
+
+
+def _recover_incomplete_journals(context: SAPSyncContext) -> None:
+	prefix = (
+		f"{context.bulk.company_abbr}-"
+		if "Journal Entry" in context.bulk.abbr_doctypes else ""
+	)
+	broken = frappe.db.sql(
+		"""
+		SELECT journal.name
+		FROM `tabJournal Entry` journal
+		JOIN `tabExternal Journal Entry` staged
+			ON journal.name = CONCAT(%s, staged.remote_id)
+		JOIN `tabJournal Entry Account` account ON account.parent = journal.name
+		WHERE staged.external_sap_configuration = %s
+			AND journal.total_debit = 0
+			AND (account.debit != 0 OR account.credit != 0)
+		LIMIT 1
+		""",
+		(prefix, context.configuration),
+	)
+	if not broken:
 		return
 	source = frappe.qb.DocType(context.source_doctype)
 	(
