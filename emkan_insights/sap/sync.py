@@ -7,7 +7,7 @@ from decimal import Decimal
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
-from frappe.utils import now_datetime
+from frappe.utils import money_in_words, now_datetime
 from frappe.utils.nestedset import rebuild_tree
 
 from emkan_insights.emkan_insights.external_data_bulk_insert import (
@@ -292,6 +292,26 @@ def _fill_journal_entry_fields(raw: dict, sap_id: str) -> None:
 		base_amount = Decimal(str(row.get("debit") or row.get("credit") or 0))
 		row["exchange_rate"] = base_amount / account_amount if account_amount else Decimal(1)
 
+	party_row = next(
+		(row for row in accounts if row.get("party_type") in {"Customer", "Supplier"} and row.get("party")),
+		None,
+	)
+	if party_row:
+		party = party_row["party"]
+		currency = party_row.get("account_currency") or company_currency
+		amount = sum(
+			(Decimal(str(row.get("debit_in_account_currency") or row.get("credit_in_account_currency") or 0))
+			 for row in accounts if row.get("party") == party),
+			Decimal(0),
+		)
+		party_name_field = "customer_name" if party_row["party_type"] == "Customer" else "supplier_name"
+		raw["pay_to_recd_from"] = frappe.db.get_value(
+			party_row["party_type"], party, party_name_field
+		) or party
+		raw["total_amount"] = amount
+		raw["total_amount_currency"] = currency
+		raw["total_amount_in_words"] = money_in_words(float(amount), currency)
+
 
 def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -> dict[str, str]:
 	if not context.erp_sap_id_fieldname:
@@ -491,15 +511,17 @@ def _recover_incomplete_journals(context: SAPSyncContext) -> None:
 	)
 	broken = frappe.db.sql(
 		"""
-		SELECT journal.name
+		SELECT DISTINCT staged.name
 		FROM `tabJournal Entry` journal
 		JOIN `tabExternal Journal Entry` staged
 			ON journal.name = CONCAT(%s, staged.remote_id)
 		JOIN `tabJournal Entry Account` account ON account.parent = journal.name
 		WHERE staged.external_sap_configuration = %s
-			AND journal.total_debit = 0
-			AND (account.debit != 0 OR account.credit != 0)
-		LIMIT 1
+			AND (
+				(journal.total_debit = 0 AND (account.debit != 0 OR account.credit != 0))
+				OR (journal.total_amount = 0 AND account.party_type IN ('Customer', 'Supplier')
+					AND account.party IS NOT NULL)
+			)
 		""",
 		(prefix, context.configuration),
 	)
@@ -509,7 +531,7 @@ def _recover_incomplete_journals(context: SAPSyncContext) -> None:
 	(
 		frappe.qb.update(source)
 		.set(source.last_synced_on, None)
-		.where(source.external_sap_configuration == context.configuration)
+		.where(source.name.isin([name for name, in broken]))
 	).run()
 	frappe.db.commit()
 
