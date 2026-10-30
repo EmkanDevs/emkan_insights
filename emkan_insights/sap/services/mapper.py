@@ -5,6 +5,7 @@ from typing import Any
 
 import frappe
 
+from emkan_insights.sap.services.staging import SYNC_MAPPING_ERRORS_KEY
 from emkan_insights.sap.services.transforms import (
 	apply_transform,
 	validate_sum_fields_config,
@@ -18,15 +19,19 @@ class Mapper:
 		self.mapping_doc = mapping_doc
 		self.field_mapping = parse_mapping(mapping_doc.field_mapping)
 		self.context = context or {}
+		self.mapping_errors = []
 
 	def map(self, sap_record: dict[str, Any]) -> dict[str, Any]:
 		if not isinstance(sap_record, dict):
 			raise frappe.ValidationError("Each SAP record must be a JSON object.")
 
+		self.mapping_errors = []
 		result = {
 			"doctype": self.mapping_doc.erp_doctype,
 			**self._map_fields(sap_record, self.field_mapping),
 		}
+		if self.mapping_errors:
+			result[SYNC_MAPPING_ERRORS_KEY] = self.mapping_errors
 		self.fill_item_uoms(self.mapping_doc.erp_doctype, result)
 		return result
 
@@ -70,22 +75,32 @@ class Mapper:
 
 		result = {}
 		for target_field, rule in mapping.items():
-			if isinstance(rule, str):
-				result[target_field] = source.get(rule)
-				continue
-
-			if "mapping" in rule or "rows" in rule:
-				result[target_field] = self._map_child_rows(source, target_field, rule)
-				continue
-
-			value = source.get(rule.get("fieldname")) if rule.get("fieldname") else None
-			mapped_value = apply_transform(
-				value,
-				rule,
-				{**self.context, "source": source, "parent_source": parent_source, "target_field": target_field},
-			)
-			result[target_field] = rule.get("default") if mapped_value in (None, "") and "default" in rule else mapped_value
+			try:
+				result[target_field] = self._map_field(
+					source, target_field, rule, parent_source=parent_source
+				)
+			except frappe.ValidationError as error:
+				self.mapping_errors.append({"field": target_field, "message": str(error)})
+				result[target_field] = [] if self._is_child_rule(rule) else None
 		return result
+
+	def _map_field(self, source, target_field, rule, *, parent_source=None):
+		if isinstance(rule, str):
+			return source.get(rule)
+		if self._is_child_rule(rule):
+			return self._map_child_rows(source, target_field, rule)
+
+		value = source.get(rule.get("fieldname")) if rule.get("fieldname") else None
+		mapped_value = apply_transform(
+			value,
+			rule,
+			{**self.context, "source": source, "parent_source": parent_source, "target_field": target_field},
+		)
+		return rule.get("default") if mapped_value in (None, "") and "default" in rule else mapped_value
+
+	@staticmethod
+	def _is_child_rule(rule):
+		return isinstance(rule, dict) and ("mapping" in rule or "rows" in rule)
 
 	def _map_child_rows(
 		self, source: dict[str, Any], target_field: str, rule: dict[str, Any]
@@ -105,6 +120,10 @@ class Mapper:
 		result, seen = [], {}
 		for row in rows:
 			if any(row.get(field) in (None, "") for field in rule.get("required_fields", [])):
+				continue
+			if rule.get("nonzero_fields") and not any(
+				row.get(field) for field in rule["nonzero_fields"]
+			):
 				continue
 			for field in rule.get("positive_fields", []):
 				value = row.get(field)
@@ -173,19 +192,32 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 	if transform not in {
 		"none",
 		"sap_date",
+		"sap_request_schedule_date",
 		"parent_date",
 		"sap_bool",
 		"sap_bool_not",
 		"lookup",
+		"sap_account_parent",
+		"company_root_cost_center",
+		"matching_selling_price_list",
+		"sap_sales_tax_rows",
 		"payment_method_account",
+		"incoming_payment_source_account",
+		"outgoing_payment_target_account",
+		"incoming_payment_party_value",
+		"incoming_payment_reference_date",
 		"local_payment_value",
 		"item_conversion_factor",
+		"purchase_invoice_item_quantity",
+		"purchase_invoice_item_description",
+		"sap_item_uom",
 		"sap_lookup",
 		"sap_exists",
 		"constant",
 		"context",
 		"value_map",
 		"conditional_value",
+		"collection_value_map",
 		"first_value",
 		"sum_fields",
 		"join_fields",
@@ -193,6 +225,12 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"multiply",
 		"sap_account_amount",
 		"sap_account_currency",
+		"journal_party",
+		"journal_cost_center",
+		"journal_staged_voucher",
+		"staged_document",
+		"payment_ledger_amount",
+		"sap_opportunity_party",
 	}:
 		raise frappe.ValidationError(f"Unsupported SAP mapping transform: {transform}")
 	if "mapping" in rule or "rows" in rule:
@@ -221,6 +259,8 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		validate_join_fields_config(rule)
 	if transform == "sum_fields":
 		validate_sum_fields_config(rule)
+	if transform == "first_value" and "max_length" in (rule.get("transform_config") or {}):
+		validate_truncate_config(rule)
 	if transform == "truncate":
 		validate_truncate_config(rule)
 	if transform == "multiply":
@@ -229,7 +269,24 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 			raise frappe.ValidationError(f"Multiply for '{target_field}' requires a finite numeric factor.")
 	if transform == "sap_account_amount" and not (rule.get("transform_config") or {}).get("base_field"):
 		raise frappe.ValidationError(f"Account amount for '{target_field}' requires a base_field.")
-	if transform in {"constant", "context", "first_value", "join_fields", "sum_fields", "payment_method_account", "local_payment_value", "item_conversion_factor"}:
+	if transform in {
+		"constant",
+		"context",
+		"first_value",
+		"join_fields",
+		"sum_fields",
+		"payment_method_account",
+		"incoming_payment_source_account",
+		"outgoing_payment_target_account",
+		"incoming_payment_reference_date",
+		"local_payment_value",
+		"item_conversion_factor",
+		"company_root_cost_center",
+		"matching_selling_price_list",
+		"sap_sales_tax_rows",
+		"collection_value_map",
+		"payment_ledger_amount",
+	}:
 		return
 	if transform == "none" and "default" in rule and not rule.get("fieldname"):
 		return
@@ -238,7 +295,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 
 
 def _validate_child_rule(target_field, rule):
-	for option in ("required_fields", "unique_by", "positive_fields"):
+	for option in ("required_fields", "unique_by", "positive_fields", "nonzero_fields"):
 		if option in rule and (
 			not isinstance(rule[option], list)
 			or not all(isinstance(field, str) and field for field in rule[option])

@@ -12,6 +12,7 @@ from emkan_insights.sap.services.mapper import Mapper
 from emkan_insights.sap.sync import (
 	_log,
 	_get_target_names_by_remote_id,
+	_count_pending_rows,
 	_prepare_source_row,
 	_skip_conflicting_unique_values,
 	_skip_duplicate_item_groups,
@@ -20,22 +21,34 @@ from emkan_insights.sap.sync import (
 
 
 class TestSAPSync(FrappeTestCase):
-	def test_held_journal_raw_response_cannot_sync(self):
+	def test_empty_snapshot_has_no_pending_rows(self):
+		context = SimpleNamespace(
+			source_doctype="External Item", configuration="SAP Test",
+			sap_id_prefix="", excluded_prefixes=(),
+		)
+		self.assertEqual(_count_pending_rows(context, frappe.utils.now_datetime(), set()), 0)
+
+	def test_raw_journal_response_cannot_sync(self):
 		context = SimpleNamespace(target_doctype="Journal Entry")
 		source = SimpleNamespace(
 			name="STAGE-1", remote_id="42",
 			json={"sap_mapping": "SAP Journal Entry", "record": {"JdtNum": 42}},
 		)
-		with self.assertRaisesRegex(frappe.ValidationError, "held SAP record"):
+		with self.assertRaisesRegex(frappe.ValidationError, "raw SAP record"):
 			_prepare_source_row(context, source)
 
-	def test_submitted_accounting_and_stock_rows_need_erp_submission(self):
+	@patch(
+		"emkan_insights.sap.sync._prepare_document_tree",
+		side_effect=lambda target_doctype, raw: {target_doctype: [raw]},
+	)
+	def test_submitted_accounting_and_stock_rows_use_direct_import(self, _prepare_document_tree):
 		for doctype in ("Journal Entry", "Purchase Invoice", "Stock Entry", "Purchase Receipt"):
 			with self.subTest(doctype=doctype):
-				context = SimpleNamespace(target_doctype=doctype)
+				context = SimpleNamespace(
+					bulk=doctype, erp_sap_id_fieldname=None, target_doctype=doctype,
+				)
 				source = SimpleNamespace(name="STAGE-1", remote_id="42", json={"docstatus": 1})
-				with self.assertRaisesRegex(frappe.ValidationError, "ERPNext submission"):
-					_prepare_source_row(context, source)
+				self.assertEqual(_prepare_source_row(context, source)[doctype][0]["docstatus"], 1)
 
 	@patch("emkan_insights.sap.sync._prepare_document_tree", side_effect=lambda _context, raw: {"Purchase Invoice": [raw]})
 	def test_draft_accounting_row_can_remain_staged_for_validation(self, _prepare_document_tree):
@@ -45,10 +58,20 @@ class TestSAPSync(FrappeTestCase):
 		self.assertEqual(result["Purchase Invoice"][0]["docstatus"], 0)
 
 	@patch("emkan_insights.sap.sync._prepare_document_tree", return_value={"Purchase Invoice": [{"docstatus": 1}]})
-	def test_site_rule_cannot_submit_accounting_row_through_bulk_writer(self, _prepare_document_tree):
-		context = SimpleNamespace(bulk=object(), erp_sap_id_fieldname=None, target_doctype="Purchase Invoice")
+	def test_site_rule_can_set_submitted_status_for_direct_import(self, _prepare_document_tree):
+		context = SimpleNamespace(
+			bulk=object(), erp_sap_id_fieldname=None, target_doctype="Purchase Invoice",
+		)
 		source = SimpleNamespace(name="STAGE-1", remote_id="42", json={"docstatus": 0})
-		with self.assertRaisesRegex(frappe.ValidationError, "ERPNext submission"):
+		self.assertEqual(_prepare_source_row(context, source)["Purchase Invoice"][0]["docstatus"], 1)
+
+	def test_staged_mapping_errors_cannot_be_direct_imported(self):
+		context = SimpleNamespace(target_doctype="GL Entry")
+		source = SimpleNamespace(
+			name="STAGE-1", remote_id="journal:42:1",
+			json={"_sap_mapping_errors": [{"field": "account", "message": "Account missing"}]},
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "SAP mapping errors in STAGE-1"):
 			_prepare_source_row(context, source)
 
 	@patch("emkan_insights.sap.sync._prepare_document_tree", side_effect=lambda _context, raw: raw)

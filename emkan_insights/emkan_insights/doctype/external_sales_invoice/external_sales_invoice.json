@@ -8,7 +8,6 @@
   "remote_id",
   "source_site",
   "external_sap_configuration",
-  "sap_sync_hold_reason",
   "last_synced_on",
   "json"
  ],
@@ -32,13 +31,6 @@
    "in_list_view": 1,
    "label": "External SAP Configuration",
    "options": "External SAP Configuration"
-  },
-  {
-   "fieldname": "sap_sync_hold_reason",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "SAP Sync Hold Reason",
-   "read_only": 1
   },
   {
    "fieldname": "last_synced_on",

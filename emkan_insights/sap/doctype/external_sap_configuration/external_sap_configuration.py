@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from emkan_insights.sap.services.client import SAPB1Client
+from emkan_insights.sap.mapping_order import mapping_sort_key
 
 
 class ExternalSAPConfiguration(Document):
@@ -23,12 +24,20 @@ class ExternalSAPConfiguration(Document):
 
 	def _add_missing_mappings(self):
 		existing = {row.sap_mapping for row in self.mappings or []}
-		for mapping in frappe.get_all(
+		mappings = frappe.get_all(
 			"SAP Doctype Mapping",
 			filters={"enabled": 1},
 			fields=["name", "erp_doctype", "external_doctype"],
 			order_by="name asc",
-		):
+		)
+		if not existing:
+			mappings = [
+				mapping for _, mapping in sorted(
+					enumerate(mappings),
+					key=lambda pair: mapping_sort_key(pair[1].name, pair[0]),
+				)
+			]
+		for mapping in mappings:
 			if mapping.name not in existing:
 				self.append(
 					"mappings",
@@ -52,22 +61,18 @@ def check_connection(name: str) -> dict:
 def fetch_configuration(name: str) -> dict:
 	configuration = frappe.get_doc("External SAP Configuration", name)
 	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
+	return _queue_configuration_synchronization(configuration, fetch_only=True)
 
-	from emkan_insights.sap.tasks import (
-		CONFIGURATION_SYNC_TIMEOUT,
-		_configuration_synchronization_job_id,
-		synchronize_sap_configuration,
-	)
 
-	job = frappe.enqueue(
-		synchronize_sap_configuration,
-		queue="long",
-		timeout=CONFIGURATION_SYNC_TIMEOUT,
-		job_id=_configuration_synchronization_job_id(configuration.name),
-		deduplicate=True,
-		configuration_name=configuration.name,
-	)
-	return {"status": "queued" if job else "already_queued", "company": configuration.company}
+@frappe.whitelist(methods=["POST"])
+def fetch_and_sync_configuration(name: str) -> dict:
+	configuration = frappe.get_doc("External SAP Configuration", name)
+	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
+	if not _has_syncable_mappings(configuration.name):
+		raise frappe.ValidationError(
+			"No enabled target-sync mappings are configured. All enabled mappings are fetch only."
+		)
+	return _queue_configuration_synchronization(configuration, fetch_only=False)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -108,6 +113,7 @@ def fetch_mapping(row_name: str) -> dict:
 		job_id=_job_id(row.name),
 		deduplicate=True,
 		row_name=row.name,
+		fetch_only=True,
 	)
 	return {
 		"status": "queued" if job else "already_queued",
@@ -136,3 +142,41 @@ def queue_sync_mapping(row_name: str) -> dict:
 		"status": "queued" if job else "already_queued",
 		"mapping": row.sap_mapping,
 	}
+
+
+def _queue_configuration_synchronization(configuration, *, fetch_only: bool) -> dict:
+	from emkan_insights.sap.tasks import (
+		CONFIGURATION_SYNC_TIMEOUT,
+		_configuration_synchronization_job_id,
+		synchronize_sap_configuration,
+	)
+
+	job = frappe.enqueue(
+		synchronize_sap_configuration,
+		queue="long",
+		timeout=CONFIGURATION_SYNC_TIMEOUT,
+		job_id=_configuration_synchronization_job_id(configuration.name),
+		deduplicate=True,
+		configuration_name=configuration.name,
+		fetch_only=fetch_only,
+	)
+	return {"status": "queued" if job else "already_queued", "company": configuration.company}
+
+
+def _has_syncable_mappings(configuration_name: str) -> bool:
+	mapping_names = frappe.get_all(
+		"External Site Configuration CT",
+		filters={
+			"parent": configuration_name,
+			"parenttype": "External SAP Configuration",
+			"parentfield": "mappings",
+			"sap_mapping": ["is", "set"],
+		},
+		pluck="sap_mapping",
+	)
+	if not mapping_names:
+		return False
+	return bool(frappe.db.exists(
+		"SAP Doctype Mapping",
+		{"name": ["in", mapping_names], "enabled": 1, "fetch_only": 0},
+	))

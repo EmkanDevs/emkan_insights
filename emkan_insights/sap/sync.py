@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
-from frappe.utils import cint, now_datetime
+from frappe.utils import now_datetime
 from frappe.utils.nestedset import rebuild_tree
 
 from emkan_insights.emkan_insights.external_data_bulk_insert import (
@@ -18,24 +18,16 @@ from emkan_insights.emkan_insights.external_data_bulk_insert import (
 	_update_document_trees,
 	add_prefix,
 )
-from emkan_insights.sap.services.exclusions import (
-	allowed_staged_id_condition,
-	get_excluded_sap_id_prefixes,
-)
 from emkan_insights.sap.services.mapper import Mapper
 from emkan_insights.sap.services.mapper import parse_mapping
+from emkan_insights.sap.services.staging import SYNC_MAPPING_ERRORS_KEY
 from emkan_insights.emkan_insights.import_field_rules import parse_field_rules
-from emkan_insights.sap.link_validation import resolve_account_links, validate_document_links
+from emkan_insights.sap.link_validation import resolve_account_links
 
 
 PERSISTENT_LOG_STATUSES = {
 	"Started", "DocType Creation Completed", "Failed",
 	"Skipped Duplicate Item Group", "Skipped Duplicate Unique Value",
-}
-
-LEDGER_POSTING_DOCTYPES = {
-	"Journal Entry", "Payment Entry", "Purchase Invoice", "Sales Invoice",
-	"Purchase Receipt", "Delivery Note", "Stock Entry", "Stock Reconciliation",
 }
 
 
@@ -49,21 +41,22 @@ class SAPSyncContext:
 	erp_sap_id_fieldname: str | None
 	sap_id_prefix: str
 	bulk: BulkInsertContext
-	excluded_sap_id_prefixes: tuple[str, ...] = ()
+	excluded_prefixes: tuple[str, ...] = ()
 
 
-def sync_mapping(row_name: str) -> dict:
+def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 	"""Bulk insert pending SAP staging rows into one ERPNext DocType."""
 	context = get_sync_context(row_name)
 	started_at = now_datetime()
 	_validate_source(context)
+	_recover_missing_target(context)
 	inserted = 0
 	updated = 0
 	skipped = 0
 
-	_log(context, "Started", pending=_count_pending_rows(context, started_at))
+	_log(context, "Started", pending=_count_pending_rows(context, started_at, remote_ids))
 	while True:
-		source_rows = _get_pending_rows(context, started_at)
+		source_rows = _get_pending_rows(context, started_at, remote_ids)
 		if not source_rows:
 			break
 
@@ -81,7 +74,6 @@ def sync_mapping(row_name: str) -> dict:
 		if documents:
 			try:
 				resolve_account_links(documents)
-				validate_document_links(documents)
 				new_documents, existing_documents = _partition_document_trees(
 					context.target_doctype,
 					documents,
@@ -160,6 +152,15 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 			**parse_field_rules(getattr(row, "field_rules", None), mapping.erp_doctype),
 		},
 	)
+	sap_id_prefix = getattr(mapping, "sap_id_prefix", None) or ""
+	excluded_prefixes = tuple(
+		row.sap_id_prefix for row in frappe.get_all(
+			"SAP Doctype Mapping",
+			filters={"external_doctype": mapping.external_doctype, "enabled": 1},
+			fields=["name", "sap_id_prefix"],
+		)
+		if row.name != mapping.name and row.sap_id_prefix and not sap_id_prefix
+	)
 	return SAPSyncContext(
 		row_name=row.name,
 		configuration=configuration.name,
@@ -167,40 +168,41 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 		source_doctype=mapping.external_doctype,
 		target_doctype=mapping.erp_doctype,
 		erp_sap_id_fieldname=mapping.erp_sap_id_fieldname,
-		sap_id_prefix=getattr(mapping, "sap_id_prefix", None) or "",
+		sap_id_prefix=sap_id_prefix,
 		bulk=bulk_context,
-		excluded_sap_id_prefixes=get_excluded_sap_id_prefixes(mapping),
+		excluded_prefixes=excluded_prefixes,
 	)
 
 
-def _get_pending_rows(context: SAPSyncContext, started_at) -> list:
+def _get_pending_rows(context: SAPSyncContext, started_at, remote_ids: set[str] | None = None) -> list:
 	source = frappe.qb.DocType(context.source_doctype)
+	limit = (
+		max(PAGE_SIZE, _count_pending_rows(context, started_at, remote_ids))
+		if context.target_doctype == "Account" else PAGE_SIZE
+	)
 	return (
 		frappe.qb.from_(source)
 		.select(source.name, source.remote_id, source.json, source.modified)
-		.where(_pending_condition(source, context, started_at))
+		.where(_pending_condition(source, context, started_at, remote_ids))
 		.orderby(source.creation, source.name)
-		.limit(PAGE_SIZE)
+		.limit(limit)
 	).run(as_dict=True)
 
 
-def _count_pending_rows(context: SAPSyncContext, started_at) -> int:
+def _count_pending_rows(context: SAPSyncContext, started_at, remote_ids: set[str] | None = None) -> int:
 	source = frappe.qb.DocType(context.source_doctype)
 	result = (
 		frappe.qb.from_(source)
 		.select(Count(source.name))
-		.where(_pending_condition(source, context, started_at))
+		.where(_pending_condition(source, context, started_at, remote_ids))
 	).run()
 	return result[0][0] if result else 0
 
 
-def _pending_condition(source, context: SAPSyncContext, started_at):
+def _pending_condition(source, context: SAPSyncContext, started_at, remote_ids: set[str] | None = None):
 	condition = (
 		(source.external_sap_configuration == context.configuration)
 		& (source.json != "")
-		& allowed_staged_id_condition(
-			source.remote_id, context.sap_id_prefix, context.excluded_sap_id_prefixes
-		)
 		& (source.modified <= started_at)
 		& (
 			source.last_synced_on.isnull()
@@ -208,12 +210,12 @@ def _pending_condition(source, context: SAPSyncContext, started_at):
 			| (source.modified > source.last_synced_on)
 		)
 	)
-	if context.mapping_name in {
-		"SAP Sales Invoice", "SAP Purchase Invoice",
-		"SAP Payment Entry Incoming", "SAP Payment Entry Outgoing",
-		"SAP Account",
-	}:
-		condition &= source.sap_sync_hold_reason.isnull() | (source.sap_sync_hold_reason == "")
+	if remote_ids is not None:
+		condition &= source.remote_id.isin(sorted(remote_ids)) if remote_ids else source.name == ""
+	if context.sap_id_prefix:
+		condition &= source.remote_id.like(f"{context.sap_id_prefix}%")
+	for prefix in context.excluded_prefixes:
+		condition &= ~source.remote_id.like(f"{prefix}%")
 	return condition
 
 
@@ -228,12 +230,12 @@ def _prepare_source_row(
 		frappe.throw(_("Invalid JSON in {0}.").format(source_row.name))
 	if not isinstance(raw, dict):
 		frappe.throw(_("JSON in {0} must contain a document object.").format(source_row.name))
-	if "record" in raw and raw.get("sap_mapping"):
-		raise frappe.ValidationError("A held SAP record needs a verified ERP mapping before sync.")
-	if context.target_doctype in LEDGER_POSTING_DOCTYPES and cint(raw.get("docstatus")) != 0:
+	if errors := raw.get(SYNC_MAPPING_ERRORS_KEY):
 		raise frappe.ValidationError(
-			f"SAP {context.target_doctype} must use ERPNext submission to create ledger entries."
+			f"SAP mapping errors in {source_row.name}: {errors}"
 		)
+	if "record" in raw and raw.get("sap_mapping"):
+		raise frappe.ValidationError("A raw SAP record needs an ERP mapping before sync.")
 
 	raw = dict(raw)
 	if context.target_doctype == "Item":
@@ -249,12 +251,6 @@ def _prepare_source_row(
 		raw[context.erp_sap_id_fieldname] = str(source_row.remote_id)
 	Mapper.fill_item_uoms(context.target_doctype, raw)
 	document = _prepare_document_tree(context.bulk, raw)
-	if context.target_doctype in LEDGER_POSTING_DOCTYPES:
-		parent = document[context.target_doctype][0]
-		if cint(parent.get("docstatus")) != 0:
-			raise frappe.ValidationError(
-				f"SAP {context.target_doctype} must use ERPNext submission to create ledger entries."
-			)
 	return document
 
 
@@ -413,12 +409,6 @@ def _validate_source(context: SAPSyncContext) -> None:
 
 	columns = set(frappe.db.get_table_columns(context.source_doctype))
 	required = {"remote_id", "external_sap_configuration", "last_synced_on", "json"}
-	if context.mapping_name in {
-		"SAP Sales Invoice", "SAP Purchase Invoice",
-		"SAP Payment Entry Incoming", "SAP Payment Entry Outgoing",
-		"SAP Account",
-	}:
-		required.add("sap_sync_hold_reason")
 	missing = required - columns
 	if missing:
 		frappe.throw(
@@ -436,6 +426,23 @@ def _validate_source(context: SAPSyncContext) -> None:
 				context.erp_sap_id_fieldname,
 			)
 		)
+
+
+def _recover_missing_target(context: SAPSyncContext) -> None:
+	if context.target_doctype == "Account":
+		company = frappe.db.get_value("External SAP Configuration", context.configuration, "company")
+		missing = not frappe.db.count("Account", {"company": company, "account_number": ["is", "set"]})
+	else:
+		missing = not frappe.db.count(context.target_doctype)
+	if not missing:
+		return
+	source = frappe.qb.DocType(context.source_doctype)
+	(
+		frappe.qb.update(source)
+		.set(source.last_synced_on, None)
+		.where(source.external_sap_configuration == context.configuration)
+	).run()
+	frappe.db.commit()
 
 
 def _log(context: SAPSyncContext, status: str, **details) -> None:

@@ -11,7 +11,6 @@
     "date_filter_field": null,
     "creation_date_filter_field": null,
     "sap_id_field": "Code",
-    "excluded_sap_id_prefixes": "7,9,A",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "account_name": {
@@ -42,12 +41,31 @@
       },
       "parent_account": {
         "fieldname": "FatherAccountKey",
-        "transform": "lookup",
+        "transform": "sap_account_parent",
         "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "company_context": true,
-          "required": true
+          "root_type_by_code": {
+            "100000000000000": "Asset",
+            "200000000000000": "Liability",
+            "300000000000000": "Equity",
+            "400000000000000": "Income",
+            "500000000000000": "Expense",
+            "600000000000000": "Expense",
+            "700000000000000": "Expense",
+            "7100000": "Expense",
+            "7200000": "Equity",
+            "7300000": "Expense",
+            "7400000": "Expense",
+            "7800000": "Income",
+            "7900000": "Expense",
+            "800000000000000": "Expense",
+            "900000000000000": "Asset",
+            "911400": "Equity",
+            "A00000000000000": "Equity",
+            "profit": "Equity"
+          },
+          "parent_code_overrides": {
+            "2144110": "2144000"
+          }
         }
       },
       "is_group": {
@@ -123,6 +141,30 @@
             },
             {
               "when": {
+                "Code": {
+                  "in": [
+                    "7211101",
+                    "911400",
+                    "profit"
+                  ]
+                }
+              },
+              "value": "Equity"
+            },
+            {
+              "when": {
+                "Code": {
+                  "in": [
+                    "911100",
+                    "911200",
+                    "911300"
+                  ]
+                }
+              },
+              "value": "Temporary"
+            },
+            {
+              "when": {
                 "AccountType": "at_Expenses"
               },
               "value": "Expense Account"
@@ -150,6 +192,12 @@
             },
             {
               "when": {
+                "Code": "911400"
+              },
+              "value": "Equity"
+            },
+            {
+              "when": {
                 "AccountType": "at_Revenues"
               },
               "value": "Income"
@@ -167,6 +215,14 @@
                 }
               },
               "value": "Income"
+            },
+            {
+              "when": {
+                "Code": {
+                  "starts_with": "72"
+                }
+              },
+              "value": "Equity"
             },
             {
               "when": {
@@ -219,11 +275,28 @@
                   "starts_with": [
                     "5",
                     "6",
+                    "7",
                     "8"
                   ]
                 }
               },
               "value": "Expense"
+            },
+            {
+              "when": {
+                "Code": {
+                  "starts_with": "9"
+                }
+              },
+              "value": "Asset"
+            },
+            {
+              "when": {
+                "Code": {
+                  "starts_with": "A"
+                }
+              },
+              "value": "Equity"
             }
           ],
           "strict": true
@@ -237,6 +310,20 @@
             {
               "when": {
                 "Code": "profit"
+              },
+              "value": "Balance Sheet"
+            },
+            {
+              "when": {
+                "Code": "911400"
+              },
+              "value": "Balance Sheet"
+            },
+            {
+              "when": {
+                "Code": {
+                  "starts_with": "72"
+                }
               },
               "value": "Balance Sheet"
             },
@@ -257,7 +344,9 @@
                   "starts_with": [
                     "1",
                     "2",
-                    "3"
+                    "3",
+                    "9",
+                    "A"
                   ]
                 }
               },
@@ -299,7 +388,106 @@
     "sap_id_field": "Code",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
-      "asset_category_name": "Description"
+      "asset_category_name": "Description",
+      "non_depreciable_category": {
+        "transform": "collection_value_map",
+        "transform_config": {
+          "collection": "AssetClassCollection",
+          "field": "DepreciationTypeID",
+          "mapping": {
+            "ND": 1
+          },
+          "default": 0
+        }
+      },
+      "accounts": {
+        "fieldname": "AssetClassCollection",
+        "mapping": {
+          "company_name": {
+            "transform": "context",
+            "transform_config": {
+              "key": "company"
+            }
+          },
+          "fixed_asset_account": {
+            "fieldname": "AccountDetermination",
+            "transform": "sap_lookup",
+            "transform_config": {
+              "entity": "FAAccountDeterminations",
+              "key": "Code",
+              "value_field": "AssetBalanceSheetAccount",
+              "target": {
+                "doctype": "Account",
+                "field": "account_number",
+                "company_context": true,
+                "required": true
+              }
+            }
+          },
+          "accumulated_depreciation_account": {
+            "fieldname": "AccountDetermination",
+            "transform": "sap_lookup",
+            "transform_config": {
+              "entity": "FAAccountDeterminations",
+              "key": "Code",
+              "value_field": "AccumulatedOrdinaryDepr",
+              "target": {
+                "doctype": "Account",
+                "field": "account_number",
+                "company_context": true
+              }
+            }
+          },
+          "depreciation_expense_account": {
+            "fieldname": "AccountDetermination",
+            "transform": "sap_lookup",
+            "transform_config": {
+              "entity": "FAAccountDeterminations",
+              "key": "Code",
+              "value_field": "OrdinaryDepreciation",
+              "target": {
+                "doctype": "Account",
+                "field": "account_number",
+                "company_context": true
+              }
+            }
+          }
+        },
+        "required_fields": [
+          "company_name",
+          "fixed_asset_account"
+        ],
+        "unique_by": [
+          "company_name"
+        ]
+      },
+      "finance_books": {
+        "fieldname": "AssetClassCollection",
+        "mapping": {
+          "depreciation_method": {
+            "fieldname": "DepreciationTypeID",
+            "transform": "value_map",
+            "transform_config": {
+              "mapping": {
+                "STL": "Straight Line"
+              },
+              "default": null
+            }
+          },
+          "total_number_of_depreciations": "UseLife",
+          "frequency_of_depreciation": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 1
+            }
+          }
+        },
+        "required_fields": [
+          "depreciation_method",
+          "total_number_of_depreciations",
+          "frequency_of_depreciation"
+        ]
+      }
     },
     "full_snapshot_sync": 1,
     "sap_id_prefix": ""
@@ -386,7 +574,15 @@
     "sap_id_field": "CenterCode",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
-      "cost_center_name": "CenterName",
+      "cost_center_name": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "CenterName",
+            "CenterCode"
+          ]
+        }
+      },
       "cost_center_number": "CenterCode",
       "company": {
         "transform": "context",
@@ -394,13 +590,13 @@
           "key": "company"
         }
       },
+      "parent_cost_center": {
+        "transform": "company_root_cost_center"
+      },
       "is_group": {
-        "fieldname": "CenterCode",
-        "transform": "sap_exists",
+        "transform": "constant",
         "transform_config": {
-          "entity": "ProfitCenters",
-          "key": "GroupCode",
-          "key_type": "string"
+          "value": 0
         }
       },
       "disabled": {
@@ -667,9 +863,12 @@
     "field_mapping": {
       "item_code": "ItemCode",
       "item_name": {
-        "fieldname": "ItemName",
-        "transform": "truncate",
+        "transform": "first_value",
         "transform_config": {
+          "fields": [
+            "ItemName",
+            "ItemCode"
+          ],
           "max_length": 140
         }
       },
@@ -683,7 +882,20 @@
           ]
         }
       },
-      "stock_uom": "InventoryUOM",
+      "stock_uom": {
+        "fieldname": "InventoryUoMEntry",
+        "transform": "sap_lookup",
+        "transform_config": {
+          "entity": "UnitOfMeasurements",
+          "key": "AbsEntry",
+          "value_field": "Code",
+          "key_type": "integer",
+          "empty_values": [
+            -1
+          ]
+        },
+        "default": "Nos"
+      },
       "is_stock_item": {
         "fieldname": "InventoryItem",
         "transform": "value_map",
@@ -774,8 +986,32 @@
           }
         }
       },
-      "purchase_uom": "PurchaseUnit",
-      "sales_uom": "SalesUnit",
+      "purchase_uom": {
+        "fieldname": "DefaultPurchasingUoMEntry",
+        "transform": "sap_lookup",
+        "transform_config": {
+          "entity": "UnitOfMeasurements",
+          "key": "AbsEntry",
+          "value_field": "Code",
+          "key_type": "integer",
+          "empty_values": [
+            -1
+          ]
+        }
+      },
+      "sales_uom": {
+        "fieldname": "DefaultSalesUoMEntry",
+        "transform": "sap_lookup",
+        "transform_config": {
+          "entity": "UnitOfMeasurements",
+          "key": "AbsEntry",
+          "value_field": "Code",
+          "key_type": "integer",
+          "empty_values": [
+            -1
+          ]
+        }
+      },
       "has_serial_no": {
         "fieldname": "ManageSerialNumbers",
         "transform": "value_map",
@@ -898,18 +1134,55 @@
       "uoms": {
         "rows": [
           {
-            "uom": "InventoryUOM",
+            "uom": {
+              "fieldname": "InventoryUoMEntry",
+              "transform": "sap_lookup",
+              "transform_config": {
+                "entity": "UnitOfMeasurements",
+                "key": "AbsEntry",
+                "value_field": "Code",
+                "key_type": "integer",
+                "empty_values": [
+                  -1
+                ]
+              },
+              "default": "Nos"
+            },
             "conversion_factor": {
               "transform": "constant",
               "value": 1
             }
           },
           {
-            "uom": "PurchaseUnit",
+            "uom": {
+              "fieldname": "DefaultPurchasingUoMEntry",
+              "transform": "sap_lookup",
+              "transform_config": {
+                "entity": "UnitOfMeasurements",
+                "key": "AbsEntry",
+                "value_field": "Code",
+                "key_type": "integer",
+                "empty_values": [
+                  -1
+                ]
+              }
+            },
             "conversion_factor": "PurchaseItemsPerUnit"
           },
           {
-            "uom": "SalesUnit",
+            "uom": {
+              "fieldname": "DefaultSalesUoMEntry",
+              "transform": "sap_lookup",
+              "transform_config": {
+                "entity": "UnitOfMeasurements",
+                "key": "AbsEntry",
+                "value_field": "Code",
+                "key_type": "integer",
+                "empty_values": [
+                  -1
+                ]
+              }
+            },
             "conversion_factor": "SalesItemsPerUnit"
           }
         ],
@@ -1347,7 +1620,17 @@
     "sap_id_field": "CardCode",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
-      "supplier_name": "CardName",
+      "supplier_name": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "CardName",
+            "CardForeignName",
+            "CardCode"
+          ],
+          "max_length": 140
+        }
+      },
       "supplier_type": {
         "fieldname": "CompanyPrivate",
         "transform": "value_map",
@@ -1365,7 +1648,7 @@
         "transform_config": {
           "mapping": {
             "101": "101",
-            "102": "Services"
+            "102": "102"
           },
           "strict": true
         }
@@ -1381,7 +1664,15 @@
       "tax_id": "FederalTaxID",
       "website": "Website",
       "supplier_details": "Notes",
-      "default_currency": "Currency",
+      "default_currency": {
+        "fieldname": "Currency",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "##": null
+          }
+        }
+      },
       "default_price_list": {
         "fieldname": "PriceListNum",
         "transform": "lookup",
@@ -1645,10 +1936,33 @@
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
-          "uom": "UoMCode",
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "stock_uom": {
+            "fieldname": "ItemCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Item",
+              "field": "item_code",
+              "return_field": "stock_uom",
+              "required": true
+            }
+          },
+          "conversion_factor": {
+            "transform": "item_conversion_factor",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "project": "ProjectCode",
           "schedule_date": {
-            "fieldname": "ShipDate",
-            "transform": "sap_date"
+            "fieldname": "RequiredDate",
+            "transform": "sap_request_schedule_date"
           }
         }
       },
@@ -1658,7 +1972,16 @@
           "value": "Purchase"
         }
       },
-      "schedule_date": "DocDueDate",
+      "schedule_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-MR-.YYYY.-"
+        }
+      },
       "docstatus": {
         "transform": "conditional_value",
         "transform_config": {
@@ -1668,6 +1991,20 @@
                 "Cancelled": "tYES"
               },
               "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
             },
             {
               "when": {
@@ -1709,6 +2046,27 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "PUR-SQTN-.YYYY.-"
+        }
+      },
+      "status": {
+        "fieldname": "Cancelled",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": "Cancelled"
+            }
+          ],
+          "default": "Draft"
+        }
+      },
       "transaction_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
@@ -1726,7 +2084,24 @@
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
           "discount_percentage": "DiscountPercent",
-          "uom": "UoMCode"
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "stock_uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          }
         }
       },
       "supplier": "CardCode",
@@ -1741,6 +2116,20 @@
                 "Cancelled": "tYES"
               },
               "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
             },
             {
               "when": {
@@ -1879,11 +2268,19 @@
           "item_name": "ItemDescription",
           "description": "ItemDescription",
           "qty": "Quantity",
+          "received_qty": "Quantity",
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
           "discount_percentage": "DiscountPercent",
           "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 1
+            }
+          },
           "schedule_date": {
             "fieldname": "ShipDate",
             "transform": "sap_date"
@@ -1963,16 +2360,45 @@
         "fieldname": "DocumentLines",
         "mapping": {
           "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
+          "item_name": {
+            "fieldname": "ItemDescription",
+            "transform": "purchase_invoice_item_description"
+          },
+          "description": {
+            "fieldname": "ItemDescription",
+            "transform": "purchase_invoice_item_description"
+          },
+          "qty": {
+            "fieldname": "Quantity",
+            "transform": "purchase_invoice_item_quantity"
+          },
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
           "discount_percentage": "DiscountPercent",
-          "uom": "UoMCode",
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true,
+              "service_uom_fallback": true
+            }
+          },
           "conversion_factor": {
-            "transform": "item_conversion_factor"
+            "transform": "item_conversion_factor",
+            "transform_config": {
+              "manual_uom_fallback": true,
+              "service_uom_fallback": true
+            }
+          },
+          "expense_account": {
+            "fieldname": "AccountCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Account",
+              "field": "account_number",
+              "company_context": true
+            }
           }
         }
       },
@@ -2053,12 +2479,30 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "SAL-QTN-.YYYY.-"
+        }
+      },
+      "order_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Sales"
+        }
+      },
       "transaction_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
       },
+      "valid_till": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
       "currency": "DocCurrency",
       "conversion_rate": "DocRate",
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
       "items": {
         "fieldname": "DocumentLines",
         "mapping": {
@@ -2069,6 +2513,17 @@
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          },
+          "ordered_qty": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 0
+            }
+          },
           "discount_percentage": "DiscountPercent",
           "amount": "LineTotal"
         }
@@ -2134,12 +2589,26 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "SAL-ORD-.YYYY.-"
+        }
+      },
+      "order_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Sales"
+        }
+      },
       "transaction_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
       },
       "currency": "DocCurrency",
       "conversion_rate": "DocRate",
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
       "items": {
         "fieldname": "DocumentLines",
         "mapping": {
@@ -2151,9 +2620,18 @@
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
           "discount_percentage": "DiscountPercent",
-          "uom": "UoMCode",
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
           "conversion_factor": {
-            "transform": "item_conversion_factor"
+            "transform": "item_conversion_factor",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
           },
           "delivery_date": {
             "fieldname": "ShipDate",
@@ -2163,7 +2641,10 @@
       },
       "customer": "CardCode",
       "customer_name": "CardName",
-      "delivery_date": "DocDueDate",
+      "delivery_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
       "po_no": "NumAtCard",
       "grand_total": "DocTotal",
       "docstatus": {
@@ -2219,12 +2700,30 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-DN-.YYYY.-"
+        }
+      },
       "posting_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
       },
+      "posting_time": "DocTime",
+      "set_posting_time": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
       "currency": "DocCurrency",
       "conversion_rate": "DocRate",
+      "selling_price_list": {
+        "transform": "matching_selling_price_list"
+      },
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
       "items": {
         "fieldname": "DocumentLines",
         "mapping": {
@@ -2235,11 +2734,15 @@
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "uom": "UoMCode",
+          "conversion_factor": {
+            "transform": "item_conversion_factor"
+          },
           "discount_percentage": "DiscountPercent",
           "amount": "LineTotal"
         }
       },
       "customer": "CardCode",
+      "customer_name": "CardName",
       "docstatus": {
         "fieldname": "Cancelled",
         "transform": "conditional_value",
@@ -2250,6 +2753,20 @@
                 "Cancelled": "tYES"
               },
               "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
             },
             {
               "when": {
@@ -2269,7 +2786,19 @@
       "grand_total": "DocTotal",
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
-      "customer_name": "CardName"
+      "po_no": "NumAtCard",
+      "instructions": "Comments",
+      "total_taxes_and_charges": "VatSum",
+      "taxes": {
+        "transform": "sap_sales_tax_rows",
+        "transform_config": {
+          "rate_accounts": {
+            "0": "2144103",
+            "5": "2144102",
+            "15": "2144101"
+          }
+        }
+      }
     }
   },
   {
@@ -2508,6 +3037,12 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-STE-.YYYY.-"
+        }
+      },
       "stock_entry_type": {
         "transform": "constant",
         "transform_config": {
@@ -2531,9 +3066,15 @@
           "item_name": "ItemDescription",
           "description": "ItemDescription",
           "qty": "Quantity",
+          "transfer_qty": "InventoryQuantity",
           "s_warehouse": "WarehouseCode",
           "amount": "LineTotal",
-          "uom": "UoMCode"
+          "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          }
         }
       },
       "docstatus": {
@@ -2545,6 +3086,20 @@
                 "Cancelled": "tYES"
               },
               "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
             },
             {
               "when": {
@@ -2587,6 +3142,12 @@
           "key": "company"
         }
       },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-STE-.YYYY.-"
+        }
+      },
       "stock_entry_type": {
         "transform": "constant",
         "transform_config": {
@@ -2610,6 +3171,15 @@
           "item_name": "ItemDescription",
           "description": "ItemDescription",
           "qty": "Quantity",
+          "transfer_qty": "InventoryQuantity",
+          "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          },
+          "basic_rate": "Price",
+          "amount": "LineTotal",
           "t_warehouse": "WarehouseCode"
         }
       },
@@ -2623,6 +3193,20 @@
                 "Cancelled": "tYES"
               },
               "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
             },
             {
               "when": {
@@ -2670,9 +3254,24 @@
         }
       },
       "payment_type": {
-        "transform": "constant",
+        "fieldname": "DocType",
+        "transform": "conditional_value",
         "transform_config": {
-          "value": "Receive"
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": "Internal Transfer"
+            },
+            {
+              "when": {
+                "DocType": ["rCustomer", "rSupplier"]
+              },
+              "value": "Receive"
+            }
+          ],
+          "strict": true
         }
       },
       "party_type": {
@@ -2680,6 +3279,12 @@
         "transform": "conditional_value",
         "transform_config": {
           "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": null
+            },
             {
               "when": {
                 "DocType": "rCustomer"
@@ -2696,7 +3301,10 @@
           "strict": true
         }
       },
-      "party": "CardCode",
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "incoming_payment_party_value"
+      },
       "posting_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
@@ -2733,22 +3341,24 @@
         },
         "fieldname": "Cancelled"
       },
-      "party_name": "CardName",
-      "reference_no": "TransferReference",
+      "party_name": {
+        "fieldname": "CardName",
+        "transform": "incoming_payment_party_value"
+      },
+      "reference_no": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": ["TransferReference", "DocNum"]
+        }
+      },
       "reference_date": {
-        "fieldname": "TransferDate",
-        "transform": "sap_date"
+        "transform": "incoming_payment_reference_date"
       },
       "remarks": "Remarks",
       "paid_from": {
-        "fieldname": "ControlAccount",
-        "transform": "lookup",
+        "transform": "incoming_payment_source_account",
         "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "return_field": "name",
-          "company_context": true,
-          "required": true
+          "return_field": "name"
         }
       },
       "paid_to": {
@@ -2758,14 +3368,9 @@
         }
       },
       "paid_from_account_currency": {
-        "fieldname": "ControlAccount",
-        "transform": "lookup",
+        "transform": "incoming_payment_source_account",
         "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "return_field": "account_currency",
-          "company_context": true,
-          "required": true
+          "return_field": "account_currency"
         }
       },
       "paid_to_account_currency": {
@@ -2788,25 +3393,29 @@
       "source_exchange_rate": {
         "transform": "local_payment_value",
         "transform_config": {
-          "kind": "rate"
+          "kind": "rate",
+          "incoming": true
         }
       },
       "target_exchange_rate": {
         "transform": "local_payment_value",
         "transform_config": {
-          "kind": "rate"
+          "kind": "rate",
+          "incoming": true
         }
       },
       "base_paid_amount": {
         "transform": "local_payment_value",
         "transform_config": {
-          "kind": "amount"
+          "kind": "amount",
+          "incoming": true
         }
       },
       "base_received_amount": {
         "transform": "local_payment_value",
         "transform_config": {
-          "kind": "amount"
+          "kind": "amount",
+          "incoming": true
         }
       }
     }
@@ -2840,9 +3449,24 @@
         }
       },
       "payment_type": {
-        "transform": "constant",
+        "fieldname": "DocType",
+        "transform": "conditional_value",
         "transform_config": {
-          "value": "Pay"
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": "Internal Transfer"
+            },
+            {
+              "when": {
+                "DocType": "rSupplier"
+              },
+              "value": "Pay"
+            }
+          ],
+          "strict": true
         }
       },
       "party_type": {
@@ -2850,6 +3474,12 @@
         "transform": "conditional_value",
         "transform_config": {
           "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": null
+            },
             {
               "when": {
                 "DocType": "rSupplier"
@@ -2860,7 +3490,10 @@
           "strict": true
         }
       },
-      "party": "CardCode",
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "incoming_payment_party_value"
+      },
       "posting_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
@@ -2897,11 +3530,18 @@
         },
         "fieldname": "Cancelled"
       },
-      "party_name": "CardName",
-      "reference_no": "TransferReference",
+      "party_name": {
+        "fieldname": "CardName",
+        "transform": "incoming_payment_party_value"
+      },
+      "reference_no": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": ["TransferReference", "DocNum"]
+        }
+      },
       "reference_date": {
-        "fieldname": "TransferDate",
-        "transform": "sap_date"
+        "transform": "incoming_payment_reference_date"
       },
       "remarks": "Remarks",
       "paid_from": {
@@ -2911,14 +3551,9 @@
         }
       },
       "paid_to": {
-        "fieldname": "ControlAccount",
-        "transform": "lookup",
+        "transform": "outgoing_payment_target_account",
         "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "return_field": "name",
-          "company_context": true,
-          "required": true
+          "return_field": "name"
         }
       },
       "paid_from_account_currency": {
@@ -2928,14 +3563,9 @@
         }
       },
       "paid_to_account_currency": {
-        "fieldname": "ControlAccount",
-        "transform": "lookup",
+        "transform": "outgoing_payment_target_account",
         "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "return_field": "account_currency",
-          "company_context": true,
-          "required": true
+          "return_field": "account_currency"
         }
       },
       "received_amount": {
@@ -3015,20 +3645,64 @@
               "required": true
             }
           },
-          "debit_in_account_currency": "Debit",
-          "credit_in_account_currency": "Credit",
+          "debit_in_account_currency": {
+            "fieldname": "FCDebit",
+            "transform": "sap_account_amount",
+            "transform_config": {
+              "base_field": "Debit"
+            }
+          },
+          "credit_in_account_currency": {
+            "fieldname": "FCCredit",
+            "transform": "sap_account_amount",
+            "transform_config": {
+              "base_field": "Credit"
+            }
+          },
+          "debit": "Debit",
+          "credit": "Credit",
+          "account_currency": {
+            "fieldname": "FCCurrency",
+            "transform": "sap_account_currency"
+          },
+          "party_type": {
+            "fieldname": "ShortName",
+            "transform": "journal_party"
+          },
+          "party": {
+            "fieldname": "ShortName",
+            "transform": "journal_party"
+          },
+          "cost_center": "CostingCode",
+          "project": "ProjectCode",
           "user_remark": "LineMemo"
-        }
+        },
+        "nonzero_fields": [
+          "debit",
+          "credit"
+        ]
       },
       "docstatus": {
         "transform": "constant",
         "transform_config": {
-          "value": 1
+          "value": 0
         }
       },
       "due_date": {
         "fieldname": "DueDate",
         "transform": "sap_date"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Journal Entry"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-JV-.YYYY.-"
+        }
       }
     }
   },
@@ -3197,7 +3871,15 @@
     "sap_id_prefix": "",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
-      "title": "Code",
+      "title": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "Name",
+            "Code"
+          ]
+        }
+      },
       "disabled": {
         "fieldname": "Inactive",
         "transform": "sap_bool"
@@ -3362,6 +4044,10 @@
             "PaymentMethodCode"
           ]
         }
+      },
+      "enabled": {
+        "fieldname": "Active",
+        "transform": "sap_bool"
       }
     }
   },
@@ -3389,12 +4075,13 @@
     "sap_id_field": "SequentialNo",
     "field_mapping": {
       "title": "OpportunityName",
-      "party_name": "CardCode",
+      "party_name": {
+        "fieldname": "CardCode",
+        "transform": "sap_opportunity_party"
+      },
       "opportunity_from": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Customer"
-        }
+        "fieldname": "CardCode",
+        "transform": "sap_opportunity_party"
       },
       "company": {
         "transform": "context",
@@ -3412,7 +4099,40 @@
         "transform": "sap_date"
       },
       "probability": "ClosingPercentage",
+      "status": {
+        "fieldname": "Status",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "sos_Open": "Open"
+          },
+          "strict": true
+        }
+      },
+      "opportunity_type": {
+        "fieldname": "OpportunityType",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "boOpSales": "Sales"
+          },
+          "strict": true
+        }
+      },
+      "currency": {
+        "transform": "context",
+        "transform_config": {
+          "key": "currency"
+        }
+      },
+      "conversion_rate": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
       "opportunity_amount": "TotalAmountLocal",
+      "base_opportunity_amount": "TotalAmountLocal",
       "source": {
         "fieldname": "Source",
         "transform": "sap_lookup",
@@ -3420,7 +4140,11 @@
           "entity": "SalesOpportunitySourcesSetup",
           "key": "SequenceNo",
           "key_type": "integer",
-          "value_field": "Description"
+          "value_field": "Description",
+          "target": {
+            "doctype": "Lead Source",
+            "field": "name"
+          }
         }
       },
       "sales_stage": {
@@ -3430,7 +4154,18 @@
           "entity": "SalesStages",
           "key": "SequenceNo",
           "key_type": "integer",
-          "value_field": "Name"
+          "value_field": "Name",
+          "target": {
+            "doctype": "Sales Stage",
+            "field": "stage_name",
+            "required": true
+          }
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "CRM-OPP-.YYYY.-"
         }
       }
     }
@@ -3471,8 +4206,26 @@
           "item_code": "ItemCode",
           "qty": "Quantity",
           "uom": "InventoryUOM",
+          "stock_uom": "InventoryUOM",
+          "conversion_factor": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 1
+            }
+          },
           "rate": "Price"
-        }
+        },
+        "required_fields": [
+          "item_code",
+          "qty",
+          "uom",
+          "rate",
+          "conversion_factor"
+        ],
+        "positive_fields": [
+          "qty",
+          "conversion_factor"
+        ]
       }
     }
   }

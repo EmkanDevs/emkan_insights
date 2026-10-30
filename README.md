@@ -12,6 +12,10 @@ bench get-app $URL_OF_THIS_REPO --branch develop
 bench install-app emkan_insights
 ```
 
+### Documentation
+
+- [Create an SAP DocType Mapping](docs/sap-doctype-mapping-guide.md)
+
 ### Contributing
 
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:

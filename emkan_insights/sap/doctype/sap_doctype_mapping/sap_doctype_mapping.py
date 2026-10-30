@@ -8,7 +8,9 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from emkan_insights.sap.services.mapper import parse_mapping
-from emkan_insights.sap.services.exclusions import get_excluded_sap_id_prefixes
+
+
+CHILD_TABLE_TRANSFORMS = {"sap_sales_tax_rows"}
 
 
 class SAPDoctypeMapping(Document):
@@ -18,7 +20,6 @@ class SAPDoctypeMapping(Document):
 			raise frappe.ValidationError("Fetch Limit cannot be negative.")
 		if getattr(self, "raw_payload", False) and not getattr(self, "fetch_only", False):
 			raise frappe.ValidationError("Raw SAP payloads must use Fetch Only.")
-		self.excluded_sap_id_prefixes = ",".join(get_excluded_sap_id_prefixes(self))
 		self._validate_external_doctype()
 		if getattr(self, "raw_payload", False):
 			return
@@ -78,14 +79,19 @@ class SAPDoctypeMapping(Document):
 					f"ERPNext field '{target_field}' does not exist on {meta.name}."
 				)
 
-			is_child_mapping = isinstance(rule, dict) and ("mapping" in rule or "rows" in rule)
+			is_transformed_child = (
+				isinstance(rule, dict) and rule.get("transform") in CHILD_TABLE_TRANSFORMS
+			)
+			is_child_mapping = (
+				isinstance(rule, dict) and ("mapping" in rule or "rows" in rule)
+			) or is_transformed_child
 			is_table_field = field.fieldtype in {"Table", "Table MultiSelect"}
 			if is_child_mapping != is_table_field:
 				raise frappe.ValidationError(
 					f"ERPNext field '{target_field}' must use a child mapping only when it is a table field."
 				)
 
-			if is_child_mapping:
+			if is_child_mapping and not is_transformed_child:
 				child_meta = frappe.get_meta(field.options)
 				for child_mapping in rule["rows"] if "rows" in rule else [rule["mapping"]]:
 					self._validate_target_fields(child_meta, parse_mapping(child_mapping))

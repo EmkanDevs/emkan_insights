@@ -8,8 +8,8 @@ from frappe.utils.nestedset import rebuild_tree
 from emkan_insights.emkan_insights.external_data_bulk_insert import PAGE_SIZE, add_prefix
 from emkan_insights.emkan_insights.external_data_deletion import _delete_rows_with_children
 from emkan_insights.sap.services.client import SAPB1Client
-from emkan_insights.sap.services.exclusions import allowed_staged_id_condition
 from emkan_insights.sap.services.fetch import fetch
+from emkan_insights.sap.services import _sap_record_id
 from emkan_insights.sap.sync import SAPSyncContext, get_sync_context
 
 
@@ -53,7 +53,7 @@ def _fetch_remote_ids(client: SAPB1Client, mapping) -> set[str]:
 	records = fetch(client, mapping)
 	remote_ids = set()
 	for record in records:
-		remote_id = record.get(mapping.sap_id_field)
+		remote_id = _sap_record_id(record, mapping.sap_id_field)
 		if remote_id in (None, ""):
 			raise SAPDeletionError(
 				f"SAP {mapping.sap_doctype} returned a row without {mapping.sap_id_field}."
@@ -67,10 +67,11 @@ def _get_staging_rows(context: SAPSyncContext) -> dict[str, list[str]]:
 	condition = (
 		(source.external_sap_configuration == context.configuration)
 		& source.remote_id.notnull()
-		& allowed_staged_id_condition(
-			source.remote_id, context.sap_id_prefix, context.excluded_sap_id_prefixes
-		)
 	)
+	if context.sap_id_prefix:
+		condition &= source.remote_id.like(f"{context.sap_id_prefix}%")
+	for prefix in context.excluded_prefixes:
+		condition &= ~source.remote_id.like(f"{prefix}%")
 	rows = (
 		frappe.qb.from_(source)
 		.select(source.name, source.remote_id)

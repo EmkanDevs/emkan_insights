@@ -58,6 +58,7 @@ class TestSAPDeletion(FrappeTestCase):
 			}
 		]
 		mapping = SimpleNamespace(
+			name="SAP Customer Contact",
 			sap_doctype="BusinessPartners",
 			sap_filter="CardType eq 'cCustomer'",
 			date_filter_field="UpdateDate",
@@ -75,6 +76,7 @@ class TestSAPDeletion(FrappeTestCase):
 		client = Mock()
 		client.fetch_all.return_value = [{"DocEntry": 7}]
 		mapping = SimpleNamespace(
+			name="SAP Payment Incoming Detail",
 			sap_doctype="IncomingPayments",
 			sap_filter=None,
 			date_filter_field=None,
@@ -85,6 +87,25 @@ class TestSAPDeletion(FrappeTestCase):
 		)
 
 		self.assertEqual(_fetch_remote_ids(client, mapping), {"incoming:7"})
+
+	def test_remote_ids_use_composite_journal_line_key(self):
+		client = Mock()
+		client.fetch_all.return_value = [{
+			"JdtNum": 280,
+			"JournalEntryLines": [{"JdtNum": 280, "Line_ID": 0, "Debit": 10}],
+		}]
+		mapping = SimpleNamespace(
+			name="SAP GL Journal Detail",
+			sap_doctype="JournalEntries",
+			sap_filter=None,
+			date_filter_field=None,
+			full_snapshot_sync=1,
+			source_array_field="JournalEntryLines",
+			sap_id_field="JdtNum+Line_ID",
+			sap_id_prefix="journal:",
+		)
+
+		self.assertEqual(_fetch_remote_ids(client, mapping), {"journal:280:0"})
 
 	def test_empty_snapshot_cannot_delete_existing_staging(self):
 		context = SimpleNamespace(mapping_name="SAP Item")

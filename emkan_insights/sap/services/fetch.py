@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import frappe
-from frappe.utils import cint, getdate
+from frappe.utils import cint, flt, getdate
 
 from emkan_insights.sap.services.client import SAPB1Client
 
@@ -21,10 +21,13 @@ def fetch(
 		records = client.fetch_all(mapping_doc.sap_doctype, params=params, max_records=limit)
 	else:
 		records = client.fetch_all(mapping_doc.sap_doctype, params=params)
-	return _flatten_records(
+	flattened = _flatten_records(
 		records, mapping_doc.source_array_field,
 		include_parent="+" in mapping_doc.sap_id_field,
 	)
+	if mapping_doc.name == "SAP GL Journal Detail":
+		return [row for row in flattened if flt(row.get("Debit")) or flt(row.get("Credit"))]
+	return flattened
 
 
 def _query_params(mapping_doc, from_date: str | None, to_date: str | None) -> dict[str, str] | None:
@@ -64,12 +67,13 @@ def _flatten_records(
 		if not isinstance(rows, list):
 			raise frappe.ValidationError(f"SAP field '{source_array_field}' must contain an array.")
 		parent_fields = {key: value for key, value in record.items() if key != source_array_field}
+		parent_context = {f"__parent_{key}": value for key, value in record.items()}
 		for index, row in enumerate(rows):
 			if not isinstance(row, dict):
 				raise frappe.ValidationError(f"SAP field '{source_array_field}' must contain JSON objects.")
 			flattened.append(
 				{
-					**{f"__parent_{key}": value for key, value in parent_fields.items()},
+					**parent_context,
 					**parent_fields,
 					**row,
 					"__line_index": index,

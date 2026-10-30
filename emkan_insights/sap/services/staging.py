@@ -5,13 +5,16 @@ from typing import Any, Literal
 import frappe
 
 
+SYNC_MAPPING_ERRORS_KEY = "_sap_mapping_errors"
+
+
 class StagingWriter:
 	def __init__(self, external_doctype: str, sap_configuration: str):
 		self.external_doctype = external_doctype
 		self.sap_configuration = sap_configuration
 
 	def upsert(
-		self, sap_id: Any, payload: dict[str, Any], sync_hold_reason: str | None = None
+		self, sap_id: Any, payload: dict[str, Any]
 	) -> tuple[Literal["created", "updated", "unchanged"], str]:
 		remote_id = str(sap_id)
 		serialized_payload = frappe.as_json(payload)
@@ -29,19 +32,9 @@ class StagingWriter:
 			"external_sap_configuration": self.sap_configuration,
 			"json": serialized_payload,
 		}
-		if self.external_doctype in {
-			"External Sales Invoice", "External Purchase Invoice", "External Payment Entry", "External Account"
-		}:
-			values["sap_sync_hold_reason"] = sync_hold_reason
-
 		if existing_name:
 			doc = frappe.get_doc(self.external_doctype, existing_name)
-			if frappe.parse_json(doc.json) == payload and (
-				self.external_doctype not in {
-					"External Sales Invoice", "External Purchase Invoice", "External Payment Entry", "External Account"
-				}
-				or doc.sap_sync_hold_reason == sync_hold_reason
-			):
+			if frappe.parse_json(doc.json) == payload:
 				return "unchanged", doc.name
 			doc.update(values)
 			doc.save(ignore_permissions=True)

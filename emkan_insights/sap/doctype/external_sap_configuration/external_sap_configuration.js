@@ -8,6 +8,7 @@ frappe.ui.form.on("External SAP Configuration", {
 		grid.update_docfield_property("sync_data", "hidden", 1);
 		if (!frm.is_new()) {
 			frm.add_custom_button(__("Fetch Data"), () => frm.trigger("fetch_configuration"));
+			frm.add_custom_button(__("Fetch and Sync"), () => frm.trigger("fetch_and_sync_configuration"));
 			frm.add_custom_button(__("Fetch Ledger Review Data"), () => frm.trigger("fetch_review_configuration"));
 			for (const [label, doctype] of [
 				["GL Source Data", "External GL Entry"],
@@ -19,6 +20,31 @@ frappe.ui.form.on("External SAP Configuration", {
 				}, __("Review SAP Data"));
 			}
 		}
+	},
+	fetch_and_sync_configuration(frm) {
+		if (frm.is_dirty()) {
+			frappe.msgprint(__("Save the SAP configuration before fetching and synchronizing data."));
+			return;
+		}
+
+		frappe.confirm(
+			__("Fetch the latest SAP data and synchronize it to ERPNext?"),
+			() => {
+				frappe.call({
+					method: "emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.fetch_and_sync_configuration",
+					args: { name: frm.doc.name },
+					callback(response) {
+						const status = response.message?.status;
+						if (status) {
+							frappe.show_alert({
+								message: __("SAP fetch and sync for {0}: {1}.", [frm.doc.company, status]),
+								indicator: status === "queued" ? "green" : "orange",
+							});
+						}
+					},
+				});
+			},
+		);
 	},
 	fetch_review_configuration(frm) {
 		if (frm.is_dirty()) {
@@ -84,7 +110,7 @@ frappe.ui.form.on("External SAP Configuration", {
 frappe.ui.form.on("External Site Configuration CT", {
 	fetch_data(frm, cdt, cdn) {
 		if (frm.is_dirty()) {
-			frappe.msgprint(__("Save the SAP configuration before synchronizing."));
+			frappe.msgprint(__("Save the SAP configuration before fetching data."));
 			return;
 		}
 

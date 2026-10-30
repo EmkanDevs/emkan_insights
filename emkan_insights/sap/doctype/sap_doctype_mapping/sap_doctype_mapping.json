@@ -22,7 +22,6 @@
   "date_filter_field",
   "sap_id_field",
   "sap_id_prefix",
-  "excluded_sap_id_prefixes",
   "erp_sap_id_fieldname",
   "mapping_section",
   "field_mapping"
@@ -134,12 +133,6 @@
    "fieldname": "sap_id_prefix",
    "fieldtype": "Data",
    "label": "SAP ID Prefix"
-  },
-  {
-   "description": "Comma-separated SAP ID prefixes excluded from ERP sync and deletion. Excluded SAP Accounts are kept in raw staging for review. Example: 7,9,A.",
-   "fieldname": "excluded_sap_id_prefixes",
-   "fieldtype": "Data",
-   "label": "Excluded SAP ID Prefixes"
   },
   {
    "fieldname": "erp_sap_id_fieldname",

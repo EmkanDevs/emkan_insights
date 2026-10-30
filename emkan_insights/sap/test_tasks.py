@@ -5,6 +5,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration import (
+	fetch_and_sync_configuration,
 	fetch_configuration,
 	fetch_mapping,
 	queue_sync_mapping,
@@ -57,6 +58,24 @@ class TestSAPTasks(FrappeTestCase):
 		frappe_mock.cache.return_value.set.return_value = True
 
 		result = synchronize_sap_data(row.name)
+
+		self.assertTrue(result["fetch_only"])
+		sync_mapping.assert_not_called()
+
+	@patch("emkan_insights.sap.tasks._sync_mapping_and_reconcile")
+	@patch("emkan_insights.sap.tasks.get_mapped_data", return_value={
+		"created": ["ACCOUNT-1"], "updated": [], "failed": []
+	})
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_explicit_fetch_only_does_not_sync_accounts(self, frappe_mock, _get_mapped_data, sync_mapping):
+		row = self._row()
+		mapping = SimpleNamespace(fetch_only=False)
+		frappe_mock.get_doc.side_effect = lambda doctype, name: (
+			mapping if doctype == "SAP Doctype Mapping" else row
+		)
+		frappe_mock.cache.return_value.set.return_value = True
+
+		result = synchronize_sap_data(row.name, fetch_only=True)
 
 		self.assertTrue(result["fetch_only"])
 		sync_mapping.assert_not_called()
@@ -291,6 +310,16 @@ class TestSAPTasks(FrappeTestCase):
 		)
 		frappe_mock.enqueue.assert_not_called()
 
+	@patch("emkan_insights.sap.tasks.synchronize_sap_data", return_value={"created": [], "failed": []})
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_configuration_fetch_passes_staging_only_to_each_row(self, frappe_mock, synchronize):
+		frappe_mock.get_all.side_effect = [[self._row()], ["SAP Item"]]
+
+		result = synchronize_sap_configuration("SAP - Company", fetch_only=True)
+
+		self.assertEqual(result["status"], "complete")
+		synchronize.assert_called_once_with("ROW-1", continue_on_sync_error=True, fetch_only=True)
+
 	@patch("emkan_insights.sap.tasks.synchronize_sap_data")
 	@patch("emkan_insights.sap.tasks.frappe")
 	def test_configuration_job_stops_after_one_mapping_fails(self, frappe_mock, synchronize):
@@ -301,7 +330,7 @@ class TestSAPTasks(FrappeTestCase):
 		with self.assertRaisesRegex(RuntimeError, "SAP unavailable"):
 			synchronize_sap_configuration("SAP - Company")
 
-		synchronize.assert_called_once_with("ROW-1", continue_on_sync_error=True)
+		synchronize.assert_called_once_with("ROW-1", continue_on_sync_error=True, fetch_only=False)
 
 	@patch("emkan_insights.sap.tasks.synchronize_sap_data")
 	@patch("emkan_insights.sap.tasks.frappe")
@@ -318,7 +347,8 @@ class TestSAPTasks(FrappeTestCase):
 		self.assertEqual(result["status"], "completed_with_errors")
 		self.assertEqual([item["status"] for item in result["results"]], ["sync_failed", "complete"])
 		self.assertEqual([call.kwargs for call in synchronize.call_args_list], [
-			{"continue_on_sync_error": True}, {"continue_on_sync_error": True},
+			{"continue_on_sync_error": True, "fetch_only": False},
+			{"continue_on_sync_error": True, "fetch_only": False},
 		])
 
 	@patch("emkan_insights.sap.tasks.synchronize_sap_data")
@@ -333,7 +363,7 @@ class TestSAPTasks(FrappeTestCase):
 		self.assertEqual(result["results"][0]["status"], "skipped")
 
 	@patch("emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.frappe")
-	def test_manual_synchronize_queues_one_combined_job(self, frappe_mock):
+	def test_row_fetch_queues_staging_only_job(self, frappe_mock):
 		frappe_mock.get_doc.return_value = self._row()
 
 		result = fetch_mapping("ROW-1")
@@ -341,6 +371,7 @@ class TestSAPTasks(FrappeTestCase):
 		self.assertEqual(result["status"], "queued")
 		self.assertIs(frappe_mock.enqueue.call_args.args[0], synchronize_sap_data)
 		self.assertEqual(frappe_mock.enqueue.call_args.kwargs["job_id"], _job_id("ROW-1"))
+		self.assertTrue(frappe_mock.enqueue.call_args.kwargs["fetch_only"])
 		self.assertNotIn("enqueue_after_commit", frappe_mock.enqueue.call_args.kwargs)
 
 	@patch("emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.frappe")
@@ -358,6 +389,7 @@ class TestSAPTasks(FrappeTestCase):
 		self.assertEqual(
 			frappe_mock.enqueue.call_args.kwargs["configuration_name"], configuration.name
 		)
+		self.assertTrue(frappe_mock.enqueue.call_args.kwargs["fetch_only"])
 		self.assertEqual(
 			frappe_mock.enqueue.call_args.kwargs["job_id"],
 			_configuration_synchronization_job_id(configuration.name),
@@ -371,6 +403,40 @@ class TestSAPTasks(FrappeTestCase):
 		frappe_mock.enqueue.return_value = None
 		self.assertEqual(fetch_configuration("SAP - Company")["status"], "already_queued")
 		self.assertNotIn("enqueue_after_commit", frappe_mock.enqueue.call_args.kwargs)
+
+	@patch("emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.frappe")
+	def test_fetch_and_sync_configuration_queues_combined_job(self, frappe_mock):
+		configuration = SimpleNamespace(name="SAP - Company", company="Company A")
+		frappe_mock.get_doc.return_value = configuration
+		frappe_mock.get_all.return_value = ["SAP Item"]
+		frappe_mock.db.exists.return_value = True
+
+		result = fetch_and_sync_configuration(configuration.name)
+
+		self.assertEqual(result, {"status": "queued", "company": "Company A"})
+		frappe_mock.has_permission.assert_called_once_with(
+			"External SAP Configuration", "write", doc=configuration, throw=True
+		)
+		self.assertIs(frappe_mock.enqueue.call_args.args[0], synchronize_sap_configuration)
+		self.assertFalse(frappe_mock.enqueue.call_args.kwargs["fetch_only"])
+		self.assertEqual(
+			frappe_mock.enqueue.call_args.kwargs["job_id"],
+			_configuration_synchronization_job_id(configuration.name),
+		)
+		self.assertTrue(frappe_mock.enqueue.call_args.kwargs["deduplicate"])
+
+	@patch("emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.frappe")
+	def test_fetch_and_sync_configuration_rejects_fetch_only_configuration(self, frappe_mock):
+		configuration = SimpleNamespace(name="SAP - Company", company="Company A")
+		frappe_mock.get_doc.return_value = configuration
+		frappe_mock.get_all.return_value = ["SAP GL Journal Detail"]
+		frappe_mock.db.exists.return_value = False
+		frappe_mock.ValidationError = frappe.ValidationError
+
+		with self.assertRaisesRegex(frappe.ValidationError, "All enabled mappings are fetch only"):
+			fetch_and_sync_configuration(configuration.name)
+
+		frappe_mock.enqueue.assert_not_called()
 
 	@patch("emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.frappe")
 	def test_manual_sync_reports_actual_job_status(self, frappe_mock):
@@ -407,7 +473,7 @@ class TestSAPTasks(FrappeTestCase):
 
 		result = sync_sap_data("ROW-1")
 
-		sync_mapping.assert_called_once_with("ROW-1")
+		sync_mapping.assert_called_once_with("ROW-1", remote_ids=None)
 		reconcile_deletions.assert_called_once_with("ROW-1")
 		self.assertEqual(result["deletion_reconciliation"]["deleted"], 1)
 		log = frappe_mock.log_error.call_args.kwargs

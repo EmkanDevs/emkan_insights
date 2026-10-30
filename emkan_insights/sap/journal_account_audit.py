@@ -6,7 +6,6 @@ from decimal import Decimal
 import frappe
 
 from emkan_insights.sap.services.client import SAPB1Client
-from emkan_insights.sap.services.exclusions import get_excluded_sap_id_prefixes, is_excluded_sap_id
 
 
 ACCOUNT_FIELDS = (
@@ -59,30 +58,9 @@ def fetch_unresolved_account_hierarchy(configuration_name: str) -> dict:
 	}
 
 
-def fetch_excluded_sap_accounts(configuration_name: str) -> dict:
-	"""Read all Chart of Accounts records excluded from ERP Account sync."""
-	configuration = frappe.get_doc("External SAP Configuration", configuration_name)
-	mapping = frappe.get_doc("SAP Doctype Mapping", "SAP Account")
-	prefixes = get_excluded_sap_id_prefixes(mapping)
-	client = _sap_client(configuration)
-	source = client.fetch_all("ChartOfAccounts")
-	excluded = [
-		{field: account.get(field) for field in ACCOUNT_FIELDS}
-		for account in source if is_excluded_sap_id(account.get("Code"), prefixes)
-	]
-	return {
-		"company": configuration.company,
-		"source_accounts": len(source),
-		"excluded_accounts": len(excluded),
-		"accounts": excluded,
-	}
-
-
 def audit_journal_accounts(configuration_name: str) -> dict:
 	configuration = frappe.get_doc("External SAP Configuration", configuration_name)
 	company = configuration.company
-	account_mapping = frappe.get_doc("SAP Doctype Mapping", "SAP Account")
-	excluded_prefixes = get_excluded_sap_id_prefixes(account_mapping)
 	accounts = frappe.get_all(
 		"Account",
 		filters={"company": company},
@@ -160,7 +138,6 @@ def audit_journal_accounts(configuration_name: str) -> dict:
 			"debit_in_account_currency": str(entry["account_debit"]),
 			"credit_in_account_currency": str(entry["account_credit"]),
 			"reason": "ambiguous_account_number" if numbers.get(code) else "missing_account_number",
-			"excluded_from_account_mapping": is_excluded_sap_id(code, excluded_prefixes),
 			"staged_account": code in staged_ids,
 		} for code, entry in sorted(unknown.items())],
 	}
