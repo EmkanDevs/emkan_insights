@@ -15,7 +15,7 @@ def execute():
 		"label": "SAP Journal Entry ID",
 		"fieldtype": "Data",
 		"insert_after": "user_remark",
-		"unique": 1,
+		"unique": 0,
 		"read_only": 1,
 		"no_copy": 1,
 	}).insert(ignore_permissions=True)

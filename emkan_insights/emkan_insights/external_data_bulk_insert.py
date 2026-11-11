@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from functools import lru_cache
+from hashlib import sha256
 
 import frappe
 from frappe import _
@@ -15,6 +16,7 @@ from emkan_insights.emkan_insights.import_field_rules import apply_field_rules, 
 PAGE_SIZE = 500
 BULK_INSERT_LOCK_TTL = 7200
 ACCOUNT_EXCLUDED_FIELDS = {"lft", "rgt", "old_parent"}
+ACCOUNT_ROOT_TYPES = frozenset({"Asset", "Liability", "Equity", "Income", "Expense"})
 
 
 @dataclass(frozen=True)
@@ -138,6 +140,11 @@ def transform_row(
 
 	if should_prefix_name:
 		result["name"] = add_prefix(result.get("name"), prefix)
+		if doctype == "Item":
+			result["item_code"] = add_prefix(result.get("item_code"), prefix)
+		elif doctype == "Item Group" and result.get("item_group_name"):
+			name = result["item_group_name"]
+			result["item_group_name"] = name if name.endswith(f" - {prefix}") else f"{name} - {prefix}"
 
 	if row.get("parenttype") in abbr_doctypes:
 		result["parent"] = add_prefix(result.get("parent"), prefix)
@@ -149,6 +156,8 @@ def transform_row(
 
 		linked_doctype = row.get(linked["options_field"]) if isinstance(linked, dict) else linked
 		if linked_doctype in abbr_doctypes:
+			if _is_company_tree_root_link(doctype, fieldname, value, prefix, row):
+				continue
 			result[fieldname] = add_prefix(value, prefix)
 
 	return result
@@ -160,6 +169,14 @@ def add_prefix(value, prefix: str):
 
 	value = str(value)
 	return value if value.startswith(f"{prefix}-") else f"{prefix}-{value}"
+
+
+def _is_company_tree_root_link(doctype, fieldname, value, prefix, row):
+	if doctype == "Account" and fieldname == "parent_account":
+		return value in {f"{root_type} - {prefix}" for root_type in ACCOUNT_ROOT_TYPES}
+	if doctype == "Cost Center" and fieldname == "parent_cost_center":
+		return bool(row.get("company")) and value == f"{row['company']} - {prefix}"
+	return False
 
 
 @lru_cache(maxsize=128)
@@ -330,7 +347,9 @@ def _mark_source_rows_synced(source_doctype: str, source_rows: list) -> None:
 	).run()
 
 
-def _prepare_document_tree(context: BulkInsertContext, raw: dict) -> dict[str, list[dict]]:
+def _prepare_document_tree(
+	context: BulkInsertContext, raw: dict, *, prefix_name: bool | None = None
+) -> dict[str, list[dict]]:
 	now = now_datetime()
 	parent = _prepare_standard_fields(raw, context.requested_by, now)
 	parent = transform_row(
@@ -338,6 +357,7 @@ def _prepare_document_tree(context: BulkInsertContext, raw: dict) -> dict[str, l
 		apply_field_rules(parent, context.field_rules or {}),
 		context.company_abbr,
 		context.abbr_doctypes,
+		prefix_name=prefix_name,
 	)
 	rows_by_doctype = {context.target_doctype: [parent]}
 
@@ -347,12 +367,17 @@ def _prepare_document_tree(context: BulkInsertContext, raw: dict) -> dict[str, l
 			if not isinstance(child, dict):
 				continue
 			child = _prepare_standard_fields(child, context.requested_by, now)
-			child.setdefault("name", frappe.generate_hash(length=10))
+			if context.target_doctype == "Material Request" and table_field.fieldname == "items":
+				stable_key = f"{parent['name']}:{table_field.fieldname}:{child.get('idx') or index}"
+				child.setdefault("name", sha256(stable_key.encode()).hexdigest()[:10])
+			else:
+				child.setdefault("name", frappe.generate_hash(length=10))
 			child.update({
 				"parent": parent["name"],
 				"parenttype": context.target_doctype,
 				"parentfield": table_field.fieldname,
 				"idx": child.get("idx") or index,
+				"docstatus": parent["docstatus"],
 			})
 			child = transform_row(
 				table_field.options,
@@ -391,6 +416,7 @@ def _update_document_trees(parent_doctype: str, documents: list[dict]) -> int:
 		return 0
 
 	parent_columns = set(_get_import_columns(parent_doctype))
+	non_nullable_defaults = _get_non_nullable_defaults(parent_doctype)
 	updates = {}
 	parent_names = []
 	for tree in documents:
@@ -400,6 +426,7 @@ def _update_document_trees(parent_doctype: str, documents: list[dict]) -> int:
 			fieldname: value
 			for fieldname, value in parent.items()
 			if fieldname != "name" and fieldname in parent_columns
+			and not (value is None and fieldname in non_nullable_defaults)
 		}
 
 	frappe.db.bulk_update(

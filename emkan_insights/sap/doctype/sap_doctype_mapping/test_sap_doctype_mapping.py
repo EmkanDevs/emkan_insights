@@ -15,10 +15,35 @@ from emkan_insights.sap.services import _mark_completed, _process_record
 from emkan_insights.sap.services.client import SAPB1Client
 from emkan_insights.sap.services.fetch import _flatten_records, _query_params
 from emkan_insights.sap.services.mapper import Mapper, normalize_mapping
+from emkan_insights.sap.services.transforms import sap_account_parent
 from emkan_insights.sap.services.staging import StagingWriter
 
 
 class TestSAPDoctypeMapping(FrappeTestCase):
+	def test_sap_account_parent_uses_the_source_parent_key(self):
+		catalog_path = Path(frappe.get_app_path("emkan_insights", "sap", "mapping_catalog.json"))
+		mapping = next(
+			entry for entry in json.loads(catalog_path.read_text(encoding="utf-8"))
+			if entry["name"] == "SAP Account"
+		)
+		rule = mapping["field_mapping"]["parent_account"]
+		with patch(
+			"emkan_insights.sap.services.transforms.lookup",
+			return_value="ERPNext parent",
+		) as lookup:
+			self.assertIsNone(sap_account_parent(None, rule, {
+				"source": {"Code": "100000000000000"}, "company": "Samif",
+			}))
+			lookup.assert_not_called()
+			self.assertEqual(sap_account_parent("911000", rule, {
+				"source": {"Code": "911400", "FatherAccountKey": "911000"}, "company": "Samif",
+			}), "ERPNext parent")
+			self.assertEqual(sap_account_parent("1181100", rule, {
+				"source": {"Code": "profit", "FatherAccountKey": "1181100"}, "company": "Samif",
+			}), "ERPNext parent")
+			self.assertEqual(lookup.call_count, 2)
+			self.assertEqual([call.args[0] for call in lookup.call_args_list], ["911000", "1181100"])
+
 	def test_sap_document_status_maps_to_erpnext_docstatus(self):
 		catalog_path = Path(frappe.get_app_path("emkan_insights", "sap", "mapping_catalog.json"))
 		mapping = next(
@@ -34,6 +59,27 @@ class TestSAPDoctypeMapping(FrappeTestCase):
 		self.assertEqual(mapper.map({"Cancelled": "tNO", "DocumentStatus": "bost_Open"})["docstatus"], 1)
 		self.assertEqual(mapper.map({"Cancelled": "tNO", "DocumentStatus": "bost_Close"})["docstatus"], 1)
 		self.assertEqual(mapper.map({"Cancelled": "tYES", "DocumentStatus": "bost_Close"})["docstatus"], 2)
+
+	def test_sap_material_request_status_ignores_submitted_flag(self):
+		catalog_path = Path(frappe.get_app_path("emkan_insights", "sap", "mapping_catalog.json"))
+		mapping = next(
+			entry for entry in json.loads(catalog_path.read_text(encoding="utf-8"))
+			if entry["name"] == "SAP Material Request"
+		)
+		fields = mapping["field_mapping"]
+		mapper = Mapper(SimpleNamespace(
+			erp_doctype="Material Request",
+			field_mapping={"docstatus": fields["docstatus"], "status": fields["status"]},
+		))
+		active = mapper.map({"Cancelled": "tNO", "Submitted": "tNO", "DocumentStatus": "bost_Open"})
+		self.assertEqual(
+			(active["docstatus"], active["status"]),
+			(1, "Submitted"),
+		)
+		self.assertEqual(
+			mapper.map({"Cancelled": "tYES", "Submitted": "tNO", "DocumentStatus": "bost_Close"})["docstatus"],
+			2,
+		)
 
 	def test_account_name_combines_sap_name_and_code(self):
 		catalog_path = Path(frappe.get_app_path("emkan_insights", "sap", "mapping_catalog.json"))

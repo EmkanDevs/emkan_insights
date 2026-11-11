@@ -1,8 +1,9 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import nowdate
 
 from emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration import (
 	fetch_and_sync_configuration,
@@ -11,6 +12,7 @@ from emkan_insights.sap.doctype.external_sap_configuration.external_sap_configur
 	queue_sync_mapping,
 )
 from emkan_insights.sap.tasks import (
+	_ensure_company_cost_centers,
 	_job_id,
 	_configuration_synchronization_job_id,
 	enqueue_sap_synchronization,
@@ -19,11 +21,96 @@ from emkan_insights.sap.tasks import (
 	synchronize_sap_configurations,
 	synchronize_sap_configuration,
 	synchronize_sap_data,
+	synchronize_sap_doctype,
 	sync_sap_data,
 )
 
 
 class TestSAPTasks(FrappeTestCase):
+	@patch("emkan_insights.patches.v0_0_1.create_sap_company_account_roots.execute")
+	@patch("emkan_insights.patches.v0_0_1.create_sap_root_cost_centers.execute")
+	@patch("emkan_insights.patches.v0_0_1.create_sap_default_cost_centers.execute")
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_cost_center_setup_does_not_create_accounts(
+		self, frappe_mock, default_cost_centers, root_cost_centers, account_roots
+	):
+		_ensure_company_cost_centers()
+
+		account_roots.assert_not_called()
+		default_cost_centers.assert_called_once_with()
+		root_cost_centers.assert_called_once_with()
+		frappe_mock.db.commit.assert_called_once_with()
+
+	@patch("emkan_insights.sap.tasks._ordered_mapping_rows", side_effect=lambda rows: rows)
+	@patch("emkan_insights.sap.tasks.synchronize_sap_data")
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_doctype_sync_runs_only_selected_mapping_rows(self, frappe_mock, sync_row, _ordered_rows):
+		frappe_mock.get_all.side_effect = [
+			["SAP Stock Entry Receipt", "SAP Stock Entry Issue"],
+			[
+				SimpleNamespace(name="ROW-1", parent="Emkan", sap_mapping="SAP Stock Entry Receipt"),
+				SimpleNamespace(name="ROW-2", parent="Emkan", sap_mapping="SAP Stock Entry Issue"),
+			],
+		]
+		sync_row.return_value = {"success": ["65"], "updated": ["65"], "failed": []}
+
+		result = synchronize_sap_doctype(
+			"Stock Entry", "Emkan", fetch_only=True,
+			from_date="2025-01-01", to_date="2026-10-31",
+		)
+
+		self.assertEqual(result["configuration"], "Emkan")
+		self.assertEqual([row["mapping"] for row in result["results"]], [
+			"SAP Stock Entry Receipt", "SAP Stock Entry Issue",
+		])
+		self.assertEqual(result["results"][0]["fetched"], 1)
+		self.assertEqual(sync_row.call_args_list, [
+			call("ROW-1", fetch_only=True, from_date="2025-01-01", to_date="2026-10-31"),
+			call("ROW-2", fetch_only=True, from_date="2025-01-01", to_date="2026-10-31"),
+		])
+
+	@patch("emkan_insights.sap.tasks.get_mapped_data", return_value={"success": ["issue:37"], "failed": []})
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_explicit_date_window_is_passed_to_fetch(self, frappe_mock, get_mapped_data):
+		row = self._row()
+		mapping = SimpleNamespace(fetch_only=True)
+		frappe_mock.get_doc.side_effect = lambda doctype, name: (
+			mapping if doctype == "SAP Doctype Mapping" else row
+		)
+		frappe_mock.cache.return_value.set.return_value = True
+
+		synchronize_sap_data(
+			row.name, fetch_only=True, from_date="2025-01-01", to_date="2026-10-31"
+		)
+
+		get_mapped_data.assert_called_once_with(
+			row.sap_mapping,
+			configuration_name=row.parent,
+			row_name=row.name,
+			from_date="2025-01-01",
+			to_date="2026-10-31",
+		)
+
+	@patch("emkan_insights.sap.tasks._has_empty_staging", return_value=True)
+	@patch("emkan_insights.sap.tasks._has_staged_mapping_errors", return_value=False)
+	@patch("emkan_insights.sap.tasks.get_mapped_data", return_value={"failed": []})
+	@patch("emkan_insights.sap.tasks.frappe")
+	def test_empty_staging_with_cursor_fetches_history(
+		self, frappe_mock, get_mapped_data, _staged_errors, _empty_staging
+	):
+		row = self._row()
+		row.last_sync = "2026-11-03 12:00:00"
+		mapping = SimpleNamespace(full_snapshot_sync=0, fetch_only=True)
+		frappe_mock.get_doc.side_effect = lambda doctype, name: (
+			mapping if doctype == "SAP Doctype Mapping" else row
+		)
+		frappe_mock.cache.return_value.set.return_value = True
+
+		synchronize_sap_data(row.name, fetch_only=True)
+
+		self.assertEqual(get_mapped_data.call_args.kwargs["from_date"], "2000-01-01")
+		self.assertEqual(get_mapped_data.call_args.kwargs["to_date"], nowdate())
+
 	@patch("emkan_insights.sap.tasks.synchronize_sap_data", return_value={"created": ["journal:42"]})
 	@patch("emkan_insights.sap.tasks.frappe")
 	def test_review_configuration_fetches_only_enabled_fetch_only_rows(self, frappe_mock, fetch_row):

@@ -57,6 +57,21 @@ class TestExternalDataBulkInsert(FrappeTestCase):
 		result = _prepare_document_tree(context, {"name": "ITEM-1", "weight_per_unit": None})
 		self.assertEqual(result["Item"][0]["weight_per_unit"], 0)
 
+	def test_material_request_item_names_survive_resync_and_inherit_docstatus(self):
+		context = BulkInsertContext(
+			configuration="Remote Site",
+			source_doctype="External Material Request",
+			target_doctype="Material Request",
+			company_abbr="E",
+			abbr_doctypes=frozenset({"Material Request"}),
+			requested_by="Administrator",
+		)
+		raw = {"name": "405", "docstatus": 1, "items": [{"item_code": "ITEM-1", "idx": 1}]}
+		first = _prepare_document_tree(context, raw)
+		second = _prepare_document_tree(context, raw)
+		self.assertEqual(first["Material Request Item"][0]["name"], second["Material Request Item"][0]["name"])
+		self.assertEqual(first["Material Request Item"][0]["docstatus"], 1)
+
 	def test_temporary_ledger_rows_are_not_ready_for_import(self):
 		self.assertTrue(is_deferred_naming_pending("GL Entry", {"to_rename": 1}))
 		self.assertTrue(is_deferred_naming_pending("Stock Ledger Entry", {"to_rename": "1"}))
@@ -277,6 +292,28 @@ class TestExternalDataBulkInsert(FrappeTestCase):
 
 		self.assertEqual(bulk_insert.call_args.kwargs["values"], [("ITEM-1", "0.000000000")])
 
+	def test_bulk_update_preserves_non_nullable_field_when_source_is_null(self):
+		documents = [{"Supplier Quotation": [{
+			"name": "SQ-1", "title": "Updated", "additional_discount_percentage": None,
+		}]}]
+		with (
+			patch.object(frappe.db, "get_table_columns", return_value=[
+				"name", "title", "additional_discount_percentage",
+			]),
+			patch.object(frappe.db, "sql", return_value=[_dict(
+				COLUMN_NAME="additional_discount_percentage", COLUMN_DEFAULT="0.000000000",
+			)]),
+			patch.object(frappe.db, "bulk_update") as bulk_update,
+			patch.object(frappe, "get_meta") as get_meta,
+		):
+			get_meta.return_value.get_table_fields.return_value = []
+			_update_document_trees("Supplier Quotation", documents)
+
+		bulk_update.assert_called_once_with(
+			"Supplier Quotation", {"SQ-1": {"title": "Updated"}},
+			chunk_size=500, update_modified=False,
+		)
+
 	def test_account_bulk_insert_excludes_nested_set_fields(self):
 		documents = [{
 			"Account": [{
@@ -412,6 +449,64 @@ class TestExternalDataBulkInsert(FrappeTestCase):
 
 		self.assertEqual(result["name"], "GLE-0001")
 		self.assertEqual(result["account"], "Debtors - CMP")
+
+	def test_transform_row_scopes_item_and_group_unique_values(self):
+		item = transform_row(
+			"Item", {"name": "SR000001", "item_code": "SR000001"},
+			"PV", {"Item", "Item Group"}, link_fields={},
+		)
+		group = transform_row(
+			"Item Group", {"name": "216", "item_group_name": "Civil Work"},
+			"PV", {"Item", "Item Group"}, link_fields={},
+		)
+		self.assertEqual((item["name"], item["item_code"]), ("PV-SR000001", "PV-SR000001"))
+		self.assertEqual((group["name"], group["item_group_name"]), ("PV-216", "Civil Work - PV"))
+
+	def test_transform_row_keeps_company_account_root_parent(self):
+		for root_type in ("Asset", "Liability", "Equity", "Income", "Expense"):
+			with self.subTest(root_type=root_type):
+				result = transform_row(
+					"Account",
+					{"name": "Branch", "parent_account": f"{root_type} - S"},
+					"S",
+					{"Account"},
+					link_fields={"parent_account": "Account"},
+				)
+				self.assertEqual(result["name"], "S-Branch")
+				self.assertEqual(result["parent_account"], f"{root_type} - S")
+
+		result = transform_row(
+			"Account",
+			{"name": "Child", "parent_account": "Branch"},
+			"S",
+			{"Account"},
+			link_fields={"parent_account": "Account"},
+		)
+		self.assertEqual(result["parent_account"], "S-Branch")
+
+	def test_transform_row_keeps_company_cost_center_root_parent(self):
+		result = transform_row(
+			"Cost Center",
+			{
+				"name": "Finance",
+				"company": "Samif",
+				"parent_cost_center": "Samif - S",
+			},
+			"S",
+			{"Cost Center"},
+			link_fields={"parent_cost_center": "Cost Center"},
+		)
+		self.assertEqual(result["name"], "S-Finance")
+		self.assertEqual(result["parent_cost_center"], "Samif - S")
+
+		child = transform_row(
+			"Cost Center",
+			{"name": "Payroll", "company": "Samif", "parent_cost_center": "Finance"},
+			"S",
+			{"Cost Center"},
+			link_fields={"parent_cost_center": "Cost Center"},
+		)
+		self.assertEqual(child["parent_cost_center"], "S-Finance")
 
 	def test_standard_field_preparation_preserves_source_timestamps(self):
 		row = {

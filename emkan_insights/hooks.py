@@ -8,6 +8,7 @@ app_license = "mit"
 # Install the sync data-field validation bypass (Phone/Email/Name/URL/IBAN)
 # so external sync jobs are not aborted by malformed remote values.
 from emkan_insights.emkan_insights import sync_validation  # noqa: E402,F401
+from emkan_insights.sap.payment_dates import install as install_sap_payment_dates  # noqa: E402
 from erpnext.controllers import accounts_controller as _accounts_controller  # noqa: E402
 
 from emkan_insights.emkan_insights.override.accounts_controller import (  # noqa: E402
@@ -21,6 +22,7 @@ _accounts_controller.AccountsController.validate_company_linked_addresses = (
 _accounts_controller.AccountsController.validate_party_address_and_contact = (
 	custom_validate_party_address_and_contact
 )
+install_sap_payment_dates()
 
 # Apps
 # ------------------
@@ -100,6 +102,7 @@ doctype_js = {"Company" : "public/js/company.js"}
 
 # before_install = "emkan_insights.install.before_install"
 # after_install = "emkan_insights.install.after_install"
+after_migrate = "emkan_insights.sap.catalog.ensure_catalog_mappings"
 
 # Uninstallation
 # ------------

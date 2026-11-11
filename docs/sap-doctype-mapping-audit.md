@@ -411,20 +411,27 @@ The old `JobTitle` copy rule produced 39 broken Designation links. The new rule 
 ## SAP Fixed Asset
 
 - ERP DocType: `Asset`. SAP endpoint: `Items`.
-- Live state: disabled. Sample: 3 parent rows. Response: `ok`.
+- Live state: enabled on `sapinsight.emkan-dev.com`. Sample: 3 parent rows. Response: `ok`.
 - SAP ID: `ItemCode`. Child source: `none`.
 - Filter: `ItemType eq 'itFixedAssets'`.
-- Sync: full snapshot; fetch only: no; parent row limit: none.
-- Required ERP fields without a direct mapping: `location`. Check site row rules and defaults.
+- Sync: incremental Item fetch; fetch only: no; parent row limit: none.
+- The sync creates a Location with the company name when it does not exist.
 
 | ERP field | SAP source | Transform | Sample status |
 | --- | --- | --- | --- |
 | `company` | `configuration context` | `context` | Derived |
 | `item_code` | `ItemCode` | `copy` | Value seen |
-| `asset_name` | `ItemName` | `copy` | Value seen |
-| `purchase_date` | `CapitalizationDate` | `sap_date` | Value seen |
+| `asset_name` | ERPNext `Item.item_name` | `lookup` | Value seen |
+| `asset_category` | `AssetClass` | `lookup` in ERPNext Asset Category | Value seen |
+| `purchase_date` | `CapitalizationDate`, then `CreateDate` | `first_sap_date` | Value seen |
+| `gross_purchase_amount` | Posted SAP `AssetCapitalization` lines | Reconcile `TotalLC` by `AssetNumber` | Value seen |
+| `custom_sap_asset_status` | `AssetStatus` | `copy` | New, Active, or Inactive |
+| `status` | `AssetStatus` | New → Draft; Active → Submitted; Inactive → Scrapped | Value seen |
+| `docstatus` | `AssetStatus` | New and Inactive → draft; Active → submit when valid | Value seen |
 
-In-memory ERPNext validation of the filtered SAP sample failed because `gross_purchase_amount` is mandatory. The SAP Item response did not provide a verified acquisition amount or a usable ERP Asset location. This mapping remains disabled until those sources are identified and checked; a zero amount is not assumed.
+The Item `AvgStdPrice` is zero for all 1,131 fixed Asset Items on the SAP site. The Asset sync gets costs from posted SAP capitalization lines and subtracts posted capitalization credit memos. It ignores cancelled documents and preserves manual Asset amounts. The sync stores the SAP amount and source document IDs on each updated Asset. It leaves an Asset at zero when SAP has no posted capitalization amount. It also leaves an Asset unchanged if ERPNext validation rejects its disabled Item.
+
+SAP status controls the mapped ERPNext status during sync. ERPNext submission runs through the Asset controller only for active Assets with a verified positive acquisition amount and valid category and Item. An Active Asset without that amount shows the mapped `Submitted` status but retains draft `docstatus` until it can pass ERPNext validation. SAP Inactive defaults to `Scrapped` as requested. A posted SAP `AssetRetirement` with `adtSales` changes the mapped status to `Sold`; `adtScrapping` confirms `Scrapped`. These statuses mirror source transactions and do not create disposal journal entries. The source status is also stored separately so users can distinguish the SAP state from ERPNext document state.
 
 ## SAP GL Journal Detail
 

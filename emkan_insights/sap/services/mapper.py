@@ -77,14 +77,14 @@ class Mapper:
 		for target_field, rule in mapping.items():
 			try:
 				result[target_field] = self._map_field(
-					source, target_field, rule, parent_source=parent_source
+					source, target_field, rule, parent_source=parent_source, mapped_fields=result
 				)
 			except frappe.ValidationError as error:
 				self.mapping_errors.append({"field": target_field, "message": str(error)})
 				result[target_field] = [] if self._is_child_rule(rule) else None
 		return result
 
-	def _map_field(self, source, target_field, rule, *, parent_source=None):
+	def _map_field(self, source, target_field, rule, *, parent_source=None, mapped_fields=None):
 		if isinstance(rule, str):
 			return source.get(rule)
 		if self._is_child_rule(rule):
@@ -94,7 +94,10 @@ class Mapper:
 		mapped_value = apply_transform(
 			value,
 			rule,
-			{**self.context, "source": source, "parent_source": parent_source, "target_field": target_field},
+			{
+				**self.context, "source": source, "parent_source": parent_source,
+				"target_field": target_field, "mapped_fields": mapped_fields,
+			},
 		)
 		return rule.get("default") if mapped_value in (None, "") and "default" in rule else mapped_value
 
@@ -198,6 +201,9 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"sap_bool_not",
 		"lookup",
 		"sap_account_parent",
+		"sap_account_type",
+		"sap_account_root_type",
+		"sap_account_report_type",
 		"company_root_cost_center",
 		"matching_selling_price_list",
 		"sap_sales_tax_rows",
@@ -219,6 +225,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"conditional_value",
 		"collection_value_map",
 		"first_value",
+		"first_sap_date",
 		"sum_fields",
 		"join_fields",
 		"truncate",
@@ -230,6 +237,11 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"journal_staged_voucher",
 		"journal_against",
 		"staged_document",
+		"payment_allocation_reference",
+		"sap_project_link",
+		"purchase_order_request_link",
+		"purchase_invoice_receipt_link",
+		"stock_entry_voucher",
 		"payment_ledger_amount",
 		"sap_opportunity_party",
 	}:
@@ -274,6 +286,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"constant",
 		"context",
 		"first_value",
+		"first_sap_date",
 		"join_fields",
 		"sum_fields",
 		"payment_method_account",
@@ -283,6 +296,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"local_payment_value",
 		"item_conversion_factor",
 		"company_root_cost_center",
+		"sap_account_report_type",
 		"matching_selling_price_list",
 		"sap_sales_tax_rows",
 		"collection_value_map",

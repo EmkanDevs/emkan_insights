@@ -8,9 +8,14 @@
     "erp_doctype": "Account",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "account_name": {
@@ -41,32 +46,7 @@
       },
       "parent_account": {
         "fieldname": "FatherAccountKey",
-        "transform": "sap_account_parent",
-        "transform_config": {
-          "root_type_by_code": {
-            "100000000000000": "Asset",
-            "200000000000000": "Liability",
-            "300000000000000": "Equity",
-            "400000000000000": "Income",
-            "500000000000000": "Expense",
-            "600000000000000": "Expense",
-            "700000000000000": "Expense",
-            "7100000": "Expense",
-            "7200000": "Equity",
-            "7300000": "Expense",
-            "7400000": "Expense",
-            "7800000": "Income",
-            "7900000": "Expense",
-            "800000000000000": "Expense",
-            "900000000000000": "Asset",
-            "911400": "Equity",
-            "A00000000000000": "Equity",
-            "profit": "Equity"
-          },
-          "parent_code_overrides": {
-            "2144110": "2144000"
-          }
-        }
+        "transform": "sap_account_parent"
       },
       "is_group": {
         "fieldname": "ActiveAccount",
@@ -109,270 +89,66 @@
           "strict": true
         }
       },
-      "account_currency": "AcctCurrency",
-      "account_type": {
-        "fieldname": "Code",
-        "transform": "conditional_value",
+      "account_currency": {
+        "fieldname": "AcctCurrency",
+        "transform": "value_map",
         "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Code": "1131101"
-              },
-              "value": "Receivable"
-            },
-            {
-              "when": {
-                "Code": "1131105"
-              },
-              "value": "Receivable"
-            },
-            {
-              "when": {
-                "Code": "2131101"
-              },
-              "value": "Payable"
-            },
-            {
-              "when": {
-                "Code": "2131102"
-              },
-              "value": "Payable"
-            },
-            {
-              "when": {
-                "Code": {
-                  "in": [
-                    "7211101",
-                    "911400",
-                    "profit"
-                  ]
-                }
-              },
-              "value": "Equity"
-            },
-            {
-              "when": {
-                "Code": {
-                  "in": [
-                    "911100",
-                    "911200",
-                    "911300"
-                  ]
-                }
-              },
-              "value": "Temporary"
-            },
-            {
-              "when": {
-                "AccountType": "at_Expenses"
-              },
-              "value": "Expense Account"
-            },
-            {
-              "when": {
-                "AccountType": "at_Revenues"
-              },
-              "value": "Income Account"
-            }
-          ],
-          "default": null
+          "mapping": {
+            "##": null
+          }
         }
       },
+      "account_type": {
+        "fieldname": "AccountType",
+        "transform": "sap_account_type"
+      },
       "root_type": {
-        "fieldname": "Code",
-        "transform": "conditional_value",
+        "fieldname": "AccountLevel",
+        "transform": "sap_account_root_type",
         "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Code": "profit"
-              },
-              "value": "Equity"
+          "levels": {
+            "1": {
+              "Assets": "Asset",
+              "Liabilities": "Liability",
+              "Equity": "Equity",
+              "Capital and Reserves": "Equity",
+              "Revenues": "Income",
+              "Turnover": "Income",
+              "Cost of Sales": "Expense",
+              "Expenses": "Expense",
+              "Operating Costs": "Expense",
+              "Non-Operating Income and Expenditure": "Expense",
+              "Taxation and Extraordinary Items": "Expense",
+              "Transition Account": "Expense",
+              "Transition": "Asset",
+              "#10": "Equity",
+              "#9": "Asset"
             },
-            {
-              "when": {
-                "Code": "911400"
-              },
-              "value": "Equity"
-            },
-            {
-              "when": {
-                "AccountType": "at_Revenues"
-              },
-              "value": "Income"
-            },
-            {
-              "when": {
-                "AccountType": "at_Expenses"
-              },
-              "value": "Expense"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "78"
-                }
-              },
-              "value": "Income"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "72"
-                }
-              },
-              "value": "Equity"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": [
-                    "71",
-                    "73",
-                    "74",
-                    "79"
-                  ]
-                }
-              },
-              "value": "Expense"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "1"
-                }
-              },
-              "value": "Asset"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "2"
-                }
-              },
-              "value": "Liability"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "3"
-                }
-              },
-              "value": "Equity"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "4"
-                }
-              },
-              "value": "Income"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": [
-                    "5",
-                    "6",
-                    "7",
-                    "8"
-                  ]
-                }
-              },
-              "value": "Expense"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "9"
-                }
-              },
-              "value": "Asset"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "A"
-                }
-              },
-              "value": "Equity"
-            }
-          ],
-          "strict": true
+            "2": "Liability",
+            "3": "Equity",
+            "4": "Income",
+            "5": "Expense",
+            "6": "Expense",
+            "7": "Income",
+            "8": "Expense",
+            "9": "Expense",
+            "10": "Expense"
+          }
         }
       },
       "report_type": {
-        "fieldname": "Code",
-        "transform": "conditional_value",
+        "transform": "sap_account_report_type",
         "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Code": "profit"
-              },
-              "value": "Balance Sheet"
-            },
-            {
-              "when": {
-                "Code": "911400"
-              },
-              "value": "Balance Sheet"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": "72"
-                }
-              },
-              "value": "Balance Sheet"
-            },
-            {
-              "when": {
-                "AccountType": {
-                  "in": [
-                    "at_Revenues",
-                    "at_Expenses"
-                  ]
-                }
-              },
-              "value": "Profit and Loss"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": [
-                    "1",
-                    "2",
-                    "3",
-                    "9",
-                    "A"
-                  ]
-                }
-              },
-              "value": "Balance Sheet"
-            },
-            {
-              "when": {
-                "Code": {
-                  "starts_with": [
-                    "4",
-                    "5",
-                    "6",
-                    "7",
-                    "8"
-                  ]
-                }
-              },
-              "value": "Profit and Loss"
-            }
-          ],
-          "strict": true
+          "root_types": {
+            "Asset": "Balance Sheet",
+            "Liability": "Balance Sheet",
+            "Equity": "Balance Sheet",
+            "Income": "Profit and Loss",
+            "Expense": "Profit and Loss"
+          }
         }
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Asset Category",
@@ -383,9 +159,14 @@
     "erp_doctype": "Asset Category",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "asset_category_name": "Description",
@@ -488,9 +269,7 @@
           "frequency_of_depreciation"
         ]
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Bank",
@@ -501,16 +280,19 @@
     "erp_doctype": "Bank",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "BankCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "bank_name": "BankName",
       "swift_number": "SwiftNo"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Contact",
@@ -521,9 +303,14 @@
     "erp_doctype": "Contact",
     "sap_filter": null,
     "source_array_field": "ContactEmployees",
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "InternalCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "first_name": {
@@ -556,9 +343,7 @@
           "normalize": "lower"
         }
       }
-    },
-    "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Cost Center",
@@ -569,9 +354,14 @@
     "erp_doctype": "Cost Center",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "CenterCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "cost_center_name": {
@@ -614,9 +404,7 @@
           "normalize": "lower"
         }
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Customer",
@@ -627,9 +415,14 @@
     "erp_doctype": "Customer",
     "sap_filter": "CardType eq 'cCustomer'",
     "source_array_field": null,
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "CardCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "customer_name": "CardName",
@@ -706,9 +499,7 @@
       },
       "mobile_no": "Cellular",
       "email_id": "EmailAddress"
-    },
-    "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Customer Group",
@@ -719,15 +510,18 @@
     "erp_doctype": "Customer Group",
     "sap_filter": "Type eq 'bbpgt_CustomerGroup'",
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "customer_group_name": "Name"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Employee",
@@ -738,9 +532,14 @@
     "erp_doctype": "Employee",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "EmployeeID",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "first_name": "FirstName",
@@ -827,8 +626,6 @@
       },
       "place_of_issue": "PassportIssuer",
       "salary_currency": "SalaryCurrency",
-      "health_insurance_provider": "HealthInsuranceName",
-      "health_insurance_no": "HealthInsuranceCode",
       "bank_name": {
         "fieldname": "BankCode",
         "transform": "sap_lookup",
@@ -842,10 +639,10 @@
           ]
         }
       },
-      "bank_ac_no": "BankAccount"
-    },
-    "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+      "bank_ac_no": "BankAccount",
+      "health_insurance_provider": "HealthInsuranceName",
+      "health_insurance_no": "HealthInsuranceCode"
+    }
   },
   {
     "name": "SAP Item",
@@ -856,9 +653,14 @@
     "erp_doctype": "Item",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "ItemCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "item_code": "ItemCode",
@@ -1215,9 +1017,131 @@
           "default": null
         }
       }
-    },
+    }
+  },
+  {
+    "name": "SAP Fixed Asset",
+    "mapping_name": "SAP Fixed Asset",
+    "enabled": 1,
+    "sap_doctype": "Items",
+    "external_doctype": "External Asset",
+    "erp_doctype": "Asset",
+    "sap_filter": "ItemType eq 'itFixedAssets'",
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
     "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+    "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "ItemCode",
+    "sap_id_prefix": "",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "location": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "item_code": "ItemCode",
+      "asset_name": {
+        "fieldname": "ItemCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Item",
+          "field": "name",
+          "return_field": "item_name",
+          "required": true
+        }
+      },
+      "asset_category": {
+        "fieldname": "AssetClass",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Asset Category",
+          "field": "name",
+          "required": false
+        }
+      },
+      "custom_sap_asset_status": "AssetStatus",
+      "status": {
+        "fieldname": "AssetStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "New": "Draft",
+            "Active": "Submitted",
+            "Inactive": "Scrapped"
+          },
+          "strict": true
+        }
+      },
+      "gross_purchase_amount": {
+        "fieldname": "ItemCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Item",
+          "field": "name",
+          "return_field": "valuation_rate",
+          "required": true
+        }
+      },
+      "purchase_date": {
+        "transform": "first_sap_date",
+        "transform_config": {
+          "fields": [
+            "CapitalizationDate",
+            "CreateDate"
+          ]
+        }
+      },
+      "available_for_use_date": {
+        "transform": "first_sap_date",
+        "transform_config": {
+          "fields": [
+            "CapitalizationDate",
+            "CreateDate"
+          ]
+        }
+      },
+      "asset_quantity": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "is_existing_asset": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "calculate_depreciation": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 0
+        }
+      },
+      "docstatus": {
+        "fieldname": "AssetStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "New": 0,
+            "Active": 1,
+            "Inactive": 0
+          },
+          "strict": true
+        }
+      }
+    }
   },
   {
     "name": "SAP Item Group",
@@ -1228,9 +1152,14 @@
     "erp_doctype": "Item Group",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Number",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "item_group_name": "GroupName",
@@ -1283,9 +1212,7 @@
           "company"
         ]
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Lead",
@@ -1296,9 +1223,14 @@
     "erp_doctype": "Lead",
     "sap_filter": "CardType eq 'cLid'",
     "source_array_field": null,
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "CardCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "lead_name": "CardName",
@@ -1369,9 +1301,7 @@
           "normalize": "lower"
         }
       }
-    },
-    "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Manufacturer",
@@ -1382,16 +1312,19 @@
     "erp_doctype": "Manufacturer",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "short_name": "ManufacturerName",
       "full_name": "ManufacturerName"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Payment Term",
@@ -1402,9 +1335,14 @@
     "erp_doctype": "Payment Term",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "GroupNumber",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "payment_term_name": "PaymentTermsGroupName",
@@ -1416,36 +1354,29 @@
             {
               "when": {
                 "StartFrom": "pdt_None",
-                "NumberOfAdditionalMonths": 0,
-                "NumberOfInstallments": [
-                  null,
-                  0,
-                  1
-                ]
+                "NumberOfAdditionalMonths": 0
               },
               "value": "Day(s) after invoice date"
             },
             {
               "when": {
+                "StartFrom": "pdt_None",
+                "NumberOfAdditionalDays": 0,
+                "NumberOfAdditionalMonths": 2
+              },
+              "value": "Month(s) after invoice date"
+            },
+            {
+              "when": {
                 "StartFrom": "pdt_MonthEnd",
-                "NumberOfAdditionalMonths": 0,
-                "NumberOfInstallments": [
-                  null,
-                  0,
-                  1
-                ]
+                "NumberOfAdditionalMonths": 0
               },
               "value": "Day(s) after the end of the invoice month"
             },
             {
               "when": {
                 "StartFrom": "pdt_MonthEnd",
-                "NumberOfAdditionalDays": 0,
-                "NumberOfInstallments": [
-                  null,
-                  0,
-                  1
-                ]
+                "NumberOfAdditionalDays": 0
               },
               "value": "Month(s) after the end of the invoice month"
             }
@@ -1455,9 +1386,7 @@
       },
       "credit_days": "NumberOfAdditionalDays",
       "credit_months": "NumberOfAdditionalMonths"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Price List",
@@ -1468,9 +1397,14 @@
     "erp_doctype": "Price List",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "PriceListNo",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "price_list_name": "PriceListName",
@@ -1510,9 +1444,7 @@
           "normalize": "lower"
         }
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Project",
@@ -1523,9 +1455,14 @@
     "erp_doctype": "Project",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "project_name": "Name",
@@ -1554,9 +1491,7 @@
           "strict": true
         }
       }
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Sales Person",
@@ -1567,9 +1502,14 @@
     "erp_doctype": "Sales Person",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "SalesEmployeeCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "sales_person_name": "SalesEmployeeName",
@@ -1602,9 +1542,7 @@
       },
       "employee": "EmployeeID",
       "commission_rate": "CommissionForSalesEmployee"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Supplier",
@@ -1615,9 +1553,14 @@
     "erp_doctype": "Supplier",
     "sap_filter": "CardType eq 'cSupplier'",
     "source_array_field": null,
-    "date_filter_field": "UpdateDate",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreateDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "CardCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "supplier_name": {
@@ -1644,13 +1587,12 @@
       },
       "supplier_group": {
         "fieldname": "GroupCode",
-        "transform": "value_map",
+        "transform": "sap_lookup",
         "transform_config": {
-          "mapping": {
-            "101": "101",
-            "102": "102"
-          },
-          "strict": true
+          "entity": "BusinessPartnerGroups",
+          "key": "Code",
+          "value_field": "Code",
+          "key_type": "integer"
         }
       },
       "country": {
@@ -1720,9 +1662,7 @@
       },
       "mobile_no": "Cellular",
       "email_id": "EmailAddress"
-    },
-    "full_snapshot_sync": 0,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Supplier Group",
@@ -1733,15 +1673,18 @@
     "erp_doctype": "Supplier Group",
     "sap_filter": "Type eq 'bbpgt_VendorGroup'",
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "supplier_group_name": "Name"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP UOM",
@@ -1752,15 +1695,18 @@
     "erp_doctype": "UOM",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": "uom_name",
     "field_mapping": {
       "uom_name": "Code"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Warehouse",
@@ -1771,9 +1717,14 @@
     "erp_doctype": "Warehouse",
     "sap_filter": null,
     "source_array_field": null,
-    "date_filter_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
+    "date_filter_field": null,
     "sap_id_field": "WarehouseCode",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "warehouse_name": "WarehouseName",
@@ -1804,24 +1755,25 @@
       "city": "City",
       "state": "State",
       "pin": "ZipCode"
-    },
-    "full_snapshot_sync": 1,
-    "sap_id_prefix": ""
+    }
   },
   {
     "name": "SAP Contract",
     "mapping_name": "SAP Contract",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "ServiceContracts",
     "external_doctype": "External Contract",
     "erp_doctype": "Contract",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
-    "full_snapshot_sync": 1,
     "sap_id_field": "ContractID",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "party_type": {
@@ -1837,17 +1789,20 @@
   {
     "name": "SAP Blanket Order",
     "mapping_name": "SAP Blanket Order",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "BlanketAgreements",
     "external_doctype": "External Blanket Order",
     "erp_doctype": "Blanket Order",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
-    "full_snapshot_sync": 1,
     "sap_id_field": "AgreementNo",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -1903,17 +1858,20 @@
   {
     "name": "SAP Material Request",
     "mapping_name": "SAP Material Request",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "PurchaseRequests",
     "external_doctype": "External Material Request",
     "erp_doctype": "Material Request",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreationDate",
     "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
     "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -1929,10 +1887,19 @@
       "items": {
         "fieldname": "DocumentLines",
         "mapping": {
-          "item_code": "ItemCode",
+          "item_code": {
+            "fieldname": "ItemCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Item",
+              "field": "item_code",
+              "required": true
+            }
+          },
           "item_name": "ItemDescription",
           "description": "ItemDescription",
           "qty": "Quantity",
+          "stock_qty": "InventoryQuantity",
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
@@ -1963,6 +1930,10 @@
           "schedule_date": {
             "fieldname": "RequiredDate",
             "transform": "sap_request_schedule_date"
+          },
+          "custom_sap_required_date": {
+            "fieldname": "RequiredDate",
+            "transform": "sap_date"
           }
         }
       },
@@ -1974,12 +1945,43 @@
       },
       "schedule_date": {
         "fieldname": "DocDueDate",
+        "transform": "sap_request_schedule_date"
+      },
+      "custom_sap_due_date": {
+        "fieldname": "DocDueDate",
         "transform": "sap_date"
       },
       "naming_series": {
         "transform": "constant",
         "transform_config": {
           "value": "MAT-MR-.YYYY.-"
+        }
+      },
+      "status": {
+        "fieldname": "Cancelled",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": "Cancelled"
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": "Submitted"
+            }
+          ],
+          "strict": true
         }
       },
       "docstatus": {
@@ -1995,19 +1997,6 @@
             {
               "when": {
                 "Cancelled": "tNO",
-                "Submitted": "tNO"
-              },
-              "value": 0
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tYES"
-              },
-              "value": 1
-            },
-            {
-              "when": {
                 "DocumentStatus": [
                   "bost_Open",
                   "bost_Close",
@@ -2018,7 +2007,7 @@
               "value": 1
             }
           ],
-          "default": 0
+          "strict": true
         },
         "fieldname": "Cancelled"
       }
@@ -2027,17 +2016,20 @@
   {
     "name": "SAP Supplier Quotation",
     "mapping_name": "SAP Supplier Quotation",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "PurchaseQuotations",
     "external_doctype": "External Supplier Quotation",
     "erp_doctype": "Supplier Quotation",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreationDate",
     "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
     "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -2155,17 +2147,20 @@
   {
     "name": "SAP Purchase Order",
     "mapping_name": "SAP Purchase Order",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "PurchaseOrders",
     "external_doctype": "External Purchase Order",
     "erp_doctype": "Purchase Order",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreationDate",
     "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
     "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -2187,20 +2182,33 @@
           "item_name": "ItemDescription",
           "description": "ItemDescription",
           "qty": "Quantity",
+          "stock_qty": "InventoryQuantity",
           "rate": "Price",
           "warehouse": "WarehouseCode",
           "amount": "LineTotal",
           "discount_percentage": "DiscountPercent",
           "uom": "UoMCode",
+          "conversion_factor": "UnitsOfMeasurment",
           "schedule_date": {
             "fieldname": "ShipDate",
             "transform": "sap_date"
+          },
+          "material_request": {
+            "fieldname": "BaseEntry",
+            "transform": "purchase_order_request_link"
+          },
+          "material_request_item": {
+            "fieldname": "BaseEntry",
+            "transform": "purchase_order_request_link"
           }
         }
       },
       "supplier": "CardCode",
       "supplier_name": "CardName",
-      "schedule_date": "DocDueDate",
+      "schedule_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
       "grand_total": "DocTotal",
       "docstatus": {
         "transform": "conditional_value",
@@ -2214,6 +2222,7 @@
             },
             {
               "when": {
+                "Cancelled": "tNO",
                 "DocumentStatus": [
                   "bost_Open",
                   "bost_Close",
@@ -2224,7 +2233,7 @@
               "value": 1
             }
           ],
-          "default": 0
+          "strict": true
         },
         "fieldname": "Cancelled"
       },
@@ -2236,17 +2245,20 @@
   {
     "name": "SAP Purchase Receipt",
     "mapping_name": "SAP Purchase Receipt",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "PurchaseDeliveryNotes",
     "external_doctype": "External Purchase Receipt",
     "erp_doctype": "Purchase Receipt",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreationDate",
     "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
     "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -2325,17 +2337,3270 @@
   {
     "name": "SAP Purchase Invoice",
     "mapping_name": "SAP Purchase Invoice",
-    "enabled": 0,
+    "enabled": 1,
     "sap_doctype": "PurchaseInvoices",
     "external_doctype": "External Purchase Invoice",
     "erp_doctype": "Purchase Invoice",
     "sap_filter": null,
     "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": "CreationDate",
     "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
     "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "currency": "DocCurrency",
+      "conversion_rate": "DocRate",
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": {
+            "fieldname": "ItemDescription",
+            "transform": "purchase_invoice_item_description"
+          },
+          "description": {
+            "fieldname": "ItemDescription",
+            "transform": "purchase_invoice_item_description"
+          },
+          "qty": {
+            "fieldname": "Quantity",
+            "transform": "purchase_invoice_item_quantity"
+          },
+          "rate": "Price",
+          "warehouse": "WarehouseCode",
+          "amount": "LineTotal",
+          "discount_percentage": "DiscountPercent",
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true,
+              "service_uom_fallback": true
+            }
+          },
+          "conversion_factor": {
+            "transform": "item_conversion_factor",
+            "transform_config": {
+              "manual_uom_fallback": true,
+              "service_uom_fallback": true
+            }
+          },
+          "expense_account": {
+            "fieldname": "AccountCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Account",
+              "field": "account_number",
+              "company_context": true
+            }
+          },
+          "purchase_receipt": {
+            "fieldname": "BaseEntry",
+            "transform": "purchase_invoice_receipt_link"
+          },
+          "pr_detail": {
+            "fieldname": "BaseEntry",
+            "transform": "purchase_invoice_receipt_link"
+          }
+        }
+      },
+      "supplier": "CardCode",
+      "supplier_name": "CardName",
+      "due_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "bill_no": "NumAtCard",
+      "grand_total": "DocTotal",
+      "remarks": "Comments",
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
+            },
+            {
+              "when": {
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        },
+        "fieldname": "Cancelled"
+      },
+      "additional_discount_percentage": "DiscountPercent",
+      "discount_amount": "TotalDiscount",
+      "project": "Project",
+      "credit_to": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "required": true
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-PINV-.YYYY.-"
+        }
+      },
+      "set_posting_time": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Quotation",
+    "mapping_name": "SAP Quotation",
+    "enabled": 1,
+    "sap_doctype": "Quotations",
+    "external_doctype": "External Quotation",
+    "erp_doctype": "Quotation",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "SAL-QTN-.YYYY.-"
+        }
+      },
+      "order_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Sales"
+        }
+      },
+      "transaction_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "valid_till": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "currency": "DocCurrency",
+      "conversion_rate": "DocRate",
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "rate": "Price",
+          "warehouse": "WarehouseCode",
+          "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          },
+          "ordered_qty": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 0
+            }
+          },
+          "discount_percentage": "DiscountPercent",
+          "amount": "LineTotal"
+        }
+      },
+      "quotation_to": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Customer"
+        }
+      },
+      "party_name": "CardCode",
+      "docstatus": {
+        "fieldname": "Cancelled",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        }
+      },
+      "grand_total": "DocTotal",
+      "additional_discount_percentage": "DiscountPercent",
+      "discount_amount": "TotalDiscount",
+      "customer_name": "CardName"
+    }
+  },
+  {
+    "name": "SAP Sales Order",
+    "mapping_name": "SAP Sales Order",
+    "enabled": 1,
+    "sap_doctype": "Orders",
+    "external_doctype": "External Sales Order",
+    "erp_doctype": "Sales Order",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "SAL-ORD-.YYYY.-"
+        }
+      },
+      "order_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Sales"
+        }
+      },
+      "transaction_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "currency": "DocCurrency",
+      "conversion_rate": "DocRate",
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "rate": "Price",
+          "warehouse": "WarehouseCode",
+          "amount": "LineTotal",
+          "discount_percentage": "DiscountPercent",
+          "uom": {
+            "fieldname": "UoMCode",
+            "transform": "sap_item_uom",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "conversion_factor": {
+            "transform": "item_conversion_factor",
+            "transform_config": {
+              "manual_uom_fallback": true
+            }
+          },
+          "delivery_date": {
+            "fieldname": "ShipDate",
+            "transform": "sap_date"
+          }
+        }
+      },
+      "customer": "CardCode",
+      "customer_name": "CardName",
+      "delivery_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "po_no": "NumAtCard",
+      "grand_total": "DocTotal",
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        },
+        "fieldname": "Cancelled"
+      },
+      "additional_discount_percentage": "DiscountPercent",
+      "discount_amount": "TotalDiscount",
+      "project": "Project"
+    }
+  },
+  {
+    "name": "SAP Delivery Note",
+    "mapping_name": "SAP Delivery Note",
+    "enabled": 1,
+    "sap_doctype": "DeliveryNotes",
+    "external_doctype": "External Delivery Note",
+    "erp_doctype": "Delivery Note",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-DN-.YYYY.-"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "posting_time": "DocTime",
+      "set_posting_time": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "currency": "DocCurrency",
+      "conversion_rate": "DocRate",
+      "selling_price_list": {
+        "transform": "matching_selling_price_list"
+      },
+      "price_list_currency": "DocCurrency",
+      "plc_conversion_rate": "DocRate",
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "rate": "Price",
+          "warehouse": "WarehouseCode",
+          "uom": "UoMCode",
+          "conversion_factor": {
+            "transform": "item_conversion_factor"
+          },
+          "discount_percentage": "DiscountPercent",
+          "amount": "LineTotal"
+        }
+      },
+      "customer": "CardCode",
+      "customer_name": "CardName",
+      "docstatus": {
+        "fieldname": "Cancelled",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
+            },
+            {
+              "when": {
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        }
+      },
+      "grand_total": "DocTotal",
+      "additional_discount_percentage": "DiscountPercent",
+      "discount_amount": "TotalDiscount",
+      "po_no": "NumAtCard",
+      "instructions": "Comments",
+      "total_taxes_and_charges": "VatSum",
+      "taxes": {
+        "transform": "sap_sales_tax_rows",
+        "transform_config": {
+          "rate_accounts": {
+            "0": "2144103",
+            "5": "2144102",
+            "15": "2144101"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Sales Invoice",
+    "mapping_name": "SAP Sales Invoice",
+    "enabled": 1,
+    "sap_doctype": "Invoices",
+    "external_doctype": "External Sales Invoice",
+    "erp_doctype": "Sales Invoice",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "currency": "DocCurrency",
+      "conversion_rate": "DocRate",
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "rate": "Price",
+          "warehouse": "WarehouseCode",
+          "amount": "LineTotal",
+          "discount_percentage": "DiscountPercent",
+          "uom": "UoMCode",
+          "conversion_factor": {
+            "transform": "item_conversion_factor"
+          }
+        }
+      },
+      "customer": "CardCode",
+      "customer_name": "CardName",
+      "due_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "po_no": "NumAtCard",
+      "grand_total": "DocTotal",
+      "remarks": "Comments",
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tNO"
+              },
+              "value": 0
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "Submitted": "tYES"
+              },
+              "value": 1
+            },
+            {
+              "when": {
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        },
+        "fieldname": "Cancelled"
+      },
+      "additional_discount_percentage": "DiscountPercent",
+      "discount_amount": "TotalDiscount",
+      "project": "Project",
+      "debit_to": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "required": true
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-SINV-.YYYY.-"
+        }
+      },
+      "set_posting_time": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Work Order",
+    "mapping_name": "SAP Work Order",
+    "enabled": 1,
+    "sap_doctype": "ProductionOrders",
+    "external_doctype": "External Work Order",
+    "erp_doctype": "Work Order",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "AbsoluteEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "production_item": "ItemNo",
+      "qty": "PlannedQuantity",
+      "fg_warehouse": "Warehouse",
+      "planned_start_date": {
+        "fieldname": "StartDate",
+        "transform": "sap_date"
+      },
+      "required_items": {
+        "fieldname": "ProductionOrderLines",
+        "mapping": {
+          "item_code": "ItemNo",
+          "required_qty": "PlannedQuantity",
+          "source_warehouse": "Warehouse"
+        }
+      },
+      "docstatus": {
+        "fieldname": "ProductionOrderStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "boposPlanned": 0,
+            "boposReleased": 1,
+            "boposClosed": 1,
+            "boposCancelled": 2
+          },
+          "default": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Entry Transfer",
+    "mapping_name": "SAP Stock Entry Transfer",
+    "enabled": 1,
+    "sap_doctype": "StockTransfers",
+    "external_doctype": "External Stock Entry",
+    "erp_doctype": "Stock Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "transfer:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "stock_entry_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Transfer"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "items": {
+        "fieldname": "StockTransferLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "qty": "Quantity",
+          "s_warehouse": "FromWarehouseCode",
+          "t_warehouse": "WarehouseCode"
+        }
+      },
+      "docstatus": {
+        "fieldname": "DocumentStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "bost_Open": 1,
+            "bost_Close": 1,
+            "bost_Paid": 1,
+            "bost_Delivered": 1
+          },
+          "default": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Entry Issue",
+    "mapping_name": "SAP Stock Entry Issue",
+    "enabled": 1,
+    "sap_doctype": "InventoryGenExits",
+    "external_doctype": "External Stock Entry",
+    "erp_doctype": "Stock Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "issue:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-STE-.YYYY.-"
+        }
+      },
+      "stock_entry_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Issue"
+        }
+      },
+      "purpose": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Issue"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "transfer_qty": "InventoryQuantity",
+          "s_warehouse": "WarehouseCode",
+          "amount": "LineTotal",
+          "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          },
+          "basic_rate": "Price",
+          "expense_account": {
+            "fieldname": "AccountCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Account",
+              "field": "account_number",
+              "company_context": true,
+              "required": true
+            }
+          }
+        }
+      },
+      "total_amount": "DocTotal",
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "strict": true
+        },
+        "fieldname": "Cancelled"
+      },
+      "project": "Project"
+    }
+  },
+  {
+    "name": "SAP Stock Entry Receipt",
+    "mapping_name": "SAP Stock Entry Receipt",
+    "enabled": 1,
+    "sap_doctype": "InventoryGenEntries",
+    "external_doctype": "External Stock Entry",
+    "erp_doctype": "Stock Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "receipt:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "MAT-STE-.YYYY.-"
+        }
+      },
+      "stock_entry_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Receipt"
+        }
+      },
+      "purpose": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Receipt"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "items": {
+        "fieldname": "DocumentLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "item_name": "ItemDescription",
+          "description": "ItemDescription",
+          "qty": "Quantity",
+          "transfer_qty": "InventoryQuantity",
+          "uom": "UoMCode",
+          "stock_uom": "UoMCode",
+          "conversion_factor": {
+            "fieldname": "UnitsOfMeasurment",
+            "default": 1
+          },
+          "basic_rate": "Price",
+          "amount": "LineTotal",
+          "t_warehouse": "WarehouseCode",
+          "expense_account": {
+            "fieldname": "AccountCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Account",
+              "field": "account_number",
+              "company_context": true,
+              "required": true
+            }
+          }
+        }
+      },
+      "total_amount": "DocTotal",
+      "docstatus": {
+        "fieldname": "Cancelled",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO",
+                "DocumentStatus": [
+                  "bost_Open",
+                  "bost_Close",
+                  "bost_Paid",
+                  "bost_Delivered"
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "strict": true
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Payment Entry Incoming",
+    "mapping_name": "SAP Payment Entry Incoming",
+    "enabled": 1,
+    "sap_doctype": "IncomingPayments",
+    "external_doctype": "External Payment Entry",
+    "erp_doctype": "Payment Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "incoming:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-PAY-.YYYY.-"
+        }
+      },
+      "payment_type": {
+        "fieldname": "DocType",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": "Internal Transfer"
+            },
+            {
+              "when": {
+                "DocType": [
+                  "rCustomer",
+                  "rSupplier"
+                ]
+              },
+              "value": "Receive"
+            }
+          ],
+          "strict": true
+        }
+      },
+      "party_type": {
+        "fieldname": "DocType",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": null
+            },
+            {
+              "when": {
+                "DocType": "rCustomer"
+              },
+              "value": "Customer"
+            },
+            {
+              "when": {
+                "DocType": "rSupplier"
+              },
+              "value": "Supplier"
+            }
+          ],
+          "strict": true
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "incoming_payment_party_value"
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "paid_amount": {
+        "transform": "sum_fields",
+        "transform_config": {
+          "fields": [
+            "TransferSum",
+            "CashSum",
+            "CheckSum",
+            "CreditSum"
+          ]
+        }
+      },
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO"
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        },
+        "fieldname": "Cancelled"
+      },
+      "party_name": {
+        "fieldname": "CardName",
+        "transform": "incoming_payment_party_value"
+      },
+      "reference_no": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "TransferReference",
+            "DocNum"
+          ]
+        }
+      },
+      "reference_date": {
+        "transform": "incoming_payment_reference_date"
+      },
+      "remarks": "Remarks",
+      "paid_from": {
+        "transform": "incoming_payment_source_account",
+        "transform_config": {
+          "return_field": "name"
+        }
+      },
+      "paid_to": {
+        "transform": "payment_method_account",
+        "transform_config": {
+          "return_field": "name"
+        }
+      },
+      "paid_from_account_currency": {
+        "transform": "incoming_payment_source_account",
+        "transform_config": {
+          "return_field": "account_currency"
+        }
+      },
+      "paid_to_account_currency": {
+        "transform": "payment_method_account",
+        "transform_config": {
+          "return_field": "account_currency"
+        }
+      },
+      "received_amount": {
+        "transform": "sum_fields",
+        "transform_config": {
+          "fields": [
+            "TransferSum",
+            "CashSum",
+            "CheckSum",
+            "CreditSum"
+          ]
+        }
+      },
+      "source_exchange_rate": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "rate",
+          "incoming": true
+        }
+      },
+      "target_exchange_rate": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "rate",
+          "incoming": true
+        }
+      },
+      "base_paid_amount": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "amount",
+          "incoming": true
+        }
+      },
+      "base_received_amount": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "amount",
+          "incoming": true
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Payment Entry Outgoing",
+    "mapping_name": "SAP Payment Entry Outgoing",
+    "enabled": 1,
+    "sap_doctype": "VendorPayments",
+    "external_doctype": "External Payment Entry",
+    "erp_doctype": "Payment Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "outgoing:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-PAY-.YYYY.-"
+        }
+      },
+      "payment_type": {
+        "fieldname": "DocType",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": "Internal Transfer"
+            },
+            {
+              "when": {
+                "DocType": "rSupplier"
+              },
+              "value": "Pay"
+            },
+            {
+              "when": {
+                "DocType": "rCustomer"
+              },
+              "value": "Pay"
+            }
+          ],
+          "strict": true
+        }
+      },
+      "party_type": {
+        "fieldname": "DocType",
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "DocType": "rAccount"
+              },
+              "value": null
+            },
+            {
+              "when": {
+                "DocType": "rSupplier"
+              },
+              "value": "Supplier"
+            },
+            {
+              "when": {
+                "DocType": "rCustomer"
+              },
+              "value": "Customer"
+            }
+          ],
+          "strict": true
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "incoming_payment_party_value"
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "paid_amount": {
+        "transform": "sum_fields",
+        "transform_config": {
+          "fields": [
+            "TransferSum",
+            "CashSum",
+            "CheckSum",
+            "CreditSum"
+          ]
+        }
+      },
+      "docstatus": {
+        "transform": "conditional_value",
+        "transform_config": {
+          "conditions": [
+            {
+              "when": {
+                "Cancelled": "tYES"
+              },
+              "value": 2
+            },
+            {
+              "when": {
+                "Cancelled": "tNO"
+              },
+              "value": 1
+            }
+          ],
+          "default": 0
+        },
+        "fieldname": "Cancelled"
+      },
+      "party_name": {
+        "fieldname": "CardName",
+        "transform": "incoming_payment_party_value"
+      },
+      "reference_no": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "TransferReference",
+            "DocNum"
+          ]
+        }
+      },
+      "reference_date": {
+        "transform": "incoming_payment_reference_date"
+      },
+      "remarks": "Remarks",
+      "paid_from": {
+        "transform": "payment_method_account",
+        "transform_config": {
+          "return_field": "name"
+        }
+      },
+      "paid_to": {
+        "transform": "outgoing_payment_target_account",
+        "transform_config": {
+          "return_field": "name"
+        }
+      },
+      "paid_from_account_currency": {
+        "transform": "payment_method_account",
+        "transform_config": {
+          "return_field": "account_currency"
+        }
+      },
+      "paid_to_account_currency": {
+        "transform": "outgoing_payment_target_account",
+        "transform_config": {
+          "return_field": "account_currency"
+        }
+      },
+      "received_amount": {
+        "transform": "sum_fields",
+        "transform_config": {
+          "fields": [
+            "TransferSum",
+            "CashSum",
+            "CheckSum",
+            "CreditSum"
+          ]
+        }
+      },
+      "source_exchange_rate": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "rate"
+        }
+      },
+      "target_exchange_rate": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "rate"
+        }
+      },
+      "base_paid_amount": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "amount"
+        }
+      },
+      "base_received_amount": {
+        "transform": "local_payment_value",
+        "transform_config": {
+          "kind": "amount"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Journal Entry",
+    "mapping_name": "SAP Journal Entry",
+    "enabled": 1,
+    "sap_doctype": "JournalEntries",
+    "external_doctype": "External Journal Entry",
+    "erp_doctype": "Journal Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "JdtNum",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "ReferenceDate",
+        "transform": "sap_date"
+      },
+      "user_remark": "Memo",
+      "accounts": {
+        "fieldname": "JournalEntryLines",
+        "mapping": {
+          "account": {
+            "fieldname": "AccountCode",
+            "transform": "lookup",
+            "transform_config": {
+              "doctype": "Account",
+              "field": "account_number",
+              "company_context": true,
+              "required": true
+            }
+          },
+          "debit_in_account_currency": {
+            "fieldname": "FCDebit",
+            "transform": "sap_account_amount",
+            "transform_config": {
+              "base_field": "Debit"
+            }
+          },
+          "credit_in_account_currency": {
+            "fieldname": "FCCredit",
+            "transform": "sap_account_amount",
+            "transform_config": {
+              "base_field": "Credit"
+            }
+          },
+          "debit": "Debit",
+          "credit": "Credit",
+          "account_currency": {
+            "fieldname": "FCCurrency",
+            "transform": "sap_account_currency"
+          },
+          "party_type": {
+            "fieldname": "ShortName",
+            "transform": "journal_party"
+          },
+          "party": {
+            "fieldname": "ShortName",
+            "transform": "journal_party"
+          },
+          "cost_center": "CostingCode",
+          "project": "ProjectCode",
+          "user_remark": "LineMemo"
+        },
+        "nonzero_fields": [
+          "debit",
+          "credit"
+        ]
+      },
+      "docstatus": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "due_date": {
+        "fieldname": "DueDate",
+        "transform": "sap_date"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Journal Entry"
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "ACC-JV-.YYYY.-"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Reconciliation",
+    "mapping_name": "SAP Stock Reconciliation",
+    "enabled": 1,
+    "sap_doctype": "InventoryCountings",
+    "external_doctype": "External Stock Reconciliation",
+    "erp_doctype": "Stock Reconciliation",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocumentEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "CountDate",
+        "transform": "sap_date"
+      },
+      "purpose": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Reconciliation"
+        }
+      },
+      "items": {
+        "fieldname": "InventoryCountingLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "warehouse": "WarehouseCode",
+          "qty": "CountedQuantity"
+        }
+      },
+      "docstatus": {
+        "fieldname": "DocumentStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "bost_Open": 1,
+            "bost_Close": 1,
+            "bost_Paid": 1,
+            "bost_Delivered": 1
+          },
+          "default": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Bank Account",
+    "mapping_name": "SAP Bank Account",
+    "enabled": 1,
+    "sap_doctype": "HouseBankAccounts",
+    "external_doctype": "External Bank Account",
+    "erp_doctype": "Bank Account",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "AbsoluteEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "account_name": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "AccountName",
+            "AccNo"
+          ]
+        }
+      },
+      "bank": "BankCode",
+      "bank_account_no": "AccNo",
+      "branch_code": "Branch",
+      "iban": "IBAN"
+    }
+  },
+  {
+    "name": "SAP Department",
+    "mapping_name": "SAP Department",
+    "enabled": 1,
+    "sap_doctype": "Departments",
+    "external_doctype": "External Department",
+    "erp_doctype": "Department",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "department_name": "Name",
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Territory",
+    "mapping_name": "SAP Territory",
+    "enabled": 1,
+    "sap_doctype": "Territories",
+    "external_doctype": "External Territory",
+    "erp_doctype": "Territory",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "TerritoryID",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "territory_name": "Description"
+    }
+  },
+  {
+    "name": "SAP Sales Stage",
+    "mapping_name": "SAP Sales Stage",
+    "enabled": 1,
+    "sap_doctype": "SalesStages",
+    "external_doctype": "External Sales Stage",
+    "erp_doctype": "Sales Stage",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "SequenceNo",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "stage_name": "Name"
+    }
+  },
+  {
+    "name": "SAP Sales Tax Code",
+    "mapping_name": "SAP Sales Tax Code",
+    "enabled": 1,
+    "sap_doctype": "SalesTaxCodes",
+    "external_doctype": "External Tax Category",
+    "erp_doctype": "Tax Category",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "title": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "Name",
+            "Code"
+          ]
+        }
+      },
+      "disabled": {
+        "fieldname": "Inactive",
+        "transform": "sap_bool"
+      }
+    }
+  },
+  {
+    "name": "SAP Inventory Transfer Request",
+    "mapping_name": "SAP Inventory Transfer Request",
+    "enabled": 1,
+    "sap_doctype": "InventoryTransferRequests",
+    "external_doctype": "External Material Request",
+    "erp_doctype": "Material Request",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "transfer_request:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "material_request_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Material Transfer"
+        }
+      },
+      "transaction_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "schedule_date": {
+        "fieldname": "DueDate",
+        "transform": "sap_date"
+      },
+      "items": {
+        "fieldname": "StockTransferLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "qty": "Quantity",
+          "warehouse": "WarehouseCode",
+          "from_warehouse": "FromWarehouseCode",
+          "schedule_date": {
+            "fieldname": "DueDate",
+            "transform": "parent_date"
+          }
+        }
+      },
+      "docstatus": {
+        "fieldname": "DocumentStatus",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "bost_Open": 1,
+            "bost_Close": 1,
+            "bost_Paid": 1,
+            "bost_Delivered": 1
+          },
+          "default": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Inventory Posting",
+    "mapping_name": "SAP Inventory Posting",
+    "enabled": 1,
+    "sap_doctype": "InventoryPostings",
+    "external_doctype": "External Stock Reconciliation",
+    "erp_doctype": "Stock Reconciliation",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocumentEntry",
+    "sap_id_prefix": "posting:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "purpose": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Reconciliation"
+        }
+      },
+      "posting_date": {
+        "fieldname": "PostingDate",
+        "transform": "sap_date"
+      },
+      "items": {
+        "fieldname": "InventoryPostingLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "warehouse": "WarehouseCode",
+          "qty": "CountedQuantity",
+          "valuation_rate": "Price"
+        }
+      },
+      "docstatus": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Designation",
+    "mapping_name": "SAP Designation",
+    "enabled": 1,
+    "sap_doctype": "EmployeePosition",
+    "external_doctype": "External Designation",
+    "erp_doctype": "Designation",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "PositionID",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "designation_name": "Name",
+      "description": "Description"
+    }
+  },
+  {
+    "name": "SAP Lead Source",
+    "mapping_name": "SAP Lead Source",
+    "enabled": 1,
+    "sap_doctype": "SalesOpportunitySourcesSetup",
+    "external_doctype": "External Lead Source",
+    "erp_doctype": "Lead Source",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "SequenceNo",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "source_name": "Description"
+    }
+  },
+  {
+    "name": "SAP Mode of Payment",
+    "mapping_name": "SAP Mode of Payment",
+    "enabled": 1,
+    "sap_doctype": "WizardPaymentMethods",
+    "external_doctype": "External Mode of Payment",
+    "erp_doctype": "Mode of Payment",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "PaymentMethodCode",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "mode_of_payment": {
+        "transform": "first_value",
+        "transform_config": {
+          "fields": [
+            "Description",
+            "PaymentMethodCode"
+          ]
+        }
+      },
+      "enabled": {
+        "fieldname": "Active",
+        "transform": "sap_bool"
+      }
+    }
+  },
+  {
+    "name": "SAP Location",
+    "mapping_name": "SAP Location",
+    "enabled": 0,
+    "sap_doctype": "Warehouses",
+    "external_doctype": "External Location",
+    "erp_doctype": "Location",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "WarehouseCode",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "location_name": "WarehouseName"
+    }
+  },
+  {
+    "name": "SAP Opportunity",
+    "mapping_name": "SAP Opportunity",
+    "enabled": 1,
+    "sap_doctype": "SalesOpportunities",
+    "external_doctype": "External Opportunity",
+    "erp_doctype": "Opportunity",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "SequentialNo",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "title": "OpportunityName",
+      "party_name": {
+        "fieldname": "CardCode",
+        "transform": "sap_opportunity_party"
+      },
+      "opportunity_from": {
+        "fieldname": "CardCode",
+        "transform": "sap_opportunity_party"
+      },
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "transaction_date": {
+        "fieldname": "StartDate",
+        "transform": "sap_date"
+      },
+      "customer_name": "CustomerName",
+      "expected_closing": {
+        "fieldname": "PredictedClosingDate",
+        "transform": "sap_date"
+      },
+      "probability": "ClosingPercentage",
+      "status": {
+        "fieldname": "Status",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "sos_Open": "Open"
+          },
+          "strict": true
+        }
+      },
+      "opportunity_type": {
+        "fieldname": "OpportunityType",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "boOpSales": "Sales"
+          },
+          "strict": true
+        }
+      },
+      "currency": {
+        "transform": "context",
+        "transform_config": {
+          "key": "currency"
+        }
+      },
+      "conversion_rate": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "opportunity_amount": "TotalAmountLocal",
+      "base_opportunity_amount": "TotalAmountLocal",
+      "source": {
+        "fieldname": "Source",
+        "transform": "sap_lookup",
+        "transform_config": {
+          "entity": "SalesOpportunitySourcesSetup",
+          "key": "SequenceNo",
+          "key_type": "integer",
+          "value_field": "Description",
+          "target": {
+            "doctype": "Lead Source",
+            "field": "name"
+          }
+        }
+      },
+      "sales_stage": {
+        "fieldname": "CurrentStageNo",
+        "transform": "sap_lookup",
+        "transform_config": {
+          "entity": "SalesStages",
+          "key": "SequenceNo",
+          "key_type": "integer",
+          "value_field": "Name",
+          "target": {
+            "doctype": "Sales Stage",
+            "field": "stage_name",
+            "required": true
+          }
+        }
+      },
+      "naming_series": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "CRM-OPP-.YYYY.-"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP BOM",
+    "mapping_name": "SAP BOM",
+    "enabled": 1,
+    "sap_doctype": "ProductTrees",
+    "external_doctype": "External BOM",
+    "erp_doctype": "BOM",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "TreeCode",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "item": "TreeCode",
+      "quantity": "Quantity",
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "currency": {
+        "transform": "context",
+        "transform_config": {
+          "key": "currency"
+        }
+      },
+      "conversion_rate": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "items": {
+        "fieldname": "ProductTreeLines",
+        "mapping": {
+          "item_code": "ItemCode",
+          "qty": "Quantity",
+          "uom": "InventoryUOM",
+          "stock_uom": "InventoryUOM",
+          "conversion_factor": {
+            "transform": "constant",
+            "transform_config": {
+              "value": 1
+            }
+          },
+          "rate": "Price"
+        },
+        "required_fields": [
+          "item_code",
+          "qty",
+          "uom",
+          "rate",
+          "conversion_factor"
+        ],
+        "positive_fields": [
+          "qty",
+          "conversion_factor"
+        ]
+      }
+    }
+  },
+  {
+    "name": "SAP Address (Business Partner)",
+    "mapping_name": "SAP Address (Business Partner)",
+    "enabled": 0,
+    "sap_doctype": "BusinessPartners",
+    "external_doctype": "External Address",
+    "erp_doctype": "Address",
+    "sap_filter": null,
+    "source_array_field": "BPAddresses",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "AddressName",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": "remote_id",
+    "field_mapping": {
+      "address_title": "AddressName",
+      "address_type": {
+        "fieldname": "AddressType",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "bo_BillTo": "Billing",
+            "bo_ShipTo": "Shipping"
+          },
+          "default": "Other"
+        }
+      },
+      "address_line1": "Street",
+      "address_line2": "Block",
+      "city": "City",
+      "county": "County",
+      "state": "State",
+      "country": "Country",
+      "pincode": "ZipCode"
+    }
+  },
+  {
+    "name": "SAP Designation (EmployeesInfo)",
+    "mapping_name": "SAP Designation (EmployeesInfo)",
+    "enabled": 0,
+    "sap_doctype": "EmployeesInfo",
+    "external_doctype": "External Designation",
+    "erp_doctype": "Designation",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "EmployeeID",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": "remote_id",
+    "field_mapping": {
+      "designation_name": "JobTitle"
+    }
+  },
+  {
+    "name": "SAP GL Journal Detail",
+    "mapping_name": "SAP GL Journal Detail",
+    "enabled": 1,
+    "sap_doctype": "JournalEntries",
+    "external_doctype": "External GL Entry",
+    "erp_doctype": "GL Entry",
+    "sap_filter": null,
+    "source_array_field": "JournalEntryLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "JdtNum+Line_ID",
+    "sap_id_prefix": "journal:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "ReferenceDate",
+        "transform": "sap_date"
+      },
+      "transaction_date": {
+        "fieldname": "TaxDate",
+        "transform": "sap_date"
+      },
+      "account": {
+        "fieldname": "AccountCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "against": {
+        "fieldname": "ContraAccount",
+        "transform": "journal_against"
+      },
+      "cost_center": {
+        "fieldname": "CostingCode",
+        "transform": "journal_cost_center"
+      },
+      "debit": "Debit",
+      "credit": "Credit",
+      "debit_in_account_currency": {
+        "fieldname": "FCDebit",
+        "transform": "sap_account_amount",
+        "transform_config": {
+          "base_field": "Debit"
+        }
+      },
+      "credit_in_account_currency": {
+        "fieldname": "FCCredit",
+        "transform": "sap_account_amount",
+        "transform_config": {
+          "base_field": "Credit"
+        }
+      },
+      "account_currency": {
+        "fieldname": "FCCurrency",
+        "transform": "sap_account_currency"
+      },
+      "party_type": {
+        "fieldname": "ShortName",
+        "transform": "journal_party"
+      },
+      "party": {
+        "fieldname": "ShortName",
+        "transform": "journal_party"
+      },
+      "project": "ProjectCode",
+      "remarks": "LineMemo",
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Journal Entry"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "JdtNum",
+        "transform": "journal_staged_voucher"
+      },
+      "docstatus": {
+        "transform": "constant",
+        "transform_config": {
+          "value": 1
+        }
+      },
+      "voucher_subtype": "OriginalJournal",
+      "voucher_detail_no": "Line_ID"
+    }
+  },
+  {
+    "name": "SAP Payment Incoming Allocation Detail",
+    "mapping_name": "SAP Payment Incoming Allocation Detail",
+    "enabled": 1,
+    "sap_doctype": "IncomingPayments",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": "DocType eq 'rCustomer'",
+    "source_array_field": "PaymentInvoices",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "__parent_DocEntry+__line_index",
+    "sap_id_prefix": "incoming-allocation:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "__parent_DocDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Receivable"
+        }
+      },
+      "account": {
+        "fieldname": "__parent_ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Customer"
+        }
+      },
+      "party": {
+        "fieldname": "__parent_CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Customer",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "__parent_ProjectCode",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "__parent_DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "incoming:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "against_voucher_type": {
+        "fieldname": "InvoiceType",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "it_Invoice": "External Sales Invoice",
+            "it_PurchaseInvoice": "External Purchase Invoice",
+            "it_PurchaseDownPayment": "External Purchase Invoice",
+            "it_JournalEntry": "External Journal Entry"
+          },
+          "strict": true
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "",
+          "type_field": "InvoiceType",
+          "targets": {
+            "it_Invoice": {
+              "doctype": "External Sales Invoice"
+            },
+            "it_PurchaseInvoice": {
+              "doctype": "External Purchase Invoice"
+            },
+            "it_PurchaseDownPayment": {
+              "doctype": "External Purchase Invoice",
+              "prefix": "down-payment:"
+            },
+            "it_JournalEntry": {
+              "doctype": "External Journal Entry"
+            }
+          }
+        }
+      },
+      "voucher_detail_no": "LineNum",
+      "account_currency": {
+        "fieldname": "__parent_ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "allocation",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "allocation",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "__parent_Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "__parent_Remarks"
+    }
+  },
+  {
+    "name": "SAP Payment Incoming Detail",
+    "mapping_name": "SAP Payment Incoming Detail",
+    "enabled": 1,
+    "sap_doctype": "IncomingPayments",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": "DocType eq 'rCustomer'",
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "incoming:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Receivable"
+        }
+      },
+      "account": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Customer"
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Customer",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "ProjectCode",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "incoming:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "against_voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "incoming:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "account_currency": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "payment",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "payment",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "Remarks"
+    }
+  },
+  {
+    "name": "SAP Payment Outgoing Allocation Detail",
+    "mapping_name": "SAP Payment Outgoing Allocation Detail",
+    "enabled": 1,
+    "sap_doctype": "VendorPayments",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": "DocType eq 'rSupplier'",
+    "source_array_field": "PaymentInvoices",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "__parent_DocEntry+__line_index",
+    "sap_id_prefix": "outgoing-allocation:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "__parent_DocDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Payable"
+        }
+      },
+      "account": {
+        "fieldname": "__parent_ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Supplier"
+        }
+      },
+      "party": {
+        "fieldname": "__parent_CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Supplier",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "__parent_ProjectCode",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "__parent_DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "outgoing:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "against_voucher_type": {
+        "fieldname": "InvoiceType",
+        "transform": "value_map",
+        "transform_config": {
+          "mapping": {
+            "it_Invoice": "External Sales Invoice",
+            "it_PurchaseInvoice": "External Purchase Invoice",
+            "it_PurchaseDownPayment": "External Purchase Invoice",
+            "it_JournalEntry": "External Journal Entry",
+            "it_PurchaseCreditNote": "External Journal Entry",
+            "it_PaymentAdvice": "External Payment Entry"
+          },
+          "strict": true
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "payment_allocation_reference",
+        "transform_config": {
+          "prefix": "",
+          "type_field": "InvoiceType",
+          "targets": {
+            "it_Invoice": {
+              "doctype": "External Sales Invoice"
+            },
+            "it_PurchaseInvoice": {
+              "doctype": "External Purchase Invoice"
+            },
+            "it_PurchaseDownPayment": {
+              "doctype": "External Purchase Invoice",
+              "prefix": "down-payment:"
+            },
+            "it_JournalEntry": {
+              "doctype": "External Journal Entry"
+            },
+            "it_PurchaseCreditNote": {
+              "doctype": "External Journal Entry"
+            },
+            "it_PaymentAdvice": {
+              "doctype": "External Payment Entry",
+              "prefix": "outgoing:"
+            }
+          }
+        }
+      },
+      "voucher_detail_no": "LineNum",
+      "account_currency": {
+        "fieldname": "__parent_ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "allocation",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "allocation",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "__parent_Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "__parent_Remarks"
+    }
+  },
+  {
+    "name": "SAP Payment Outgoing Detail",
+    "mapping_name": "SAP Payment Outgoing Detail",
+    "enabled": 1,
+    "sap_doctype": "VendorPayments",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": "DocType eq 'rSupplier'",
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "outgoing:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Payable"
+        }
+      },
+      "account": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Supplier"
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Supplier",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "ProjectCode",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "outgoing:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "against_voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Payment Entry"
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "outgoing:",
+          "doctype": "External Payment Entry"
+        }
+      },
+      "account_currency": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "payment",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "payment",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "Remarks"
+    }
+  },
+  {
+    "name": "SAP Payment Purchase Down Payment Detail",
+    "mapping_name": "SAP Payment Purchase Down Payment Detail",
+    "enabled": 1,
+    "sap_doctype": "PurchaseDownPayments",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "purchase-down-payment:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "due_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Payable"
+        }
+      },
+      "account": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Supplier"
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Supplier",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "Project",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Purchase Invoice"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "down-payment:",
+          "doctype": "External Purchase Invoice"
+        }
+      },
+      "against_voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Purchase Invoice"
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "down-payment:",
+          "doctype": "External Purchase Invoice"
+        }
+      },
+      "account_currency": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "JournalMemo"
+    }
+  },
+  {
+    "name": "SAP Payment Purchase Invoice Detail",
+    "mapping_name": "SAP Payment Purchase Invoice Detail",
+    "enabled": 1,
+    "sap_doctype": "PurchaseInvoices",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "purchase-invoice:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "due_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Payable"
+        }
+      },
+      "account": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Supplier"
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Supplier",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "Project",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Purchase Invoice"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "",
+          "doctype": "External Purchase Invoice"
+        }
+      },
+      "against_voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Purchase Invoice"
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "",
+          "doctype": "External Purchase Invoice"
+        }
+      },
+      "account_currency": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "company",
+          "verify_negative_invoice": true
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "account",
+          "verify_negative_invoice": true
+        }
+      },
+      "delinked": {
+        "fieldname": "Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "JournalMemo"
+    }
+  },
+  {
+    "name": "SAP Payment Sales Invoice Detail",
+    "mapping_name": "SAP Payment Sales Invoice Detail",
+    "enabled": 1,
+    "sap_doctype": "Invoices",
+    "external_doctype": "External Payment Ledger Entry",
+    "erp_doctype": "Payment Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "sales-invoice:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "due_date": {
+        "fieldname": "DocDueDate",
+        "transform": "sap_date"
+      },
+      "account_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Receivable"
+        }
+      },
+      "account": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "name",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "party_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Customer"
+        }
+      },
+      "party": {
+        "fieldname": "CardCode",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Customer",
+          "field": "name",
+          "return_field": "name",
+          "company_context": false,
+          "required": true
+        }
+      },
+      "project": {
+        "fieldname": "Project",
+        "transform": "sap_project_link"
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Sales Invoice"
+        }
+      },
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "",
+          "doctype": "External Sales Invoice"
+        }
+      },
+      "against_voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "External Sales Invoice"
+        }
+      },
+      "against_voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "staged_document",
+        "transform_config": {
+          "prefix": "",
+          "doctype": "External Sales Invoice"
+        }
+      },
+      "account_currency": {
+        "fieldname": "ControlAccount",
+        "transform": "lookup",
+        "transform_config": {
+          "doctype": "Account",
+          "field": "account_number",
+          "return_field": "account_currency",
+          "company_context": true,
+          "required": true
+        }
+      },
+      "amount": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "company"
+        }
+      },
+      "amount_in_account_currency": {
+        "transform": "payment_ledger_amount",
+        "transform_config": {
+          "source_kind": "invoice",
+          "currency_kind": "account"
+        }
+      },
+      "delinked": {
+        "fieldname": "Cancelled",
+        "transform": "sap_bool"
+      },
+      "remarks": "JournalMemo"
+    }
+  },
+  {
+    "name": "SAP Production Plan",
+    "mapping_name": "SAP Production Plan",
+    "enabled": 0,
+    "sap_doctype": "ProductionOrders",
+    "external_doctype": "External Production Plan",
+    "erp_doctype": "Production Plan",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "AbsoluteEntry",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": "remote_id",
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "PostingDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemNo"
+    }
+  },
+  {
+    "name": "SAP Project Type",
+    "mapping_name": "SAP Project Type",
+    "enabled": 0,
+    "sap_doctype": "Projects",
+    "external_doctype": "External Project Type",
+    "erp_doctype": "Project Type",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": "custom_remote_id",
+    "field_mapping": {
+      "project_type": "Name"
+    }
+  },
+  {
+    "name": "SAP Purchase Down Payment",
+    "mapping_name": "SAP Purchase Down Payment",
+    "enabled": 1,
+    "sap_doctype": "PurchaseDownPayments",
+    "external_doctype": "External Purchase Invoice",
+    "erp_doctype": "Purchase Invoice",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry",
+    "sap_id_prefix": "down-payment:",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -2458,1268 +5723,86 @@
     }
   },
   {
-    "name": "SAP Quotation",
-    "mapping_name": "SAP Quotation",
+    "name": "SAP Purchase Taxes and Charges Template",
+    "mapping_name": "SAP Purchase Taxes and Charges Template",
     "enabled": 0,
-    "sap_doctype": "Quotations",
-    "external_doctype": "External Quotation",
-    "erp_doctype": "Quotation",
-    "sap_filter": null,
+    "sap_doctype": "VatGroups",
+    "external_doctype": "External Purchase Taxes and Charges Template",
+    "erp_doctype": "Purchase Taxes and Charges Template",
+    "sap_filter": "Category eq 'bovcInputTax'",
     "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "SAL-QTN-.YYYY.-"
-        }
-      },
-      "order_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Sales"
-        }
-      },
-      "transaction_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "valid_till": {
-        "fieldname": "DocDueDate",
-        "transform": "sap_date"
-      },
-      "currency": "DocCurrency",
-      "conversion_rate": "DocRate",
-      "price_list_currency": "DocCurrency",
-      "plc_conversion_rate": "DocRate",
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "rate": "Price",
-          "warehouse": "WarehouseCode",
-          "uom": "UoMCode",
-          "stock_uom": "UoMCode",
-          "conversion_factor": {
-            "fieldname": "UnitsOfMeasurment",
-            "default": 1
-          },
-          "ordered_qty": {
-            "transform": "constant",
-            "transform_config": {
-              "value": 0
-            }
-          },
-          "discount_percentage": "DiscountPercent",
-          "amount": "LineTotal"
-        }
-      },
-      "quotation_to": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Customer"
-        }
-      },
-      "party_name": "CardCode",
-      "docstatus": {
-        "fieldname": "Cancelled",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        }
-      },
-      "grand_total": "DocTotal",
-      "additional_discount_percentage": "DiscountPercent",
-      "discount_amount": "TotalDiscount",
-      "customer_name": "CardName"
-    }
-  },
-  {
-    "name": "SAP Sales Order",
-    "mapping_name": "SAP Sales Order",
-    "enabled": 0,
-    "sap_doctype": "Orders",
-    "external_doctype": "External Sales Order",
-    "erp_doctype": "Sales Order",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "SAL-ORD-.YYYY.-"
-        }
-      },
-      "order_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Sales"
-        }
-      },
-      "transaction_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "currency": "DocCurrency",
-      "conversion_rate": "DocRate",
-      "price_list_currency": "DocCurrency",
-      "plc_conversion_rate": "DocRate",
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "rate": "Price",
-          "warehouse": "WarehouseCode",
-          "amount": "LineTotal",
-          "discount_percentage": "DiscountPercent",
-          "uom": {
-            "fieldname": "UoMCode",
-            "transform": "sap_item_uom",
-            "transform_config": {
-              "manual_uom_fallback": true
-            }
-          },
-          "conversion_factor": {
-            "transform": "item_conversion_factor",
-            "transform_config": {
-              "manual_uom_fallback": true
-            }
-          },
-          "delivery_date": {
-            "fieldname": "ShipDate",
-            "transform": "sap_date"
-          }
-        }
-      },
-      "customer": "CardCode",
-      "customer_name": "CardName",
-      "delivery_date": {
-        "fieldname": "DocDueDate",
-        "transform": "sap_date"
-      },
-      "po_no": "NumAtCard",
-      "grand_total": "DocTotal",
-      "docstatus": {
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        },
-        "fieldname": "Cancelled"
-      },
-      "additional_discount_percentage": "DiscountPercent",
-      "discount_amount": "TotalDiscount",
-      "project": "Project"
-    }
-  },
-  {
-    "name": "SAP Delivery Note",
-    "mapping_name": "SAP Delivery Note",
-    "enabled": 0,
-    "sap_doctype": "DeliveryNotes",
-    "external_doctype": "External Delivery Note",
-    "erp_doctype": "Delivery Note",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "MAT-DN-.YYYY.-"
-        }
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "posting_time": "DocTime",
-      "set_posting_time": {
-        "transform": "constant",
-        "transform_config": {
-          "value": 1
-        }
-      },
-      "currency": "DocCurrency",
-      "conversion_rate": "DocRate",
-      "selling_price_list": {
-        "transform": "matching_selling_price_list"
-      },
-      "price_list_currency": "DocCurrency",
-      "plc_conversion_rate": "DocRate",
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "rate": "Price",
-          "warehouse": "WarehouseCode",
-          "uom": "UoMCode",
-          "conversion_factor": {
-            "transform": "item_conversion_factor"
-          },
-          "discount_percentage": "DiscountPercent",
-          "amount": "LineTotal"
-        }
-      },
-      "customer": "CardCode",
-      "customer_name": "CardName",
-      "docstatus": {
-        "fieldname": "Cancelled",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tNO"
-              },
-              "value": 0
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tYES"
-              },
-              "value": 1
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        }
-      },
-      "grand_total": "DocTotal",
-      "additional_discount_percentage": "DiscountPercent",
-      "discount_amount": "TotalDiscount",
-      "po_no": "NumAtCard",
-      "instructions": "Comments",
-      "total_taxes_and_charges": "VatSum",
-      "taxes": {
-        "transform": "sap_sales_tax_rows",
-        "transform_config": {
-          "rate_accounts": {
-            "0": "2144103",
-            "5": "2144102",
-            "15": "2144101"
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Sales Invoice",
-    "mapping_name": "SAP Sales Invoice",
-    "enabled": 0,
-    "sap_doctype": "Invoices",
-    "external_doctype": "External Sales Invoice",
-    "erp_doctype": "Sales Invoice",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "ACC-SINV-.YYYY.-"
-        }
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "currency": "DocCurrency",
-      "conversion_rate": "DocRate",
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "rate": "Price",
-          "warehouse": "WarehouseCode",
-          "amount": "LineTotal",
-          "discount_percentage": "DiscountPercent",
-          "uom": "UoMCode",
-          "conversion_factor": {
-            "transform": "item_conversion_factor"
-          }
-        }
-      },
-      "customer": "CardCode",
-      "customer_name": "CardName",
-      "debit_to": {
-        "fieldname": "ControlAccount",
-        "transform": "lookup",
-        "transform_config": {
-          "doctype": "Account",
-          "field": "account_number",
-          "required": true
-        }
-      },
-      "due_date": {
-        "fieldname": "DocDueDate",
-        "transform": "sap_date"
-      },
-      "po_no": "NumAtCard",
-      "grand_total": "DocTotal",
-      "remarks": "Comments",
-      "docstatus": {
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        },
-        "fieldname": "Cancelled"
-      },
-      "additional_discount_percentage": "DiscountPercent",
-      "discount_amount": "TotalDiscount",
-      "project": "Project",
-      "set_posting_time": {
-        "transform": "constant",
-        "transform_config": {
-          "value": 1
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Work Order",
-    "mapping_name": "SAP Work Order",
-    "enabled": 0,
-    "sap_doctype": "ProductionOrders",
-    "external_doctype": "External Work Order",
-    "erp_doctype": "Work Order",
-    "sap_filter": null,
-    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "title": "Name",
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "disabled": {
+        "fieldname": "Inactive",
+        "transform": "sap_bool"
+      }
+    }
+  },
+  {
+    "name": "SAP Sales Taxes and Charges Template",
+    "mapping_name": "SAP Sales Taxes and Charges Template",
+    "enabled": 0,
+    "sap_doctype": "VatGroups",
+    "external_doctype": "External Sales Taxes and Charges Template",
+    "erp_doctype": "Sales Taxes and Charges Template",
+    "sap_filter": "Category eq 'bovcOutputTax'",
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
     "full_snapshot_sync": 1,
-    "sap_id_field": "AbsoluteEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "production_item": "ItemNo",
-      "qty": "PlannedQuantity",
-      "fg_warehouse": "Warehouse",
-      "planned_start_date": {
-        "fieldname": "StartDate",
-        "transform": "sap_date"
-      },
-      "required_items": {
-        "fieldname": "ProductionOrderLines",
-        "mapping": {
-          "item_code": "ItemNo",
-          "required_qty": "PlannedQuantity",
-          "source_warehouse": "Warehouse"
-        }
-      },
-      "docstatus": {
-        "fieldname": "ProductionOrderStatus",
-        "transform": "value_map",
-        "transform_config": {
-          "mapping": {
-            "boposPlanned": 0,
-            "boposReleased": 1,
-            "boposClosed": 1,
-            "boposCancelled": 2
-          },
-          "default": 0
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Stock Entry Transfer",
-    "mapping_name": "SAP Stock Entry Transfer",
-    "enabled": 0,
-    "sap_doctype": "StockTransfers",
-    "external_doctype": "External Stock Entry",
-    "erp_doctype": "Stock Entry",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "transfer:",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "stock_entry_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Transfer"
-        }
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "items": {
-        "fieldname": "StockTransferLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "qty": "Quantity",
-          "s_warehouse": "FromWarehouseCode",
-          "t_warehouse": "WarehouseCode"
-        }
-      },
-      "docstatus": {
-        "fieldname": "DocumentStatus",
-        "transform": "value_map",
-        "transform_config": {
-          "mapping": {
-            "bost_Open": 1,
-            "bost_Close": 1,
-            "bost_Paid": 1,
-            "bost_Delivered": 1
-          },
-          "default": 0
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Stock Entry Issue",
-    "mapping_name": "SAP Stock Entry Issue",
-    "enabled": 0,
-    "sap_doctype": "InventoryGenExits",
-    "external_doctype": "External Stock Entry",
-    "erp_doctype": "Stock Entry",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "issue:",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "MAT-STE-.YYYY.-"
-        }
-      },
-      "stock_entry_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Issue"
-        }
-      },
-      "purpose": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Issue"
-        }
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "transfer_qty": "InventoryQuantity",
-          "s_warehouse": "WarehouseCode",
-          "amount": "LineTotal",
-          "uom": "UoMCode",
-          "stock_uom": "UoMCode",
-          "conversion_factor": {
-            "fieldname": "UnitsOfMeasurment",
-            "default": 1
-          }
-        }
-      },
-      "docstatus": {
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tNO"
-              },
-              "value": 0
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tYES"
-              },
-              "value": 1
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        },
-        "fieldname": "Cancelled"
-      },
-      "project": "Project"
-    }
-  },
-  {
-    "name": "SAP Stock Entry Receipt",
-    "mapping_name": "SAP Stock Entry Receipt",
-    "enabled": 0,
-    "sap_doctype": "InventoryGenEntries",
-    "external_doctype": "External Stock Entry",
-    "erp_doctype": "Stock Entry",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "receipt:",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "MAT-STE-.YYYY.-"
-        }
-      },
-      "stock_entry_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Receipt"
-        }
-      },
-      "purpose": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Receipt"
-        }
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "items": {
-        "fieldname": "DocumentLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "item_name": "ItemDescription",
-          "description": "ItemDescription",
-          "qty": "Quantity",
-          "transfer_qty": "InventoryQuantity",
-          "uom": "UoMCode",
-          "stock_uom": "UoMCode",
-          "conversion_factor": {
-            "fieldname": "UnitsOfMeasurment",
-            "default": 1
-          },
-          "basic_rate": "Price",
-          "amount": "LineTotal",
-          "t_warehouse": "WarehouseCode"
-        }
-      },
-      "docstatus": {
-        "fieldname": "Cancelled",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tNO"
-              },
-              "value": 0
-            },
-            {
-              "when": {
-                "Cancelled": "tNO",
-                "Submitted": "tYES"
-              },
-              "value": 1
-            },
-            {
-              "when": {
-                "DocumentStatus": [
-                  "bost_Open",
-                  "bost_Close",
-                  "bost_Paid",
-                  "bost_Delivered"
-                ]
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Payment Entry Incoming",
-    "mapping_name": "SAP Payment Entry Incoming",
-    "enabled": 0,
-    "sap_doctype": "IncomingPayments",
-    "external_doctype": "External Payment Entry",
-    "erp_doctype": "Payment Entry",
-    "sap_filter": null,
-    "source_array_field": null,
     "creation_date_filter_field": null,
     "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "incoming:",
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
     "field_mapping": {
+      "title": "Name",
       "company": {
         "transform": "context",
         "transform_config": {
           "key": "company"
         }
       },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "ACC-PAY-.YYYY.-"
-        }
-      },
-      "payment_type": {
-        "fieldname": "DocType",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "DocType": "rAccount"
-              },
-              "value": "Internal Transfer"
-            },
-            {
-              "when": {
-                "DocType": ["rCustomer", "rSupplier"]
-              },
-              "value": "Receive"
-            }
-          ],
-          "strict": true
-        }
-      },
-      "party_type": {
-        "fieldname": "DocType",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "DocType": "rAccount"
-              },
-              "value": null
-            },
-            {
-              "when": {
-                "DocType": "rCustomer"
-              },
-              "value": "Customer"
-            },
-            {
-              "when": {
-                "DocType": "rSupplier"
-              },
-              "value": "Supplier"
-            }
-          ],
-          "strict": true
-        }
-      },
-      "party": {
-        "fieldname": "CardCode",
-        "transform": "incoming_payment_party_value"
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "paid_amount": {
-        "transform": "sum_fields",
-        "transform_config": {
-          "fields": [
-            "TransferSum",
-            "CashSum",
-            "CheckSum",
-            "CreditSum"
-          ]
-        }
-      },
-      "docstatus": {
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "Cancelled": "tNO"
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        },
-        "fieldname": "Cancelled"
-      },
-      "party_name": {
-        "fieldname": "CardName",
-        "transform": "incoming_payment_party_value"
-      },
-      "reference_no": {
-        "transform": "first_value",
-        "transform_config": {
-          "fields": ["TransferReference", "DocNum"]
-        }
-      },
-      "reference_date": {
-        "transform": "incoming_payment_reference_date"
-      },
-      "remarks": "Remarks",
-      "paid_from": {
-        "transform": "incoming_payment_source_account",
-        "transform_config": {
-          "return_field": "name"
-        }
-      },
-      "paid_to": {
-        "transform": "payment_method_account",
-        "transform_config": {
-          "return_field": "name"
-        }
-      },
-      "paid_from_account_currency": {
-        "transform": "incoming_payment_source_account",
-        "transform_config": {
-          "return_field": "account_currency"
-        }
-      },
-      "paid_to_account_currency": {
-        "transform": "payment_method_account",
-        "transform_config": {
-          "return_field": "account_currency"
-        }
-      },
-      "received_amount": {
-        "transform": "sum_fields",
-        "transform_config": {
-          "fields": [
-            "TransferSum",
-            "CashSum",
-            "CheckSum",
-            "CreditSum"
-          ]
-        }
-      },
-      "source_exchange_rate": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "rate",
-          "incoming": true
-        }
-      },
-      "target_exchange_rate": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "rate",
-          "incoming": true
-        }
-      },
-      "base_paid_amount": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "amount",
-          "incoming": true
-        }
-      },
-      "base_received_amount": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "amount",
-          "incoming": true
-        }
+      "disabled": {
+        "fieldname": "Inactive",
+        "transform": "sap_bool"
       }
     }
   },
   {
-    "name": "SAP Payment Entry Outgoing",
-    "mapping_name": "SAP Payment Entry Outgoing",
-    "enabled": 0,
-    "sap_doctype": "VendorPayments",
-    "external_doctype": "External Payment Entry",
-    "erp_doctype": "Payment Entry",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "outgoing:",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "ACC-PAY-.YYYY.-"
-        }
-      },
-      "payment_type": {
-        "fieldname": "DocType",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "DocType": "rAccount"
-              },
-              "value": "Internal Transfer"
-            },
-            {
-              "when": {
-                "DocType": "rSupplier"
-              },
-              "value": "Pay"
-            }
-          ],
-          "strict": true
-        }
-      },
-      "party_type": {
-        "fieldname": "DocType",
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "DocType": "rAccount"
-              },
-              "value": null
-            },
-            {
-              "when": {
-                "DocType": "rSupplier"
-              },
-              "value": "Supplier"
-            }
-          ],
-          "strict": true
-        }
-      },
-      "party": {
-        "fieldname": "CardCode",
-        "transform": "incoming_payment_party_value"
-      },
-      "posting_date": {
-        "fieldname": "DocDate",
-        "transform": "sap_date"
-      },
-      "paid_amount": {
-        "transform": "sum_fields",
-        "transform_config": {
-          "fields": [
-            "TransferSum",
-            "CashSum",
-            "CheckSum",
-            "CreditSum"
-          ]
-        }
-      },
-      "docstatus": {
-        "transform": "conditional_value",
-        "transform_config": {
-          "conditions": [
-            {
-              "when": {
-                "Cancelled": "tYES"
-              },
-              "value": 2
-            },
-            {
-              "when": {
-                "Cancelled": "tNO"
-              },
-              "value": 1
-            }
-          ],
-          "default": 0
-        },
-        "fieldname": "Cancelled"
-      },
-      "party_name": {
-        "fieldname": "CardName",
-        "transform": "incoming_payment_party_value"
-      },
-      "reference_no": {
-        "transform": "first_value",
-        "transform_config": {
-          "fields": ["TransferReference", "DocNum"]
-        }
-      },
-      "reference_date": {
-        "transform": "incoming_payment_reference_date"
-      },
-      "remarks": "Remarks",
-      "paid_from": {
-        "transform": "payment_method_account",
-        "transform_config": {
-          "return_field": "name"
-        }
-      },
-      "paid_to": {
-        "transform": "outgoing_payment_target_account",
-        "transform_config": {
-          "return_field": "name"
-        }
-      },
-      "paid_from_account_currency": {
-        "transform": "payment_method_account",
-        "transform_config": {
-          "return_field": "account_currency"
-        }
-      },
-      "paid_to_account_currency": {
-        "transform": "outgoing_payment_target_account",
-        "transform_config": {
-          "return_field": "account_currency"
-        }
-      },
-      "received_amount": {
-        "transform": "sum_fields",
-        "transform_config": {
-          "fields": [
-            "TransferSum",
-            "CashSum",
-            "CheckSum",
-            "CreditSum"
-          ]
-        }
-      },
-      "source_exchange_rate": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "rate"
-        }
-      },
-      "target_exchange_rate": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "rate"
-        }
-      },
-      "base_paid_amount": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "amount"
-        }
-      },
-      "base_received_amount": {
-        "transform": "local_payment_value",
-        "transform_config": {
-          "kind": "amount"
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Journal Entry",
-    "mapping_name": "SAP Journal Entry",
-    "enabled": 0,
-    "sap_doctype": "JournalEntries",
-    "external_doctype": "External Journal Entry",
-    "erp_doctype": "Journal Entry",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "JdtNum",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "posting_date": {
-        "fieldname": "ReferenceDate",
-        "transform": "sap_date"
-      },
-      "user_remark": "Memo",
-      "accounts": {
-        "fieldname": "JournalEntryLines",
-        "mapping": {
-          "account": {
-            "fieldname": "AccountCode",
-            "transform": "lookup",
-            "transform_config": {
-              "doctype": "Account",
-              "field": "account_number",
-              "company_context": true,
-              "required": true
-            }
-          },
-          "debit_in_account_currency": {
-            "fieldname": "FCDebit",
-            "transform": "sap_account_amount",
-            "transform_config": {
-              "base_field": "Debit"
-            }
-          },
-          "credit_in_account_currency": {
-            "fieldname": "FCCredit",
-            "transform": "sap_account_amount",
-            "transform_config": {
-              "base_field": "Credit"
-            }
-          },
-          "debit": "Debit",
-          "credit": "Credit",
-          "account_currency": {
-            "fieldname": "FCCurrency",
-            "transform": "sap_account_currency"
-          },
-          "party_type": {
-            "fieldname": "ShortName",
-            "transform": "journal_party"
-          },
-          "party": {
-            "fieldname": "ShortName",
-            "transform": "journal_party"
-          },
-          "cost_center": "CostingCode",
-          "project": "ProjectCode",
-          "user_remark": "LineMemo"
-        },
-        "nonzero_fields": [
-          "debit",
-          "credit"
-        ]
-      },
-      "docstatus": {
-        "transform": "constant",
-        "transform_config": {
-          "value": 1
-        }
-      },
-      "due_date": {
-        "fieldname": "DueDate",
-        "transform": "sap_date"
-      },
-      "voucher_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Journal Entry"
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "ACC-JV-.YYYY.-"
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Stock Reconciliation",
-    "mapping_name": "SAP Stock Reconciliation",
+    "name": "SAP Stock Counting Detail",
+    "mapping_name": "SAP Stock Counting Detail",
     "enabled": 0,
     "sap_doctype": "InventoryCountings",
-    "external_doctype": "External Stock Reconciliation",
-    "erp_doctype": "Stock Reconciliation",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
     "sap_filter": null,
-    "source_array_field": null,
+    "source_array_field": "InventoryCountingLines",
+    "fetch_only": 1,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "DocumentEntry",
-    "sap_id_prefix": "",
+    "sap_id_field": "DocumentEntry+LineNumber",
+    "sap_id_prefix": "counting:",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -3732,174 +5815,37 @@
         "fieldname": "CountDate",
         "transform": "sap_date"
       },
-      "purpose": {
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": "DocumentNumber",
+      "voucher_detail_no": "LineNumber",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "voucher_type": {
         "transform": "constant",
         "transform_config": {
           "value": "Stock Reconciliation"
         }
-      },
-      "items": {
-        "fieldname": "InventoryCountingLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "warehouse": "WarehouseCode",
-          "qty": "CountedQuantity"
-        }
-      },
-      "docstatus": {
-        "fieldname": "DocumentStatus",
-        "transform": "value_map",
-        "transform_config": {
-          "mapping": {
-            "bost_Open": 1,
-            "bost_Close": 1,
-            "bost_Paid": 1,
-            "bost_Delivered": 1
-          },
-          "default": 0
-        }
       }
     }
   },
   {
-    "name": "SAP Bank Account",
-    "mapping_name": "SAP Bank Account",
+    "name": "SAP Stock Delivery Detail",
+    "mapping_name": "SAP Stock Delivery Detail",
     "enabled": 1,
-    "sap_doctype": "HouseBankAccounts",
-    "external_doctype": "External Bank Account",
-    "erp_doctype": "Bank Account",
+    "sap_doctype": "DeliveryNotes",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
     "sap_filter": null,
-    "source_array_field": null,
+    "source_array_field": "DocumentLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "AbsoluteEntry",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "account_name": {
-        "transform": "first_value",
-        "transform_config": {
-          "fields": [
-            "AccountName",
-            "AccNo"
-          ]
-        }
-      },
-      "bank": "BankCode",
-      "bank_account_no": "AccNo",
-      "branch_code": "Branch",
-      "iban": "IBAN"
-    }
-  },
-  {
-    "name": "SAP Department",
-    "mapping_name": "SAP Department",
-    "enabled": 1,
-    "sap_doctype": "Departments",
-    "external_doctype": "External Department",
-    "erp_doctype": "Department",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "Code",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "department_name": "Name",
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP Territory",
-    "mapping_name": "SAP Territory",
-    "enabled": 1,
-    "sap_doctype": "Territories",
-    "external_doctype": "External Territory",
-    "erp_doctype": "Territory",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "TerritoryID",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "territory_name": "Description"
-    }
-  },
-  {
-    "name": "SAP Sales Stage",
-    "mapping_name": "SAP Sales Stage",
-    "enabled": 1,
-    "sap_doctype": "SalesStages",
-    "external_doctype": "External Sales Stage",
-    "erp_doctype": "Sales Stage",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "SequenceNo",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "stage_name": "Name"
-    }
-  },
-  {
-    "name": "SAP Sales Tax Code",
-    "mapping_name": "SAP Sales Tax Code",
-    "enabled": 1,
-    "sap_doctype": "SalesTaxCodes",
-    "external_doctype": "External Tax Category",
-    "erp_doctype": "Tax Category",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
-    "full_snapshot_sync": 1,
-    "sap_id_field": "Code",
-    "sap_id_prefix": "",
-    "erp_sap_id_fieldname": null,
-    "field_mapping": {
-      "title": {
-        "transform": "first_value",
-        "transform_config": {
-          "fields": [
-            "Name",
-            "Code"
-          ]
-        }
-      },
-      "disabled": {
-        "fieldname": "Inactive",
-        "transform": "sap_bool"
-      }
-    }
-  },
-  {
-    "name": "SAP Inventory Transfer Request",
-    "mapping_name": "SAP Inventory Transfer Request",
-    "enabled": 0,
-    "sap_doctype": "InventoryTransferRequests",
-    "external_doctype": "External Material Request",
-    "erp_doctype": "Material Request",
-    "sap_filter": null,
-    "source_array_field": null,
-    "creation_date_filter_field": "CreationDate",
-    "date_filter_field": "UpdateDate",
-    "full_snapshot_sync": 0,
-    "sap_id_field": "DocEntry",
-    "sap_id_prefix": "transfer_request:",
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "delivery:",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
       "company": {
@@ -3908,61 +5854,191 @@
           "key": "company"
         }
       },
-      "material_request_type": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Material Transfer"
-        }
-      },
-      "transaction_date": {
+      "posting_date": {
         "fieldname": "DocDate",
         "transform": "sap_date"
       },
-      "schedule_date": {
-        "fieldname": "DueDate",
-        "transform": "sap_date"
-      },
-      "items": {
-        "fieldname": "StockTransferLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "qty": "Quantity",
-          "warehouse": "WarehouseCode",
-          "from_warehouse": "FromWarehouseCode",
-          "schedule_date": {
-            "fieldname": "DueDate",
-            "transform": "parent_date"
-          }
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": "DocNum",
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": -1
         }
       },
-      "docstatus": {
-        "fieldname": "DocumentStatus",
-        "transform": "value_map",
+      "voucher_type": {
+        "transform": "constant",
         "transform_config": {
-          "mapping": {
-            "bost_Open": 1,
-            "bost_Close": 1,
-            "bost_Paid": 1,
-            "bost_Delivered": 1
-          },
-          "default": 0
+          "value": "Delivery Note"
         }
       }
     }
   },
   {
-    "name": "SAP Inventory Posting",
-    "mapping_name": "SAP Inventory Posting",
-    "enabled": 0,
-    "sap_doctype": "InventoryPostings",
-    "external_doctype": "External Stock Reconciliation",
-    "erp_doctype": "Stock Reconciliation",
+    "name": "SAP Stock Goods Issue Detail",
+    "mapping_name": "SAP Stock Goods Issue Detail",
+    "enabled": 1,
+    "sap_doctype": "InventoryGenExits",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
     "sap_filter": null,
-    "source_array_field": null,
+    "source_array_field": "DocumentLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
     "creation_date_filter_field": null,
     "date_filter_field": null,
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "goods-out:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "stock_entry_voucher",
+        "transform_config": {
+          "prefix": "issue:"
+        }
+      },
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": -1
+        }
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Entry"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Goods Receipt Detail",
+    "mapping_name": "SAP Stock Goods Receipt Detail",
+    "enabled": 1,
+    "sap_doctype": "InventoryGenEntries",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "DocumentLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
     "full_snapshot_sync": 1,
-    "sap_id_field": "DocumentEntry",
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "goods-in:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": {
+        "fieldname": "DocEntry",
+        "transform": "stock_entry_voucher",
+        "transform_config": {
+          "prefix": "receipt:"
+        }
+      },
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": 1
+        }
+      },
+      "incoming_rate": "StockInmPrice",
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Entry"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Item Warehouse Detail",
+    "mapping_name": "SAP Stock Item Warehouse Detail",
+    "enabled": 0,
+    "sap_doctype": "Items",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "ItemWarehouseInfoCollection",
+    "fetch_only": 1,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "ItemCode",
+    "sap_id_prefix": "item:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "qty_after_transaction": "InStock",
+      "valuation_rate": "StandardAveragePrice"
+    }
+  },
+  {
+    "name": "SAP Stock Posting Detail",
+    "mapping_name": "SAP Stock Posting Detail",
+    "enabled": 0,
+    "sap_doctype": "InventoryPostings",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "InventoryPostingLines",
+    "fetch_only": 1,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocumentEntry+LineNumber",
     "sap_id_prefix": "posting:",
     "erp_sap_id_fieldname": null,
     "field_mapping": {
@@ -3972,261 +6048,195 @@
           "key": "company"
         }
       },
-      "purpose": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "Stock Reconciliation"
-        }
-      },
       "posting_date": {
         "fieldname": "PostingDate",
         "transform": "sap_date"
       },
-      "items": {
-        "fieldname": "InventoryPostingLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "warehouse": "WarehouseCode",
-          "qty": "CountedQuantity",
-          "valuation_rate": "Price"
-        }
-      },
-      "docstatus": {
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": "DocumentNumber",
+      "voucher_detail_no": "LineNumber",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "voucher_type": {
         "transform": "constant",
         "transform_config": {
-          "value": 1
+          "value": "Stock Reconciliation"
         }
       }
     }
   },
   {
-    "name": "SAP Designation",
-    "mapping_name": "SAP Designation",
-    "enabled": 0,
-    "sap_doctype": "EmployeePosition",
-    "external_doctype": "External Designation",
-    "erp_doctype": "Designation",
+    "name": "SAP Stock Purchase Receipt Detail",
+    "mapping_name": "SAP Stock Purchase Receipt Detail",
+    "enabled": 1,
+    "sap_doctype": "PurchaseDeliveryNotes",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "DocumentLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
     "full_snapshot_sync": 1,
-    "sap_id_field": "PositionID",
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "grpo:",
+    "erp_sap_id_fieldname": null,
     "field_mapping": {
-      "designation_name": "Name",
-      "description": "Description"
-    }
-  },
-  {
-    "name": "SAP Lead Source",
-    "mapping_name": "SAP Lead Source",
-    "enabled": 0,
-    "sap_doctype": "SalesOpportunitySourcesSetup",
-    "external_doctype": "External Lead Source",
-    "erp_doctype": "Lead Source",
-    "full_snapshot_sync": 1,
-    "sap_id_field": "SequenceNo",
-    "field_mapping": {
-      "source_name": "Description"
-    }
-  },
-  {
-    "name": "SAP Mode of Payment",
-    "mapping_name": "SAP Mode of Payment",
-    "enabled": 0,
-    "sap_doctype": "WizardPaymentMethods",
-    "external_doctype": "External Mode of Payment",
-    "erp_doctype": "Mode of Payment",
-    "full_snapshot_sync": 1,
-    "sap_id_field": "PaymentMethodCode",
-    "field_mapping": {
-      "mode_of_payment": {
-        "transform": "first_value",
+      "company": {
+        "transform": "context",
         "transform_config": {
-          "fields": [
-            "Description",
-            "PaymentMethodCode"
-          ]
+          "key": "company"
         }
       },
-      "enabled": {
-        "fieldname": "Active",
-        "transform": "sap_bool"
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": "DocNum",
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": 1
+        }
+      },
+      "incoming_rate": "StockInmPrice",
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Purchase Receipt"
+        }
       }
     }
   },
   {
-    "name": "SAP Location",
-    "mapping_name": "SAP Location",
+    "name": "SAP Stock Transfer Detail",
+    "mapping_name": "SAP Stock Transfer Detail",
+    "enabled": 1,
+    "sap_doctype": "StockTransfers",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "StockTransferLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "transfer:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemCode",
+      "warehouse": "FromWarehouseCode",
+      "voucher_no": "DocNum",
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": -1
+        }
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Entry"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Stock Transfer Receipt Detail",
+    "mapping_name": "SAP Stock Transfer Receipt Detail",
+    "enabled": 1,
+    "sap_doctype": "StockTransfers",
+    "external_doctype": "External Stock Ledger Entry",
+    "erp_doctype": "Stock Ledger Entry",
+    "sap_filter": null,
+    "source_array_field": "StockTransferLines",
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 20,
+    "full_snapshot_sync": 1,
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "DocEntry+LineNum",
+    "sap_id_prefix": "transfer-in:",
+    "erp_sap_id_fieldname": null,
+    "field_mapping": {
+      "company": {
+        "transform": "context",
+        "transform_config": {
+          "key": "company"
+        }
+      },
+      "posting_date": {
+        "fieldname": "DocDate",
+        "transform": "sap_date"
+      },
+      "item_code": "ItemCode",
+      "warehouse": "WarehouseCode",
+      "voucher_no": "DocNum",
+      "voucher_detail_no": "LineNum",
+      "project": "ProjectCode",
+      "stock_uom": "UoMCode",
+      "actual_qty": {
+        "fieldname": "Quantity",
+        "transform": "multiply",
+        "transform_config": {
+          "factor": 1
+        }
+      },
+      "voucher_type": {
+        "transform": "constant",
+        "transform_config": {
+          "value": "Stock Entry"
+        }
+      }
+    }
+  },
+  {
+    "name": "SAP Warehouse Location",
+    "mapping_name": "SAP Warehouse Location",
     "enabled": 0,
-    "sap_doctype": "Warehouses",
+    "sap_doctype": "WarehouseLocations",
     "external_doctype": "External Location",
     "erp_doctype": "Location",
+    "sap_filter": null,
+    "source_array_field": null,
+    "fetch_only": 0,
+    "raw_payload": 0,
+    "fetch_limit": 0,
     "full_snapshot_sync": 1,
-    "sap_id_field": "WarehouseCode",
+    "creation_date_filter_field": null,
+    "date_filter_field": null,
+    "sap_id_field": "Code",
+    "sap_id_prefix": null,
+    "erp_sap_id_fieldname": "custom_remote_id",
     "field_mapping": {
-      "location_name": "WarehouseName"
-    }
-  },
-  {
-    "name": "SAP Opportunity",
-    "mapping_name": "SAP Opportunity",
-    "enabled": 0,
-    "sap_doctype": "SalesOpportunities",
-    "external_doctype": "External Opportunity",
-    "erp_doctype": "Opportunity",
-    "full_snapshot_sync": 1,
-    "sap_id_field": "SequentialNo",
-    "field_mapping": {
-      "title": "OpportunityName",
-      "party_name": {
-        "fieldname": "CardCode",
-        "transform": "sap_opportunity_party"
-      },
-      "opportunity_from": {
-        "fieldname": "CardCode",
-        "transform": "sap_opportunity_party"
-      },
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "transaction_date": {
-        "fieldname": "StartDate",
-        "transform": "sap_date"
-      },
-      "customer_name": "CustomerName",
-      "expected_closing": {
-        "fieldname": "PredictedClosingDate",
-        "transform": "sap_date"
-      },
-      "probability": "ClosingPercentage",
-      "status": {
-        "fieldname": "Status",
-        "transform": "value_map",
-        "transform_config": {
-          "mapping": {
-            "sos_Open": "Open"
-          },
-          "strict": true
-        }
-      },
-      "opportunity_type": {
-        "fieldname": "OpportunityType",
-        "transform": "value_map",
-        "transform_config": {
-          "mapping": {
-            "boOpSales": "Sales"
-          },
-          "strict": true
-        }
-      },
-      "currency": {
-        "transform": "context",
-        "transform_config": {
-          "key": "currency"
-        }
-      },
-      "conversion_rate": {
-        "transform": "constant",
-        "transform_config": {
-          "value": 1
-        }
-      },
-      "opportunity_amount": "TotalAmountLocal",
-      "base_opportunity_amount": "TotalAmountLocal",
-      "source": {
-        "fieldname": "Source",
-        "transform": "sap_lookup",
-        "transform_config": {
-          "entity": "SalesOpportunitySourcesSetup",
-          "key": "SequenceNo",
-          "key_type": "integer",
-          "value_field": "Description",
-          "target": {
-            "doctype": "Lead Source",
-            "field": "name"
-          }
-        }
-      },
-      "sales_stage": {
-        "fieldname": "CurrentStageNo",
-        "transform": "sap_lookup",
-        "transform_config": {
-          "entity": "SalesStages",
-          "key": "SequenceNo",
-          "key_type": "integer",
-          "value_field": "Name",
-          "target": {
-            "doctype": "Sales Stage",
-            "field": "stage_name",
-            "required": true
-          }
-        }
-      },
-      "naming_series": {
-        "transform": "constant",
-        "transform_config": {
-          "value": "CRM-OPP-.YYYY.-"
-        }
-      }
-    }
-  },
-  {
-    "name": "SAP BOM",
-    "mapping_name": "SAP BOM",
-    "enabled": 0,
-    "sap_doctype": "ProductTrees",
-    "external_doctype": "External BOM",
-    "erp_doctype": "BOM",
-    "full_snapshot_sync": 1,
-    "sap_id_field": "TreeCode",
-    "field_mapping": {
-      "item": "TreeCode",
-      "quantity": "Quantity",
-      "company": {
-        "transform": "context",
-        "transform_config": {
-          "key": "company"
-        }
-      },
-      "currency": {
-        "transform": "context",
-        "transform_config": {
-          "key": "currency"
-        }
-      },
-      "conversion_rate": {
-        "transform": "constant",
-        "transform_config": {
-          "value": 1
-        }
-      },
-      "items": {
-        "fieldname": "ProductTreeLines",
-        "mapping": {
-          "item_code": "ItemCode",
-          "qty": "Quantity",
-          "uom": "InventoryUOM",
-          "stock_uom": "InventoryUOM",
-          "conversion_factor": {
-            "transform": "constant",
-            "transform_config": {
-              "value": 1
-            }
-          },
-          "rate": "Price"
-        },
-        "required_fields": [
-          "item_code",
-          "qty",
-          "uom",
-          "rate",
-          "conversion_factor"
-        ],
-        "positive_fields": [
-          "qty",
-          "conversion_factor"
-        ]
-      }
+      "location_name": "Name"
     }
   }
 ]

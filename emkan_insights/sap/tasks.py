@@ -66,14 +66,17 @@ def enqueue_sap_master_sync() -> dict[str, int]:
 
 
 def synchronize_sap_data(
-	row_name: str, *, continue_on_sync_error: bool = False, fetch_only: bool = False
+	row_name: str, *, continue_on_sync_error: bool = False, fetch_only: bool = False,
+	from_date: str | None = None, to_date: str | None = None,
 ) -> dict:
+	if bool(from_date) != bool(to_date):
+		raise frappe.ValidationError("from_date and to_date must be provided together.")
 	row = frappe.get_doc("External Site Configuration CT", row_name)
 	if row.parenttype != "External SAP Configuration" or row.parentfield != "mappings":
 		raise frappe.ValidationError("The selected row does not belong to an External SAP Configuration.")
 
 	# Share the lock with workers already running the previous job name.
-	lock_key = f"sap_master_sync:{row.name}"
+	lock_key = _mapping_lock_key(row.name)
 	if not frappe.cache().set(lock_key, "1", nx=True, ex=FETCH_LOCK_TTL):
 		result = {"skipped": True, "reason": "A synchronization is already running for this mapping."}
 		_log_fetch(row, "Skipped", result=result)
@@ -83,8 +86,11 @@ def synchronize_sap_data(
 	try:
 		_log_fetch(row, "Started")
 		mapping = frappe.get_doc("SAP Doctype Mapping", row.sap_mapping)
-		fetch_options = {}
-		if not mapping.full_snapshot_sync and _has_staged_mapping_errors(mapping, row.parent):
+		fetch_options = {"from_date": from_date, "to_date": to_date} if from_date else {}
+		if not fetch_options and not mapping.full_snapshot_sync and (
+			_has_staged_mapping_errors(mapping, row.parent)
+			or (getattr(row, "last_sync", None) and _has_empty_staging(mapping, row.parent))
+		):
 			fetch_options = {"from_date": "2000-01-01", "to_date": nowdate()}
 		result = get_mapped_data(
 			row.sap_mapping,
@@ -125,6 +131,64 @@ def synchronize_sap_data(
 	finally:
 		frappe.cache().delete(lock_key)
 	return result
+
+
+def synchronize_sap_doctype(
+	doctype_name: str, configuration_name: str | None = None, *, fetch_only: bool = False,
+	from_date: str | None = None, to_date: str | None = None,
+) -> dict:
+	"""Run enabled SAP mappings for one ERPNext DocType."""
+	if bool(from_date) != bool(to_date):
+		raise frappe.ValidationError("from_date and to_date must be provided together.")
+	mapping_names = frappe.get_all(
+		"SAP Doctype Mapping",
+		filters={"erp_doctype": doctype_name, "enabled": 1},
+		pluck="name",
+		limit_page_length=0,
+	)
+	if not mapping_names:
+		raise frappe.ValidationError(f"No enabled SAP mapping targets {doctype_name}.")
+
+	filters = {
+		"parenttype": "External SAP Configuration",
+		"parentfield": "mappings",
+		"sap_mapping": ["in", mapping_names],
+	}
+	if configuration_name:
+		filters["parent"] = configuration_name
+	rows = frappe.get_all(
+		"External Site Configuration CT",
+		filters=filters,
+		fields=["name", "parent", "sap_mapping"],
+		order_by="idx asc",
+		limit_page_length=0,
+	)
+	if not rows:
+		raise frappe.ValidationError(f"No configured SAP mapping targets {doctype_name}.")
+	configurations = {row.parent for row in rows}
+	if len(configurations) > 1:
+		raise frappe.ValidationError("Specify configuration_name to select one SAP configuration.")
+
+	results = []
+	for row in _ordered_mapping_rows(rows):
+		options = {"from_date": from_date, "to_date": to_date} if from_date else {}
+		result = synchronize_sap_data(row.name, fetch_only=fetch_only, **options)
+		results.append({
+			"mapping": row.sap_mapping,
+			"fetched": len(result.get("success") or []),
+			"created": len(result.get("created") or []),
+			"updated": len(result.get("updated") or []),
+			"unchanged": len(result.get("unchanged") or []),
+			"failed": len(result.get("failed") or []),
+			"skipped": bool(result.get("skipped")),
+			"sync": result.get("sync"),
+		})
+	return {
+		"doctype": doctype_name,
+		"configuration": next(iter(configurations)),
+		"fetch_only": fetch_only,
+		"results": results,
+	}
 
 
 def synchronize_sap_configurations(configuration_names: list[str]) -> dict:
@@ -173,9 +237,9 @@ def fetch_sap_review_configuration(configuration_name: str) -> dict:
 
 
 def synchronize_sap_configuration(configuration_name: str, *, fetch_only: bool = False) -> dict:
-	if not fetch_only:
-		_ensure_company_roots()
 	_log_configuration_started(configuration_name, "Fetch" if fetch_only else "Synchronization")
+	if not fetch_only:
+		_ensure_company_cost_centers()
 	rows = frappe.get_all(
 		"External Site Configuration CT",
 		filters={
@@ -242,12 +306,10 @@ def synchronize_sap_configuration(configuration_name: str, *, fetch_only: bool =
 	return result
 
 
-def _ensure_company_roots() -> None:
-	from emkan_insights.patches.v0_0_1.create_sap_company_account_roots import execute as account_roots
+def _ensure_company_cost_centers() -> None:
 	from emkan_insights.patches.v0_0_1.create_sap_default_cost_centers import execute as default_cost_centers
 	from emkan_insights.patches.v0_0_1.create_sap_root_cost_centers import execute as root_cost_centers
 
-	account_roots()
 	default_cost_centers()
 	root_cost_centers()
 	frappe.db.commit()
@@ -263,9 +325,16 @@ def _has_staged_mapping_errors(mapping, configuration: str) -> bool:
 	))
 
 
+def _has_empty_staging(mapping, configuration: str) -> bool:
+	return frappe.db.table_exists(mapping.external_doctype) and not frappe.db.exists(
+		mapping.external_doctype,
+		{"external_sap_configuration": configuration},
+	)
+
+
 def sync_sap_configuration(configuration_name: str) -> dict:
-	_ensure_company_roots()
 	_log_configuration_started(configuration_name, "Sync")
+	_ensure_company_cost_centers()
 	rows = frappe.get_all(
 		"External Site Configuration CT",
 		filters={
@@ -317,7 +386,7 @@ def sync_sap_data(row_name: str) -> dict:
 	if row.parenttype != "External SAP Configuration" or row.parentfield != "mappings":
 		raise frappe.ValidationError("The selected row does not belong to an External SAP Configuration.")
 
-	lock_key = f"sap_master_sync:{row.name}"
+	lock_key = _mapping_lock_key(row.name)
 	if not frappe.cache().set(lock_key, "1", nx=True, ex=FETCH_LOCK_TTL):
 		return {"status": "skipped", "reason": "A fetch or sync is already running."}
 
@@ -339,6 +408,22 @@ def _sync_mapping_and_reconcile(
 	if getattr(mapping, "fetch_only", False):
 		raise frappe.ValidationError(f"SAP mapping {mapping.name} is fetch only.")
 	result = sync_mapping(row.name, remote_ids=remote_ids)
+	if mapping.name == "SAP Fixed Asset":
+		from emkan_insights.sap.asset_acquisition import (
+			reconcile_asset_acquisitions,
+			reconcile_asset_retirements,
+			submit_imported_assets,
+		)
+
+		result["asset_acquisition"] = reconcile_asset_acquisitions(row.parent, apply=True)
+		submit_rule = frappe.parse_json(mapping.field_mapping).get("docstatus")
+		if (
+			submit_rule.get("fieldname") == "AssetStatus"
+			and submit_rule.get("transform") == "value_map"
+			and submit_rule.get("transform_config", {}).get("mapping", {}).get("Active") == 1
+		):
+			result["asset_submission"] = submit_imported_assets(row.parent, apply=True)
+		result["asset_retirement"] = reconcile_asset_retirements(row.parent, apply=True)
 	if reconcile_deletions and mapping.full_snapshot_sync and not cint(getattr(mapping, "fetch_limit", 0)):
 		from emkan_insights.sap.deletion import reconcile_mapping_deletions
 
@@ -432,6 +517,11 @@ def _log_fetch(row, status, result=None, elapsed=None, traceback=None):
 		reference_name=row.parent,
 	)
 	frappe.db.commit()
+
+
+def _mapping_lock_key(row_name: str) -> str:
+	# Sites in one bench share Redis and can hold identically named mapping rows.
+	return f"sap_master_sync:{frappe.local.site}:{row_name}"
 
 
 def _job_id(row_name: str) -> str:

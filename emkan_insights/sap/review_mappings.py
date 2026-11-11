@@ -48,10 +48,17 @@ def _staged_document(fieldname, doctype=None, prefix="", targets=None):
 	return {"fieldname": fieldname, "transform": "staged_document", "transform_config": config}
 
 
-def _payment_ledger_amount(source_kind, currency_kind):
+def _project_link(fieldname):
+	return {"fieldname": fieldname, "transform": "sap_project_link"}
+
+
+def _payment_ledger_amount(source_kind, currency_kind, *, verify_negative_invoice=False):
+	config = {"source_kind": source_kind, "currency_kind": currency_kind}
+	if verify_negative_invoice:
+		config["verify_negative_invoice"] = True
 	return {
 		"transform": "payment_ledger_amount",
-		"transform_config": {"source_kind": source_kind, "currency_kind": currency_kind},
+		"transform_config": config,
 	}
 
 
@@ -63,12 +70,9 @@ PAYMENT_REFERENCE_TARGETS = {
 		"prefix": "down-payment:",
 	},
 	"it_JournalEntry": {"doctype": "External Journal Entry"},
+	"it_PurchaseCreditNote": {"doctype": "External Journal Entry"},
+	"it_PaymentAdvice": {"doctype": "External Payment Entry", "prefix": "outgoing:"},
 }
-
-PAYMENT_REFERENCE_TYPES = {
-	source_type: target["doctype"] for source_type, target in PAYMENT_REFERENCE_TARGETS.items()
-}
-
 
 def _payment_header(prefix, account_type, party_type):
 	voucher = _staged_document("DocEntry", "External Payment Entry", prefix)
@@ -79,7 +83,7 @@ def _payment_header(prefix, account_type, party_type):
 		"account": _link("ControlAccount", "Account", "account_number", company_context=True),
 		"party_type": _constant(party_type),
 		"party": _link("CardCode", party_type),
-		"project": _link("ProjectCode", "Project"),
+		"project": _project_link("ProjectCode"),
 		"voucher_type": _constant("External Payment Entry"),
 		"voucher_no": voucher,
 		"against_voucher_type": _constant("External Payment Entry"),
@@ -96,6 +100,13 @@ def _payment_header(prefix, account_type, party_type):
 
 
 def _payment_allocation(prefix, account_type, party_type):
+	reference_targets = (
+		PAYMENT_REFERENCE_TARGETS if party_type == "Supplier"
+		else {
+			key: value for key, value in PAYMENT_REFERENCE_TARGETS.items()
+			if key not in {"it_PaymentAdvice", "it_PurchaseCreditNote"}
+		}
+	)
 	return {
 		"company": _context("company"),
 		"posting_date": _date("__parent_DocDate"),
@@ -105,7 +116,7 @@ def _payment_allocation(prefix, account_type, party_type):
 		),
 		"party_type": _constant(party_type),
 		"party": _link("__parent_CardCode", party_type),
-		"project": _link("__parent_ProjectCode", "Project"),
+		"project": _project_link("__parent_ProjectCode"),
 		"voucher_type": _constant("External Payment Entry"),
 		"voucher_no": _staged_document(
 			"__parent_DocEntry", "External Payment Entry", prefix
@@ -113,11 +124,15 @@ def _payment_allocation(prefix, account_type, party_type):
 		"against_voucher_type": {
 			"fieldname": "InvoiceType",
 			"transform": "value_map",
-			"transform_config": {"mapping": PAYMENT_REFERENCE_TYPES, "strict": True},
+			"transform_config": {
+				"mapping": {key: target["doctype"] for key, target in reference_targets.items()},
+				"strict": True,
+			},
 		},
-		"against_voucher_no": _staged_document(
-			"DocEntry", targets=PAYMENT_REFERENCE_TARGETS
-		),
+		"against_voucher_no": {
+			**_staged_document("DocEntry", targets=reference_targets),
+			"transform": "payment_allocation_reference",
+		},
 		"voucher_detail_no": "LineNum",
 		"account_currency": _link(
 			"__parent_ControlAccount", "Account", "account_number",
@@ -130,7 +145,7 @@ def _payment_allocation(prefix, account_type, party_type):
 	}
 
 
-def _invoice_payment(staging_doctype, prefix, account_type, party_type):
+def _invoice_payment(staging_doctype, prefix, account_type, party_type, *, verify_negative_invoice=False):
 	voucher = _staged_document("DocEntry", staging_doctype, prefix)
 	return {
 		"company": _context("company"),
@@ -140,7 +155,7 @@ def _invoice_payment(staging_doctype, prefix, account_type, party_type):
 		"account": _link("ControlAccount", "Account", "account_number", company_context=True),
 		"party_type": _constant(party_type),
 		"party": _link("CardCode", party_type),
-		"project": _link("Project", "Project"),
+		"project": _project_link("Project"),
 		"voucher_type": _constant(staging_doctype),
 		"voucher_no": voucher,
 		"against_voucher_type": _constant(staging_doctype),
@@ -149,8 +164,8 @@ def _invoice_payment(staging_doctype, prefix, account_type, party_type):
 			"ControlAccount", "Account", "account_number",
 			company_context=True, return_field="account_currency",
 		),
-		"amount": _payment_ledger_amount("invoice", "company"),
-		"amount_in_account_currency": _payment_ledger_amount("invoice", "account"),
+		"amount": _payment_ledger_amount("invoice", "company", verify_negative_invoice=verify_negative_invoice),
+		"amount_in_account_currency": _payment_ledger_amount("invoice", "account", verify_negative_invoice=verify_negative_invoice),
 		"delinked": {"fieldname": "Cancelled", "transform": "sap_bool"},
 		"remarks": "JournalMemo",
 	}
@@ -225,12 +240,29 @@ REVIEW_MAPPINGS = {
 	"SAP Stock Goods Receipt Detail": {
 		"source_array": "DocumentLines",
 		"sap_id_field": "DocEntry+LineNum",
-		"field_mapping": {**STOCK_LINE, "actual_qty": _quantity(1), "incoming_rate": "StockInmPrice", "voucher_type": _constant("Stock Entry")},
+		"field_mapping": {
+			**STOCK_LINE,
+			"actual_qty": _quantity(1),
+			"incoming_rate": "StockInmPrice",
+			"voucher_type": _constant("Stock Entry"),
+			"voucher_no": {
+				"fieldname": "DocEntry", "transform": "stock_entry_voucher",
+				"transform_config": {"prefix": "receipt:"},
+			},
+		},
 	},
 	"SAP Stock Goods Issue Detail": {
 		"source_array": "DocumentLines",
 		"sap_id_field": "DocEntry+LineNum",
-		"field_mapping": {**STOCK_LINE, "actual_qty": _quantity(-1), "voucher_type": _constant("Stock Entry")},
+		"field_mapping": {
+			**STOCK_LINE,
+			"actual_qty": _quantity(-1),
+			"voucher_type": _constant("Stock Entry"),
+			"voucher_no": {
+				"fieldname": "DocEntry", "transform": "stock_entry_voucher",
+				"transform_config": {"prefix": "issue:"},
+			},
+		},
 	},
 	"SAP Stock Transfer Detail": {
 		"source_array": "StockTransferLines",
@@ -293,7 +325,7 @@ REVIEW_MAPPINGS = {
 	},
 	"SAP Payment Purchase Invoice Detail": {
 		"field_mapping": _invoice_payment(
-			"External Purchase Invoice", "", "Payable", "Supplier"
+			"External Purchase Invoice", "", "Payable", "Supplier", verify_negative_invoice=True
 		),
 	},
 	"SAP Payment Purchase Down Payment Detail": {

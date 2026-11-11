@@ -9,16 +9,6 @@ frappe.ui.form.on("External SAP Configuration", {
 		if (!frm.is_new()) {
 			frm.add_custom_button(__("Fetch Data"), () => frm.trigger("fetch_configuration"));
 			frm.add_custom_button(__("Fetch and Sync"), () => frm.trigger("fetch_and_sync_configuration"));
-			frm.add_custom_button(__("Fetch Ledger Review Data"), () => frm.trigger("fetch_review_configuration"));
-			for (const [label, doctype] of [
-				["GL Source Data", "External GL Entry"],
-				["Stock Source Data", "External Stock Ledger Entry"],
-				["Payment Source Data", "External Payment Ledger Entry"],
-			]) {
-				frm.add_custom_button(__(label), () => {
-					frappe.set_route("List", doctype, { external_sap_configuration: frm.doc.name });
-				}, __("Review SAP Data"));
-			}
 		}
 	},
 	fetch_and_sync_configuration(frm) {
@@ -45,26 +35,6 @@ frappe.ui.form.on("External SAP Configuration", {
 				});
 			},
 		);
-	},
-	fetch_review_configuration(frm) {
-		if (frm.is_dirty()) {
-			frappe.msgprint(__("Save the SAP configuration before fetching data."));
-			return;
-		}
-
-		frappe.call({
-			method: "emkan_insights.sap.doctype.external_sap_configuration.external_sap_configuration.fetch_review_configuration",
-			args: { name: frm.doc.name },
-			callback(response) {
-				const status = response.message?.status;
-				if (status) {
-					frappe.show_alert({
-						message: __("Ledger review fetch for {0}: {1}.", [frm.doc.company, status]),
-						indicator: status === "queued" ? "green" : "orange",
-					});
-				}
-			},
-		});
 	},
 	fetch_configuration(frm) {
 		if (frm.is_dirty()) {

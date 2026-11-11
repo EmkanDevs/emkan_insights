@@ -6,6 +6,8 @@ from typing import Any
 
 import frappe
 
+from emkan_insights.emkan_insights.external_data_bulk_insert import add_prefix
+
 
 def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | None = None) -> Any:
 	transform = rule.get("transform") or "none"
@@ -27,6 +29,12 @@ def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | 
 		return lookup(value, rule, context or {})
 	if transform == "sap_account_parent":
 		return sap_account_parent(value, rule, context or {})
+	if transform == "sap_account_type":
+		return sap_account_type(value, rule, context or {})
+	if transform == "sap_account_root_type":
+		return sap_account_root_type(value, rule, context or {})
+	if transform == "sap_account_report_type":
+		return sap_account_report_type(rule, context or {})
 	if transform == "company_root_cost_center":
 		return company_root_cost_center(context or {})
 	if transform == "matching_selling_price_list":
@@ -72,6 +80,8 @@ def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | 
 		return collection_value_map(rule, context or {})
 	if transform == "first_value":
 		return first_value(rule, context or {})
+	if transform == "first_sap_date":
+		return sap_date(first_value(rule, context or {}))
 	if transform == "sum_fields":
 		return sum_fields(rule, context or {})
 	if transform == "join_fields":
@@ -95,6 +105,16 @@ def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | 
 		return journal_against(value, context or {})
 	if transform == "staged_document":
 		return staged_document(value, rule, context or {})
+	if transform == "payment_allocation_reference":
+		return payment_allocation_reference(value, rule, context or {})
+	if transform == "sap_project_link":
+		return sap_project_link(value, context or {})
+	if transform == "purchase_order_request_link":
+		return purchase_order_request_link(context or {})
+	if transform == "purchase_invoice_receipt_link":
+		return purchase_invoice_receipt_link(context or {})
+	if transform == "stock_entry_voucher":
+		return stock_entry_voucher(value, rule)
 	if transform == "payment_ledger_amount":
 		return payment_ledger_amount(rule, context or {})
 	if transform == "sap_opportunity_party":
@@ -110,16 +130,18 @@ def sap_date(value: Any) -> str | None:
 
 
 def sap_request_schedule_date(value: Any, context: dict[str, Any]) -> str | None:
-	parent = context.get("parent_source") or {}
+	parent = context.get("parent_source") or context.get("source") or {}
 	required_date = sap_date(value)
 	posting_date = sap_date(parent.get("DocDate"))
 	if required_date and posting_date and required_date >= posting_date:
 		return required_date
 
-	# ERPNext rejects required dates before posting; SAP's document due date is the source fallback.
+	# ERPNext rejects earlier dates. Preserve SAP dates in the custom fields.
 	due_date = sap_date(parent.get("DocDueDate"))
 	if due_date and posting_date and due_date >= posting_date:
 		return due_date
+	if posting_date and (required_date or due_date):
+		return posting_date
 	raise frappe.ValidationError("SAP request has no schedule date accepted by ERPNext.")
 
 
@@ -143,19 +165,23 @@ def journal_party(value: Any, context: dict[str, Any]) -> str | None:
 		raise frappe.ValidationError(f"Journal account {account_code} was not found.")
 	party_type = {"Receivable": "Customer", "Payable": "Supplier"}.get(account.account_type)
 	if not party_type:
-		raise frappe.ValidationError(f"Journal account {account_code} has a business partner but is not receivable or payable.")
-	if not frappe.db.exists(party_type, value):
+		return None
+	party = str(value)
+	if party_type in context.get("prefixed_doctypes", ()):
+		party = add_prefix(party, context.get("company_abbr"))
+	if not frappe.db.exists(party_type, party):
 		raise frappe.ValidationError(f"Journal {party_type} {value} was not found.")
-	return party_type if context.get("target_field") == "party_type" else str(value)
+	return party_type if context.get("target_field") == "party_type" else party
 
 
 def journal_cost_center(value: Any, context: dict[str, Any]) -> str | None:
 	company = context.get("company")
 	if value:
-		cost_center = frappe.db.get_value("Cost Center", value, ["company", "is_group"], as_dict=True)
+		name = add_prefix(value, context.get("company_abbr")) if "Cost Center" in context.get("prefixed_doctypes", ()) else value
+		cost_center = frappe.db.get_value("Cost Center", name, ["company", "is_group"], as_dict=True)
 		if not cost_center or cost_center.company != company or cost_center.is_group:
 			raise frappe.ValidationError(f"Journal cost center {value} is not a valid leaf for {company}.")
-		return value
+		return name
 
 	account_code = (context.get("source") or {}).get("AccountCode")
 	account = frappe.db.get_value(
@@ -190,20 +216,34 @@ def journal_target(company: str, sap_journal_id: str) -> str:
 
 
 def journal_against(value: Any, context: dict[str, Any]) -> str | None:
-	return _journal_against(context.get("company"), str(value) if value else None)
+	return _journal_against(
+		context.get("company"), str(value) if value else None,
+		context.get("company_abbr"), frozenset(context.get("prefixed_doctypes", ())),
+	)
 
 
 @lru_cache(maxsize=4096)
-def _journal_against(company: str, value: str | None) -> str | None:
+def _journal_against(
+	company: str, value: str | None, company_abbr: str | None, prefixed_doctypes: frozenset[str],
+) -> str | None:
 	if not value:
+		return value
+	account_company = frappe.db.get_value("Account", value, "company")
+	if account_company:
+		if account_company != company:
+			raise frappe.ValidationError(
+				f"SAP journal against account {value} belongs to {account_company}, not {company}."
+			)
 		return value
 	account = frappe.db.get_value(
 		"Account", {"company": company, "account_number": value}, "name"
 	)
 	if account:
 		return account
-	if frappe.db.exists("Supplier", value) or frappe.db.exists("Customer", value):
-		return value
+	for party_type in ("Supplier", "Customer"):
+		party = add_prefix(value, company_abbr) if party_type in prefixed_doctypes else value
+		if frappe.db.exists(party_type, party):
+			return party
 	raise frappe.ValidationError(f"SAP journal against account or party {value} was not found.")
 
 
@@ -231,6 +271,122 @@ def staged_document(value: Any, rule: dict[str, Any], context: dict[str, Any]) -
 	return name
 
 
+def payment_allocation_reference(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str:
+	source = context.get("source") or {}
+	if source.get("InvoiceType") in {"it_PaymentAdvice", "it_PurchaseCreditNote"}:
+		resolver = context.get("sap_references")
+		if resolver is None:
+			raise frappe.ValidationError("SAP payment adjustment needs a source connection.")
+		if source.get("InvoiceType") == "it_PaymentAdvice":
+			value = resolver.vendor_payment_from_advice(value, source.get("__parent_CardCode"))
+		else:
+			amount = _decimal_value(source.get("SumApplied"), "purchase credit note allocation")
+			value = resolver.purchase_credit_note_journal(value, source.get("__parent_CardCode"), amount)
+	return staged_document(value, rule, context)
+
+
+def sap_project_link(value: Any, context: dict[str, Any]) -> str | None:
+	if value in (None, ""):
+		return None
+	configuration = context.get("configuration_name")
+	company = context.get("company")
+	if not configuration or not company or not frappe.db.exists("External Project", {
+		"remote_id": str(value), "external_sap_configuration": configuration,
+	}):
+		raise frappe.ValidationError(f"SAP Project {value} is not staged for {configuration}.")
+	name = (
+		add_prefix(str(value), context.get("company_abbr"))
+		if "Project" in context.get("prefixed_doctypes", ()) else str(value)
+	)
+	if not frappe.db.exists("Project", {"name": name, "company": company}):
+		raise frappe.ValidationError(f"ERPNext Project for SAP {value} was not found in {company}.")
+	return name
+
+
+def purchase_order_request_link(context: dict[str, Any]) -> str | None:
+	source = context.get("source") or {}
+	resolver = context.get("sap_references")
+	if resolver is None:
+		raise frappe.ValidationError("SAP Purchase Order request links need a source connection.")
+	line = resolver.purchase_request_line(source)
+	if line is None:
+		return None
+
+	request_id, index = line
+	configuration = context.get("configuration_name")
+	company = context.get("company")
+	if not configuration or not company or not frappe.db.exists(
+		"External Material Request",
+		{"remote_id": request_id, "external_sap_configuration": configuration},
+	):
+		raise frappe.ValidationError(f"SAP Purchase Request {request_id} is not staged for this company.")
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	candidates = [f"{abbr}-{request_id}", request_id] if abbr else [request_id]
+	request_name = next((
+		name for name in candidates
+		if frappe.db.get_value("Material Request", {"name": name, "company": company}, "name")
+	), None)
+	if not request_name:
+		raise frappe.ValidationError(f"ERPNext Material Request for SAP {request_id} was not found.")
+	if context.get("target_field") == "material_request":
+		return request_name
+	if context.get("target_field") != "material_request_item":
+		raise frappe.ValidationError("Unsupported SAP Purchase Request link field.")
+	item = frappe.db.get_value(
+		"Material Request Item", {"parent": request_name, "idx": index},
+		["name", "item_code"], as_dict=True,
+	)
+	if not item or item.item_code != _item_name(source.get("ItemCode"), context):
+		raise frappe.ValidationError(f"ERPNext Material Request item for SAP {request_id} line {index} was not found.")
+	return item.name
+
+
+def purchase_invoice_receipt_link(context: dict[str, Any]) -> str | None:
+	source = context.get("source") or {}
+	if str(source.get("BaseType")) != "20":
+		return None
+
+	resolver = context.get("sap_references")
+	company = context.get("company")
+	configuration = context.get("configuration_name")
+	if resolver is None or not company or not configuration:
+		raise frappe.ValidationError("SAP Purchase Invoice receipt links need a source and company context.")
+
+	receipt_id, receipt_row_index = resolver.purchase_receipt_line(source)
+	if not frappe.db.exists("External Purchase Receipt", {
+		"remote_id": receipt_id, "external_sap_configuration": configuration,
+	}):
+		raise frappe.ValidationError(f"SAP Purchase Receipt {receipt_id} is not staged for {configuration}.")
+
+	abbr = context.get("company_abbr")
+	expected_name = add_prefix(receipt_id, abbr) if "Purchase Receipt" in context.get("prefixed_doctypes", ()) else receipt_id
+	receipt_name = frappe.db.get_value(
+		"Purchase Receipt", {"name": expected_name, "company": company}, "name"
+	)
+	if not receipt_name:
+		raise frappe.ValidationError(f"ERPNext Purchase Receipt for SAP {receipt_id} was not found in {company}.")
+	if context.get("target_field") == "purchase_receipt":
+		return receipt_name
+	if context.get("target_field") != "pr_detail":
+		raise frappe.ValidationError("Unsupported SAP Purchase Receipt link field.")
+	item = frappe.db.get_value(
+		"Purchase Receipt Item", {"parent": receipt_name, "idx": receipt_row_index},
+		["name", "item_code"], as_dict=True,
+	)
+	if not item or item.item_code != _item_name(source.get("ItemCode"), context):
+		raise frappe.ValidationError(
+			f"ERPNext Purchase Receipt item for SAP {receipt_id} line {source.get('BaseLine')} was not found."
+		)
+	return item.name
+
+
+def stock_entry_voucher(value: Any, rule: dict[str, Any]) -> str:
+	prefix = _transform_config(rule).get("prefix")
+	if prefix not in {"receipt:", "issue:"} or value in (None, ""):
+		raise frappe.ValidationError("SAP stock entry voucher needs a supported type and DocEntry.")
+	return f"{prefix}{value}"
+
+
 def payment_ledger_amount(rule: dict[str, Any], context: dict[str, Any]) -> float:
 	config = _transform_config(rule)
 	source = context.get("source")
@@ -251,14 +407,18 @@ def payment_ledger_amount(rule: dict[str, Any], context: dict[str, Any]) -> floa
 	elif source_kind == "allocation":
 		parent = _parent_payment_source(source)
 		_validate_payment_allocations(parent, currency_kind, context)
-		fieldname = _currency_field(parent, currency_kind, context, "SumApplied", "AppliedFC")
-		amount = -_decimal_value(source.get(fieldname), "payment allocation")
+		amount = -_payment_allocation_amount(source, parent, currency_kind, context)
 		cancelled = parent.get("Cancelled")
 	else:
 		raise frappe.ValidationError(f"Unsupported payment ledger source kind: {source_kind}")
 
 	if amount < 0 and source_kind == "invoice":
-		raise frappe.ValidationError("SAP invoice total cannot be negative.")
+		if not config.get("verify_negative_invoice"):
+			raise frappe.ValidationError("SAP invoice total cannot be negative.")
+		resolver = context.get("sap_references")
+		if resolver is None:
+			raise frappe.ValidationError("SAP negative invoice needs a source journal connection.")
+		amount = abs(amount) * resolver.negative_purchase_invoice_sign(source)
 	if sap_bool(cancelled):
 		amount *= -1
 	return float(amount)
@@ -306,8 +466,74 @@ def _payment_allocation_total(
 	rows = source.get("PaymentInvoices") or []
 	if not isinstance(rows, list):
 		raise frappe.ValidationError("SAP payment invoices must be an array.")
-	fieldname = _currency_field(source, currency_kind, context, "SumApplied", "AppliedFC")
-	return sum((_decimal_value(row.get(fieldname), "payment allocation") for row in rows), Decimal(0))
+	return sum((
+		_payment_allocation_amount(row, source, currency_kind, context)
+		for row in rows
+	), Decimal(0))
+
+
+def _payment_allocation_amount(
+	row: dict[str, Any], payment: dict[str, Any], currency_kind: str,
+	context: dict[str, Any],
+) -> Decimal:
+	fieldname = _currency_field(payment, currency_kind, context, "SumApplied", "AppliedFC")
+	amount = _decimal_value(row.get(fieldname), "payment allocation")
+	if row.get("InvoiceType") == "it_PurchaseCreditNote":
+		resolver = context.get("sap_references")
+		if resolver is None:
+			raise frappe.ValidationError("SAP purchase credit note needs a source connection.")
+		base_amount = _decimal_value(row.get("SumApplied"), "purchase credit note allocation")
+		resolver.purchase_credit_note_journal(row.get("DocEntry"), payment.get("CardCode"), base_amount)
+		return -amount
+	paid = _payment_total(payment, currency_kind, context)
+	if amount <= paid:
+		return amount
+	if fieldname == "SumApplied" and payment.get("DocCurrency") == context.get("currency") and paid > 0:
+		adjusted = _adjusted_mixed_payment_amount(row, payment, amount, paid, context)
+		if adjusted is not None:
+			return adjusted
+	if (
+		fieldname != "SumApplied"
+		or (payment.get("DocType"), row.get("InvoiceType")) not in {
+			("rCustomer", "it_Invoice"),
+			("rSupplier", "it_PurchaseInvoice"),
+		}
+		or len(payment.get("PaymentInvoices") or []) != 1
+		or payment.get("DocCurrency") != context.get("currency")
+		or paid <= 0
+	):
+		return amount
+	resolver = context.get("sap_references")
+	if resolver is None:
+		raise frappe.ValidationError("SAP overapplied payment needs a source journal connection.")
+	resolver.verify_single_invoice_payment(payment, row, amount, paid)
+	return paid
+
+
+def _adjusted_mixed_payment_amount(
+	row: dict[str, Any], payment: dict[str, Any], amount: Decimal, paid: Decimal,
+	context: dict[str, Any],
+) -> Decimal | None:
+	if payment.get("DocType") != "rSupplier" or row.get("InvoiceType") != "it_JournalEntry":
+		return None
+	rows = payment.get("PaymentInvoices") or []
+	positive = [line for line in rows if _decimal_value(line.get("SumApplied"), "payment allocation") > 0]
+	negative = [line for line in rows if _decimal_value(line.get("SumApplied"), "payment allocation") < 0]
+	if (
+		len(positive) != 1 or not negative
+		or any(line.get("InvoiceType") != "it_PaymentAdvice" for line in negative)
+		or positive[0].get("LineNum") != row.get("LineNum")
+	):
+		return None
+	negative_total = sum((_decimal_value(line.get("SumApplied"), "payment allocation") for line in negative), Decimal(0))
+	adjusted = paid - negative_total
+	if not 0 < adjusted <= amount:
+		return None
+	resolver = context.get("sap_references")
+	if resolver is None:
+		raise frappe.ValidationError("SAP mixed payment needs a source journal connection.")
+	resolver.verify_outgoing_payment_total(payment, paid)
+	return adjusted
 
 
 def _currency_field(
@@ -373,6 +599,14 @@ def lookup(value: Any, rule: dict[str, Any], context: dict[str, Any] | None = No
 	if not isinstance(value_map, dict):
 		raise frappe.ValidationError("The lookup transform value_map must be an object.")
 	value = value_map.get(str(value), value)
+	if (
+		doctype in (context or {}).get("prefixed_doctypes", ())
+		and (fieldname == "name" or (doctype == "Item" and fieldname == "item_code"))
+	):
+		abbr = (context or {}).get("company_abbr")
+		if not abbr:
+			raise frappe.ValidationError(f"Company abbreviation is required for {doctype} lookup.")
+		value = add_prefix(value, abbr)
 
 	filters = {fieldname: value}
 	if config.get("company_context"):
@@ -382,6 +616,13 @@ def lookup(value: Any, rule: dict[str, Any], context: dict[str, Any] | None = No
 		filters["company"] = company
 	return_field = config.get("return_field", "name")
 	result = frappe.db.get_value(doctype, filters, return_field)
+	if (
+		result in (None, "") and doctype == "Account" and return_field == "account_currency"
+		and filters.get("company") and frappe.db.exists("Account", filters)
+	):
+		# SAP "all currencies" accounts (##) have no fixed currency: the Account's
+		# currency is blank, so postings use the company currency.
+		result = frappe.get_cached_value("Company", filters["company"], "default_currency")
 	if result is None and config.get("required"):
 		raise frappe.ValidationError(f"ERPNext reference {doctype}.{fieldname} was not found.")
 	return result
@@ -423,23 +664,16 @@ def collection_value_map(rule: dict[str, Any], context: dict[str, Any]) -> Any:
 
 
 def sap_account_parent(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str | None:
-	config = _transform_config(rule)
 	source = context.get("source")
 	company = context.get("company")
 	if not isinstance(source, dict) or not company:
 		raise frappe.ValidationError("SAP Account parent mapping requires a source record and company.")
 
-	code = str(source.get("Code") or "")
-	root_type = (config.get("root_type_by_code") or {}).get(code)
-	if root_type:
-		return _company_root_account(company, root_type)
-
-	parent_code = (config.get("parent_code_overrides") or {}).get(code, value)
-	if parent_code in (None, ""):
+	if value in (None, ""):
 		return None
 
 	existing = lookup(
-		parent_code,
+		value,
 		{
 			"transform_config": {
 				"doctype": "Account",
@@ -456,34 +690,69 @@ def sap_account_parent(value: Any, rule: dict[str, Any], context: dict[str, Any]
 	if resolver is None:
 		raise frappe.ValidationError("SAP Account parent mapping requires a source connection.")
 	parent_name = resolver.resolve(
-		parent_code,
+		value,
 		{
 			"entity": "ChartOfAccounts",
 			"key": "Code",
 			"value_field": "Name",
 		},
 	)
-	return " - ".join(str(part) for part in (parent_name, parent_code) if part not in (None, ""))
+	return " - ".join(str(part) for part in (parent_name, value) if part not in (None, ""))
 
 
-def _company_root_account(company: str, root_type: str) -> str:
-	roots = frappe.get_all(
-		"Account",
-		filters={
-			"company": company,
-			"root_type": root_type,
-			"parent_account": ["is", "not set"],
-			"is_group": 1,
-		},
-		fields=["name", "account_number"],
-		limit_page_length=0,
+def sap_account_report_type(rule: dict[str, Any], context: dict[str, Any]) -> str:
+	root_type = (context.get("mapped_fields") or {}).get("root_type")
+	report_type = (_transform_config(rule).get("root_types") or {}).get(root_type)
+	if not report_type:
+		raise frappe.ValidationError(f"SAP Account root type {root_type or '<missing>'} has no ERPNext report type.")
+	return report_type
+
+
+def sap_account_root_type(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str:
+	source = context.get("source") or {}
+	try:
+		level = int(source.get("AccountLevel") or 0)
+	except (TypeError, ValueError) as error:
+		raise frappe.ValidationError("SAP AccountLevel must be an integer.") from error
+	config = _transform_config(rule)
+	level_one_names = (config.get("levels") or {}).get("1") or {}
+	parents = context.get("account_parents") or {}
+	names = context.get("account_names") or {}
+	code = str(source.get("Code") or "")
+	current = code
+	seen = set()
+	while current and current not in seen:
+		seen.add(current)
+		parent = parents.get(current)
+		if (current == code and level == 1) or (current in parents and not parent):
+			name = source.get("Name") if current == code else names.get(current)
+			if root_type := level_one_names.get(str(name or "").strip()):
+				return root_type
+			break
+		current = str(parent) if parent else None
+	raise frappe.ValidationError(
+		f"SAP Account {code or '<missing>'} has no classified level 1 ancestor "
+		f"for AccountLevel {source.get('AccountLevel') or '<missing>'}."
 	)
-	standard_roots = [root.name for root in roots if not root.account_number]
-	if len(standard_roots) != 1:
-		raise frappe.ValidationError(
-			f"ERPNext company {company} must have one unnumbered {root_type} root Account."
-		)
-	return standard_roots[0]
+
+
+def sap_account_type(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str | None:
+	if value == "at_Revenues":
+		return "Income Account"
+	if value == "at_Expenses":
+		return "Expense Account"
+	if value != "at_Other":
+		raise frappe.ValidationError(f"SAP Account type {value} has no ERPNext account classification.")
+
+	company = context.get("company")
+	code = str((context.get("source") or {}).get("Code") or "")
+	if not company or not code:
+		raise frappe.ValidationError("SAP Account classification needs a company and account code.")
+	if party_type := (context.get("account_party_types") or {}).get(code):
+		return party_type
+	return frappe.db.get_value(
+		"Account", {"company": company, "account_number": code}, "account_type"
+	)
 
 
 def company_root_cost_center(context: dict[str, Any]) -> str:
@@ -693,7 +962,7 @@ def _outgoing_payment_target_account_code(source: dict[str, Any]) -> str:
 	source_type = source.get("DocType")
 	if source_type == "rAccount":
 		code = source.get("CardCode")
-	elif source_type == "rSupplier":
+	elif source_type in {"rSupplier", "rCustomer"}:
 		code = source.get("ControlAccount")
 	else:
 		raise frappe.ValidationError("SAP outgoing payment has an unsupported document type.")
@@ -765,7 +1034,7 @@ def sap_item_uom(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> s
 		return value
 
 	source = context.get("source") or {}
-	item_code = source.get("ItemCode")
+	item_code = _item_name(source.get("ItemCode"), context)
 	if _decimal_value(source.get("UnitsOfMeasurment"), "SAP manual UOM factor") != 1:
 		raise frappe.ValidationError("SAP manual UOM requires a one-to-one item conversion.")
 	uom = frappe.db.get_value("Item", item_code, "stock_uom") if item_code else None
@@ -782,7 +1051,7 @@ def item_conversion_factor(context: dict[str, Any], rule: dict[str, Any] | None 
 		(context.get("parent_source") or {}).get("DocType") == "dDocument_Service"
 	):
 		return 1.0
-	item_code = source.get("ItemCode")
+	item_code = _item_name(source.get("ItemCode"), context)
 	uom = sap_item_uom(source.get("UoMCode"), rule or {}, context)
 	if not item_code or not uom:
 		raise frappe.ValidationError("SAP item line needs an item code and UOM.")
@@ -793,7 +1062,20 @@ def item_conversion_factor(context: dict[str, Any], rule: dict[str, Any] | None 
 		return float(factor)
 	if frappe.db.get_value("Item", item_code, "stock_uom") == uom:
 		return 1.0
+	sap_factor = source.get("UnitsOfMeasurment")
+	if sap_factor not in (None, ""):
+		factor = _decimal_value(sap_factor, "item UOM conversion")
+		if factor.is_finite() and factor > 0:
+			return float(factor)
 	raise frappe.ValidationError("ERP item UOM conversion is missing for the SAP line.")
+
+
+def _item_name(value: Any, context: dict[str, Any]) -> str | None:
+	if value in (None, ""):
+		return None
+	if "Item" in context.get("prefixed_doctypes", ()):
+		return add_prefix(value, context.get("company_abbr"))
+	return str(value)
 
 
 def purchase_invoice_item_quantity(value: Any, context: dict[str, Any]) -> float:

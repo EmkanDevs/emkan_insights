@@ -78,16 +78,26 @@ def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 		)
 		documents, group_skipped = _skip_duplicate_item_groups(context, accepted_rows, documents)
 		batch_skipped = unique_skipped + group_skipped
+		if context.target_doctype == "Asset":
+			documents, submitted_skipped = _skip_submitted_assets(documents)
+			batch_skipped += submitted_skipped
 		skipped += batch_skipped
 		if documents:
 			try:
 				resolve_account_links(documents)
+				if context.target_doctype == "Account":
+					_validate_account_ownership(documents)
+				if context.target_doctype == "Asset":
+					_prepare_asset_locations(context, documents)
+				request_names = _material_request_names(context.target_doctype, documents)
 				new_documents, existing_documents = _partition_document_trees(
 					context.target_doctype,
 					documents,
 				)
 				updated += _update_document_trees(context.target_doctype, existing_documents)
 				inserted += _insert_document_trees(new_documents)
+				if request_names:
+					_reconcile_material_requests(request_names)
 			except Exception:
 				traceback = frappe.get_traceback(with_context=False)
 				frappe.db.rollback()
@@ -111,6 +121,128 @@ def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 	}
 	_log(context, "DocType Creation Completed", inserted=inserted, updated=updated, skipped=skipped)
 	return result
+
+
+def _validate_account_ownership(documents: list[dict]) -> None:
+	names = [tree["Account"][0]["name"] for tree in documents]
+	existing = frappe.get_all(
+		"Account", filters={"name": ["in", names]},
+		fields=["name", "company"], limit_page_length=0,
+	)
+	owners = {row.name.casefold(): row.company for row in existing}
+	for tree in documents:
+		account = tree["Account"][0]
+		owner = owners.get(account["name"].casefold())
+		if owner and owner != account["company"]:
+			raise frappe.ValidationError(
+				f"Account {account['name']} belongs to {owner}, not {account['company']}."
+			)
+
+
+def _prepare_asset_locations(context: SAPSyncContext, documents: list[dict]) -> None:
+	company = frappe.db.get_value("External SAP Configuration", context.configuration, "company")
+	item_codes = {tree["Asset"][0]["item_code"] for tree in documents}
+	asset_names = [tree["Asset"][0]["name"] for tree in documents]
+	existing_owners = {
+		row.name: row.company for row in frappe.get_all(
+			"Asset", filters={"name": ["in", asset_names]},
+			fields=["name", "company"], limit_page_length=0,
+		)
+	}
+	items = {
+		row.name: row for row in frappe.get_all(
+			"Item", filters={"name": ["in", sorted(item_codes)]},
+			fields=["name", "is_fixed_asset", "is_stock_item"], limit_page_length=0,
+		)
+	}
+	for tree in documents:
+		asset = tree["Asset"][0]
+		if existing_owners.get(asset["name"]) not in (None, company):
+			raise frappe.ValidationError(f"Asset {asset['name']} belongs to another company.")
+		item = items.get(asset["item_code"])
+		if not item or not item.is_fixed_asset or item.is_stock_item:
+			raise frappe.ValidationError(f"Asset {asset['name']} requires a non-stock Fixed Asset Item.")
+		if asset.get("company") != company or asset.get("location") != company:
+			raise frappe.ValidationError(f"Asset {asset['name']} has an invalid company Location.")
+		if not asset.get("purchase_date") or not asset.get("available_for_use_date"):
+			raise frappe.ValidationError(f"Asset {asset['name']} has no capitalization date.")
+	if not frappe.db.exists("Location", company):
+		frappe.get_doc({"doctype": "Location", "location_name": company}).insert(ignore_permissions=True)
+
+
+def _skip_submitted_assets(documents: list[dict]) -> tuple[list[dict], int]:
+	names = [tree["Asset"][0]["name"] for tree in documents]
+	submitted = {
+		row.name: row for row in frappe.get_all(
+			"Asset", filters={"name": ["in", names], "docstatus": ["!=", 0]},
+			fields=["name", "company", "status", "custom_sap_asset_status"], limit_page_length=0,
+		)
+	}
+	accepted = []
+	for tree in documents:
+		asset = tree["Asset"][0]
+		current = submitted.get(asset["name"])
+		if not current:
+			accepted.append(tree)
+			continue
+		if current.company != asset["company"]:
+			raise frappe.ValidationError(f"Asset {asset['name']} belongs to another company.")
+		updates = {}
+		if current.custom_sap_asset_status != asset.get("custom_sap_asset_status"):
+			updates["custom_sap_asset_status"] = asset.get("custom_sap_asset_status")
+		if asset.get("status") == "Scrapped" and current.status != "Scrapped":
+			updates["status"] = "Scrapped"
+		if updates:
+			frappe.db.set_value("Asset", asset["name"], updates, update_modified=False)
+	return accepted, len(documents) - len(accepted)
+
+
+def _material_request_names(target_doctype: str, documents: list[dict]) -> set[str]:
+	if target_doctype == "Material Request":
+		return {tree["Material Request"][0]["name"] for tree in documents}
+	if target_doctype != "Purchase Order":
+		return set()
+	parent_names = [tree["Purchase Order"][0]["name"] for tree in documents]
+	old_names = frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": ["in", parent_names], "material_request": ["is", "set"]},
+		pluck="material_request",
+		limit_page_length=0,
+	)
+	new_names = {
+		row["material_request"] for tree in documents
+		for row in tree.get("Purchase Order Item", []) if row.get("material_request")
+	}
+	return set(old_names) | new_names
+
+
+def _reconcile_material_requests(names: set[str]) -> None:
+	for name in sorted(names):
+		request = frappe.get_doc("Material Request", name)
+		ordered = frappe.db.sql(
+			"""SELECT material_request_item, COALESCE(SUM(stock_qty), 0) AS qty
+			FROM `tabPurchase Order Item`
+			WHERE material_request = %s AND docstatus = 1
+			GROUP BY material_request_item""",
+			(name,), as_dict=True,
+		)
+		quantities = {row.material_request_item: Decimal(str(row.qty)) for row in ordered}
+		requested_total = Decimal(0)
+		ordered_total = Decimal(0)
+		for item in request.items:
+			requested = abs(Decimal(str(item.stock_qty or 0)))
+			item_ordered = quantities.get(item.name, Decimal(0))
+			if Decimal(str(item.ordered_qty or 0)) != item_ordered:
+				frappe.db.set_value(
+					"Material Request Item", item.name, "ordered_qty", float(item_ordered),
+					update_modified=False,
+				)
+			requested_total += requested
+			ordered_total += min(abs(item_ordered), requested)
+		percent = round(float(ordered_total / requested_total * 100), 6) if requested_total else 0
+		frappe.db.set_value("Material Request", name, "per_ordered", percent, update_modified=False)
+		request.per_ordered = percent
+		request.set_status(update=True, update_modified=False)
 
 
 def get_sync_context(row_name: str) -> SAPSyncContext:
@@ -251,8 +383,17 @@ def _prepare_source_row(
 		if isinstance(item_name, str) and len(item_name) > 140:
 			raw.setdefault("custom_sap_full_item_name", item_name)
 			raw["item_name"] = item_name[:140]
+	if context.target_doctype == "Asset":
+		# The controller submits Assets after the cost reconciliation.
+		raw["docstatus"] = 0
+		asset_name = target_name or str(source_row.remote_id or source_row.name)
+		previous_amount = frappe.db.get_value("Asset", asset_name, "gross_purchase_amount")
+		if previous_amount and not raw.get("gross_purchase_amount"):
+			raw["gross_purchase_amount"] = previous_amount
 	if context.target_doctype == "Account":
 		raw["name"] = target_name or raw.get("account_name") or str(source_row.remote_id or source_row.name)
+	elif context.target_doctype == "Warehouse" and target_name:
+		raw["name"] = target_name
 	else:
 		raw.setdefault("name", target_name or str(source_row.remote_id or source_row.name))
 	if context.erp_sap_id_fieldname:
@@ -262,7 +403,10 @@ def _prepare_source_row(
 	elif context.target_doctype == "GL Entry":
 		_fill_gl_entry_fields(context, raw, str(source_row.remote_id))
 	Mapper.fill_item_uoms(context.target_doctype, raw)
-	document = _prepare_document_tree(context.bulk, raw)
+	if context.target_doctype == "Warehouse" and target_name:
+		document = _prepare_document_tree(context.bulk, raw, prefix_name=False)
+	else:
+		document = _prepare_document_tree(context.bulk, raw)
 	if context.target_doctype == "Journal Entry":
 		for account in document.get("Journal Entry Account", []):
 			account["docstatus"] = 1
@@ -349,6 +493,7 @@ def _fiscal_year(posting_date: str, company: str) -> str:
 
 
 def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -> dict[str, str]:
+	company = frappe.db.get_value("External SAP Configuration", context.configuration, "company")
 	if not context.erp_sap_id_fieldname:
 		if context.target_doctype == "Account":
 			legacy_names = {
@@ -360,18 +505,23 @@ def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -
 			}
 			existing = set(frappe.get_all(
 				"Account",
-				filters={"name": ["in", list(legacy_names.values())]},
+				filters={"name": ["in", list(legacy_names.values())], "company": company},
 				pluck="name",
 				limit_page_length=0,
 			))
 			return {
 				remote_id: name for remote_id, name in legacy_names.items() if name in existing
 			}
+		if context.target_doctype == "Warehouse":
+			return _get_existing_warehouse_names(context, source_rows, company)
 		return {}
 	remote_ids = [str(row.remote_id) for row in source_rows]
+	filters = {context.erp_sap_id_fieldname: ["in", remote_ids]}
+	if frappe.get_meta(context.target_doctype).has_field("company"):
+		filters["company"] = company
 	rows = frappe.get_all(
 		context.target_doctype,
-		filters={context.erp_sap_id_fieldname: ["in", remote_ids]},
+		filters=filters,
 		fields=["name", context.erp_sap_id_fieldname],
 		limit_page_length=0,
 	)
@@ -380,6 +530,35 @@ def _get_target_names_by_remote_id(context: SAPSyncContext, source_rows: list) -
 		for row in rows
 		if row.get(context.erp_sap_id_fieldname) not in (None, "")
 	}
+
+
+def _get_existing_warehouse_names(context, source_rows, company):
+	candidates = {
+		str(row.remote_id): {
+			str(row.remote_id),
+			add_prefix(str(row.remote_id), context.bulk.company_abbr),
+		}
+		for row in source_rows if row.remote_id not in (None, "")
+	}
+	if not candidates:
+		return {}
+
+	existing = set(frappe.get_all(
+		"Warehouse",
+		filters={"company": company, "name": ["in", sorted(set().union(*candidates.values()))]},
+		pluck="name",
+		limit_page_length=0,
+	))
+	matched = {}
+	for remote_id, names in candidates.items():
+		matches = names & existing
+		if len(matches) > 1:
+			raise frappe.ValidationError(
+				f"SAP Warehouse {remote_id} has both prefixed and unprefixed records in {company}."
+			)
+		if matches:
+			matched[remote_id] = next(iter(matches))
+	return matched
 
 
 def _skip_conflicting_unique_values(
@@ -523,11 +702,14 @@ def _validate_source(context: SAPSyncContext) -> None:
 
 
 def _recover_missing_target(context: SAPSyncContext) -> None:
+	filters = {}
+	if frappe.get_meta(context.target_doctype).has_field("company"):
+		filters["company"] = frappe.db.get_value(
+			"External SAP Configuration", context.configuration, "company"
+		)
 	if context.target_doctype == "Account":
-		company = frappe.db.get_value("External SAP Configuration", context.configuration, "company")
-		missing = not frappe.db.count("Account", {"company": company, "account_number": ["is", "set"]})
-	else:
-		missing = not frappe.db.count(context.target_doctype)
+		filters["account_number"] = ["is", "set"]
+	missing = not frappe.db.count(context.target_doctype, filters)
 	if not missing:
 		return
 	source = frappe.qb.DocType(context.source_doctype)

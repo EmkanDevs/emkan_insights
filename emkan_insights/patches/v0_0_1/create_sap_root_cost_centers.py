@@ -9,6 +9,7 @@ from erpnext.accounts.utils import get_autoname_with_number
 
 def execute():
 	companies = set(frappe.get_all("External SAP Configuration", pluck="company"))
+	needs_rebuild = False
 	for company in sorted(companies):
 		root_name = _get_root(company)
 		if not root_name:
@@ -22,12 +23,16 @@ def execute():
 				],
 				values=[(root_name, company, company, 1, now, now, "Administrator", "Administrator")],
 			)
+			needs_rebuild = True
 		default_name = frappe.db.get_value("Company", company, "cost_center")
 		if default_name and default_name != root_name and frappe.db.exists("Cost Center", default_name):
-			frappe.db.set_value(
-				"Cost Center", default_name, "parent_cost_center", root_name,
-				update_modified=False,
-			)
+			if frappe.db.get_value("Cost Center", default_name, "parent_cost_center") != root_name:
+				frappe.db.set_value(
+					"Cost Center", default_name, "parent_cost_center", root_name,
+					update_modified=False,
+				)
+				needs_rebuild = True
+	if needs_rebuild:
 		rebuild_tree("Cost Center", "parent_cost_center")
 
 

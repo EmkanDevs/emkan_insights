@@ -14,6 +14,7 @@ from urllib3.util.retry import Retry
 
 class SAPB1Client:
 	REAUTHENTICATE_STATUSES = {401, 403, 440}
+	FETCH_PAGE_SIZE = 200
 
 	def __init__(
 		self,
@@ -35,15 +36,15 @@ class SAPB1Client:
 		}
 		self.session_timeout_seconds = max(cint(session_timeout_minutes), 1) * 60
 		self.session = requests.Session()
-		self.session.mount(
-			"https://",
-			HTTPAdapter(max_retries=Retry(
-				total=2,
-				status_forcelist=(502, 503, 504),
+		adapter = HTTPAdapter(max_retries=Retry(
+				total=3,
+				status_forcelist=tuple(range(500, 600)),
 				allowed_methods=frozenset({"GET", "POST"}),
 				backoff_factor=0.5,
-			)),
-		)
+				raise_on_status=False,
+			))
+		self.session.mount("https://", adapter)
+		self.session.mount("http://", adapter)
 		self.session.verify = verify_ssl
 		self.configuration_name = configuration_name
 		self.logged_in_at: float | None = monotonic() if session_id else None
@@ -114,16 +115,24 @@ class SAPB1Client:
 		next_endpoint: str | None = endpoint
 		next_params = params
 
-		while next_endpoint:
-			payload = self.get(next_endpoint, params=next_params)
-			page = payload.get("value", [])
-			if not isinstance(page, list):
-				raise ValueError("SAP OData response 'value' must be an array.")
-			records.extend(page)
-			if max_records is not None and len(records) >= max_records:
-				return records[:max_records]
-			next_endpoint = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
-			next_params = None
+		previous_prefer = self.session.headers.get("Prefer")
+		self.session.headers["Prefer"] = f"odata.maxpagesize={self.FETCH_PAGE_SIZE}"
+		try:
+			while next_endpoint:
+				payload = self.get(next_endpoint, params=next_params)
+				page = payload.get("value", [])
+				if not isinstance(page, list):
+					raise ValueError("SAP OData response 'value' must be an array.")
+				records.extend(page)
+				if max_records is not None and len(records) >= max_records:
+					return records[:max_records]
+				next_endpoint = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
+				next_params = None
+		finally:
+			if previous_prefer is None:
+				self.session.headers.pop("Prefer", None)
+			else:
+				self.session.headers["Prefer"] = previous_prefer
 
 		return records
 

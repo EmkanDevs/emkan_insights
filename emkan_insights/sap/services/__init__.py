@@ -12,6 +12,9 @@ from emkan_insights.sap.services.references import SAPReferenceResolver
 from emkan_insights.sap.services.staging import StagingWriter
 
 
+STAGING_COMMIT_BATCH_SIZE = 500
+
+
 def get_mapped_data(
 	mapping_name: str,
 	from_date: str | None = None,
@@ -33,13 +36,31 @@ def get_mapped_data(
 	_mark_started(row, window_end)
 	client = SAPB1Client.from_configuration(configuration.name)
 	records = fetch(client, mapping_doc, from_date, to_date)
+	account_parents = (
+		{str(record["Code"]): record.get("FatherAccountKey") for record in records if record.get("Code")}
+		if mapping_doc.name == "SAP Account" else {}
+	)
+	account_names = (
+		{str(record["Code"]): record.get("Name") for record in records if record.get("Code")}
+		if mapping_doc.name == "SAP Account" else {}
+	)
+	account_party_types = _account_party_types(client) if mapping_doc.name == "SAP Account" else {}
 	mapper = None if getattr(mapping_doc, "raw_payload", False) else Mapper(
 		mapping_doc,
 		context={
 			"company": configuration.company,
 			"configuration_name": configuration.name,
+			"company_abbr": frappe.get_cached_value("Company", configuration.company, "abbr"),
+			"prefixed_doctypes": frozenset(frappe.get_all(
+				"External Site Configuration CT",
+				filters={"parent": configuration.name, "abbr_required": 1},
+				pluck="ref_doctype",
+			)),
 			"currency": frappe.db.get_value("Company", configuration.company, "default_currency"),
 			"sap_references": SAPReferenceResolver(client),
+			"account_parents": account_parents,
+			"account_names": account_names,
+			"account_party_types": account_party_types,
 		},
 	)
 	writer = StagingWriter(
@@ -50,9 +71,28 @@ def get_mapped_data(
 
 	for index, sap_record in enumerate(records):
 		_process_record(mapping_doc, mapper, writer, sap_record, index, result)
+		if (index + 1) % STAGING_COMMIT_BATCH_SIZE == 0:
+			frappe.db.commit()
 
 	_mark_completed(row, window_end, result, automatic_window)
 	return result
+
+
+def _account_party_types(client: SAPB1Client) -> dict[str, str]:
+	types = {}
+	for partner in client.fetch_all("BusinessPartners", {
+		"$select": "CardType,DebitorAccount",
+	}):
+		account = partner.get("DebitorAccount")
+		account_type = {"cCustomer": "Receivable", "cSupplier": "Payable"}.get(partner.get("CardType"))
+		if not account or not account_type:
+			continue
+		if account in types and types[account] != account_type:
+			raise frappe.ValidationError(
+				f"SAP account {account} is used by both customers and suppliers."
+			)
+		types[account] = account_type
+	return types
 
 
 def _get_mapping_row(configuration_name: str, mapping_name: str, row_name: str | None):

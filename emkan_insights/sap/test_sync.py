@@ -92,16 +92,60 @@ class TestSAPSync(FrappeTestCase):
 	def test_existing_account_with_legacy_id_is_reused(self, get_all):
 		get_all.return_value = ["1000"]
 		context = SimpleNamespace(
-			target_doctype="Account", erp_sap_id_fieldname=None,
+			configuration="CONFIG", target_doctype="Account", erp_sap_id_fieldname=None,
 			bulk=SimpleNamespace(company_abbr="", abbr_doctypes=frozenset()),
 		)
 		source = SimpleNamespace(remote_id="1000")
 
-		self.assertEqual(_get_target_names_by_remote_id(context, [source]), {"1000": "1000"})
+		with patch("emkan_insights.sap.sync.frappe.db.get_value", return_value="Samif"):
+			self.assertEqual(_get_target_names_by_remote_id(context, [source]), {"1000": "1000"})
 		get_all.assert_called_once_with(
-			"Account", filters={"name": ["in", ["1000"]]},
+			"Account", filters={"name": ["in", ["1000"]], "company": "Samif"},
 			pluck="name", limit_page_length=0,
 		)
+
+	@patch("emkan_insights.sap.sync.frappe.db.get_value", return_value="Samif")
+	@patch("emkan_insights.sap.sync.frappe.get_all", return_value=["01"])
+	def test_existing_warehouse_is_matched_within_company(self, get_all, _get_value):
+		context = SimpleNamespace(
+			configuration="Samif", target_doctype="Warehouse", erp_sap_id_fieldname=None,
+			bulk=SimpleNamespace(company_abbr="S"),
+		)
+		source = SimpleNamespace(remote_id="01")
+
+		self.assertEqual(_get_target_names_by_remote_id(context, [source]), {"01": "01"})
+		get_all.assert_called_once_with(
+			"Warehouse",
+			filters={"company": "Samif", "name": ["in", ["01", "S-01"]]},
+			pluck="name", limit_page_length=0,
+		)
+
+	@patch("emkan_insights.sap.sync.frappe.db.get_value", return_value="Samif")
+	@patch("emkan_insights.sap.sync.frappe.get_all", return_value=["01", "S-01"])
+	def test_warehouse_match_rejects_duplicate_names(self, _get_all, _get_value):
+		context = SimpleNamespace(
+			configuration="Samif", target_doctype="Warehouse", erp_sap_id_fieldname=None,
+			bulk=SimpleNamespace(company_abbr="S"),
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "both prefixed and unprefixed"):
+			_get_target_names_by_remote_id(context, [SimpleNamespace(remote_id="01")])
+
+	def test_warehouse_resync_preserves_existing_name(self):
+		context = SimpleNamespace(
+			bulk=BulkInsertContext(
+				configuration="Samif", source_doctype="External Warehouse",
+				target_doctype="Warehouse", company_abbr="S",
+				abbr_doctypes=frozenset({"Warehouse"}), requested_by="Administrator",
+			),
+			erp_sap_id_fieldname=None, target_doctype="Warehouse",
+		)
+		source = SimpleNamespace(name="stage-01", remote_id="01", json={"company": "Samif"})
+
+		existing = _prepare_source_row(context, source, target_name="01")
+		new = _prepare_source_row(context, source)
+
+		self.assertEqual(existing["Warehouse"][0]["name"], "01")
+		self.assertEqual(new["Warehouse"][0]["name"], "S-01")
 
 	@patch("emkan_insights.sap.sync._log")
 	@patch("emkan_insights.sap.sync.frappe.get_all")
@@ -258,6 +302,7 @@ class TestSAPSync(FrappeTestCase):
 		get_meta.return_value.is_tree = False
 		events = []
 		with (
+			patch("emkan_insights.sap.sync._recover_missing_target"),
 			patch("emkan_insights.sap.sync._partition_document_trees", return_value=([{}], [{}])),
 			patch("emkan_insights.sap.sync._update_document_trees", side_effect=lambda *_: events.append("update") or 1),
 			patch("emkan_insights.sap.sync._insert_document_trees", side_effect=lambda *_: events.append("insert") or 1),
@@ -294,6 +339,7 @@ class TestSAPSync(FrappeTestCase):
 		}
 		get_meta.return_value.is_tree = False
 		with (
+			patch("emkan_insights.sap.sync._recover_missing_target"),
 			patch("emkan_insights.sap.sync.frappe.get_all", return_value=[
 				SimpleNamespace(name="EXISTING", item_group_name="CONSUMABLES")
 			]),

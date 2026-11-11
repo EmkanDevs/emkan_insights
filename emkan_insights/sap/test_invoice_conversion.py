@@ -23,6 +23,21 @@ class TestInvoiceConversion(FrappeTestCase):
 			with self.assertRaisesRegex(frappe.ValidationError, "conversion is missing"):
 				item_conversion_factor(context)
 
+	def test_uses_sap_factor_when_item_uom_conversion_is_missing(self):
+		context = {"source": {
+			"ItemCode": "ITEM-1", "UoMCode": "BOX", "UnitsOfMeasurment": 12,
+		}}
+		with patch("frappe.db.get_value", side_effect=[None, "EACH"]):
+			self.assertEqual(item_conversion_factor(context), 12)
+
+	def test_rejects_nonpositive_sap_factor(self):
+		context = {"source": {
+			"ItemCode": "ITEM-1", "UoMCode": "BOX", "UnitsOfMeasurment": 0,
+		}}
+		with patch("frappe.db.get_value", side_effect=[None, "EACH"]):
+			with self.assertRaisesRegex(frappe.ValidationError, "conversion is missing"):
+				item_conversion_factor(context)
+
 	def test_service_line_uses_account_description_and_one_unit(self):
 		context = {
 			"company": "Emkan",
