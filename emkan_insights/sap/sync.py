@@ -63,10 +63,19 @@ def sync_mapping(row_name: str, *, remote_ids: set[str] | None = None) -> dict:
 	skipped = 0
 
 	_log(context, "Started", pending=_count_pending_rows(context, started_at, remote_ids))
+	after = None
 	while True:
-		source_rows = _get_pending_rows(context, started_at, remote_ids)
+		# Continue after the last row of the previous page; rescanning the staging table from
+		# its start for every page is quadratic on tables with hundreds of thousands of rows.
+		source_rows = (
+			_get_pending_rows(context, started_at, remote_ids) if after is None
+			else _get_pending_rows(context, started_at, remote_ids, after)
+		)
 		if not source_rows:
 			break
+		last_row = source_rows[-1]
+		if getattr(last_row, "creation", None) is not None:
+			after = (last_row.creation, last_row.name)
 
 		target_names = _get_target_names_by_remote_id(context, source_rows)
 		documents = [
@@ -314,16 +323,22 @@ def get_sync_context(row_name: str) -> SAPSyncContext:
 	)
 
 
-def _get_pending_rows(context: SAPSyncContext, started_at, remote_ids: set[str] | None = None) -> list:
+def _get_pending_rows(
+	context: SAPSyncContext, started_at, remote_ids: set[str] | None = None, after=None,
+) -> list:
 	source = frappe.qb.DocType(context.source_doctype)
 	limit = (
 		max(PAGE_SIZE, _count_pending_rows(context, started_at, remote_ids))
 		if context.target_doctype == "Account" else PAGE_SIZE
 	)
+	condition = _pending_condition(source, context, started_at, remote_ids)
+	if after is not None:
+		creation, name = after
+		condition &= (source.creation > creation) | ((source.creation == creation) & (source.name > name))
 	return (
 		frappe.qb.from_(source)
-		.select(source.name, source.remote_id, source.json, source.modified)
-		.where(_pending_condition(source, context, started_at, remote_ids))
+		.select(source.name, source.remote_id, source.json, source.modified, source.creation)
+		.where(condition)
 		.orderby(source.creation, source.name)
 		.limit(limit)
 	).run(as_dict=True)

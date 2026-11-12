@@ -18,13 +18,19 @@ class TestSAPB1Client(TestCase):
 			{"value": [{"Code": "B"}]},
 		])
 
+		sizes = []
+
 		def get_page(endpoint, params=None):
-			self.assertEqual(client.session.headers["Prefer"], "odata.maxpagesize=200")
+			sizes.append(client.session.headers["Prefer"])
+			self.assertEqual(client.read_timeout, client.PAGE_TIMEOUT)
 			return next(pages)
 
 		with patch.object(client, "get", side_effect=get_page):
 			self.assertEqual(client.fetch_all("Items"), [{"Code": "A"}, {"Code": "B"}])
+		# Fast pages double the size after the first request.
+		self.assertEqual(sizes, ["odata.maxpagesize=500", "odata.maxpagesize=1000"])
 		self.assertNotIn("Prefer", client.session.headers)
+		self.assertEqual(client.read_timeout, 30)
 
 	def test_login_does_not_send_saved_session_cookie(self):
 		client = SAPB1Client("https://sap.example.com", "company", "user", "secret", session_id="old-session")
@@ -125,3 +131,41 @@ class TestSAPB1Client(TestCase):
 			server.shutdown()
 			server.server_close()
 			thread.join()
+
+
+	def test_parallel_fetch_failure_falls_back_to_sequential_pages(self):
+		client = SAPB1Client("https://sap.example.com", "company", "user", "secret")
+		pages = iter([{"value": [{"Code": "A"}]}])
+		with patch.object(client, "_fetch_all_parallel", side_effect=ValueError("unsupported")), patch.object(
+			client, "get", side_effect=lambda endpoint, params=None: next(pages)
+		):
+			self.assertEqual(client.fetch_all("Items", workers=4, order_by="ItemCode"), [{"Code": "A"}])
+
+	def test_parallel_fetch_is_not_used_with_a_record_limit_or_one_worker(self):
+		client = SAPB1Client("https://sap.example.com", "company", "user", "secret")
+		with patch.object(client, "_fetch_all_parallel") as parallel, patch.object(
+			client, "get", return_value={"value": [{"Code": "A"}, {"Code": "B"}]}
+		):
+			client.fetch_all("Items", workers=4, order_by="ItemCode", max_records=1)
+			client.fetch_all("Items", workers=1, order_by="ItemCode")
+		parallel.assert_not_called()
+
+
+	def test_slow_page_halves_the_next_page_size(self):
+		client = SAPB1Client("https://sap.example.com", "company", "user", "secret")
+		pages = iter([
+			{"value": [{"Code": "A"}], "@odata.nextLink": "Items?$skip=1"},
+			{"value": [{"Code": "B"}]},
+		])
+		sizes = []
+
+		def get_page(endpoint, params=None):
+			sizes.append(client.session.headers["Prefer"])
+			return next(pages)
+
+		clock = iter([0, 20, 20, 21])
+		with patch.object(client, "get", side_effect=get_page), patch(
+			"emkan_insights.sap.services.client.monotonic", side_effect=lambda: next(clock)
+		):
+			client.fetch_all("Items")
+		self.assertEqual(sizes, ["odata.maxpagesize=500", "odata.maxpagesize=250"])

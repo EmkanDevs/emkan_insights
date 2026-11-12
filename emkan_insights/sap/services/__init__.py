@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe.utils import getdate, now_datetime
+from frappe.utils import cint, getdate, now_datetime
 
 from emkan_insights.sap.services.client import SAPB1Client
 from emkan_insights.sap.services.fetch import fetch
@@ -30,12 +30,20 @@ def get_mapped_data(
 	row = _get_mapping_row(configuration.name, mapping_name, row_name)
 	window_end = now_datetime()
 	automatic_window = not from_date and not to_date
-	if automatic_window and row and row.last_sync and not mapping_doc.full_snapshot_sync:
+	uses_cursor = bool(getattr(mapping_doc, "cursor_field", None)) and not mapping_doc.full_snapshot_sync
+	cursor_after = None
+	if uses_cursor:
+		# An explicit date window is a request for a full refresh, so it skips the cursor.
+		cursor_after = _staged_cursor(mapping_doc, configuration.name) if automatic_window else None
+	elif automatic_window and row and row.last_sync and not mapping_doc.full_snapshot_sync:
 		from_date = getdate(row.last_sync).isoformat()
 		to_date = getdate(window_end).isoformat()
 	_mark_started(row, window_end)
 	client = SAPB1Client.from_configuration(configuration.name)
-	records = fetch(client, mapping_doc, from_date, to_date)
+	if uses_cursor:
+		records = fetch(client, mapping_doc, from_date, to_date, cursor_after=cursor_after)
+	else:
+		records = fetch(client, mapping_doc, from_date, to_date)
 	account_parents = (
 		{str(record["Code"]): record.get("FatherAccountKey") for record in records if record.get("Code")}
 		if mapping_doc.name == "SAP Account" else {}
@@ -63,6 +71,7 @@ def get_mapped_data(
 			"account_party_types": account_party_types,
 		},
 	)
+	_prime_references(mapping_doc, mapper, records)
 	writer = StagingWriter(
 		mapping_doc.external_doctype,
 		configuration.name,
@@ -70,12 +79,65 @@ def get_mapped_data(
 	result = {"success": [], "created": [], "updated": [], "unchanged": [], "failed": []}
 
 	for index, sap_record in enumerate(records):
+		if index % STAGING_COMMIT_BATCH_SIZE == 0:
+			writer.prefetch(_batch_sap_ids(
+				mapping_doc, records[index:index + STAGING_COMMIT_BATCH_SIZE]
+			))
 		_process_record(mapping_doc, mapper, writer, sap_record, index, result)
 		if (index + 1) % STAGING_COMMIT_BATCH_SIZE == 0:
+			writer.flush()
 			frappe.db.commit()
+	writer.flush()
 
 	_mark_completed(row, window_end, result, automatic_window)
 	return result
+
+
+def _staged_cursor(mapping_doc, configuration_name: str) -> int | None:
+	"""Key to fetch after: highest staged numeric key minus the overlap.
+
+	Staged rows that failed mapping pull the cursor back to the oldest failed key, so
+	they are fetched again until they map. Returns None when nothing is staged yet.
+	"""
+	if not frappe.db.table_exists(mapping_doc.external_doctype):
+		return None
+	prefix = getattr(mapping_doc, "sap_id_prefix", None) or ""
+	key = "CAST(SUBSTRING_INDEX(SUBSTRING(remote_id, %(skip)s), ':', 1) AS UNSIGNED)"
+	where = (
+		"external_sap_configuration = %(config)s AND remote_id LIKE %(like)s "
+		"AND SUBSTRING_INDEX(SUBSTRING(remote_id, %(skip)s), ':', 1) REGEXP '^[0-9]+$'"
+	)
+	values = {
+		"config": configuration_name, "skip": len(prefix) + 1,
+		"like": prefix.replace("%", "\\%").replace("_", "\\_") + "%", "errors": "%_sap_mapping_errors%",
+	}
+	table = f"`tab{mapping_doc.external_doctype}`"
+	highest = frappe.db.sql(f"SELECT MAX({key}) FROM {table} WHERE {where}", values)[0][0]
+	if highest is None:
+		return None
+	oldest_failed = frappe.db.sql(
+		f"SELECT MIN({key}) FROM {table} WHERE {where} AND `json` LIKE %(errors)s", values
+	)[0][0]
+	cursor = int(highest) - cint(getattr(mapping_doc, "cursor_overlap", 0))
+	if oldest_failed is not None:
+		cursor = min(cursor, int(oldest_failed) - 1)
+	return max(cursor, 0)
+
+
+def _prime_references(mapping_doc, mapper, records: list[dict]) -> None:
+	resolver = mapper.context.get("sap_references") if mapper is not None and hasattr(mapper, "context") else None
+	if resolver is None:
+		return
+	if mapping_doc.name == "SAP Purchase Order":
+		resolver.prime_purchase_order_sources(records)
+	elif mapping_doc.name == "SAP Purchase Invoice":
+		resolver.prime_purchase_invoice_receipts(records)
+
+
+def _batch_sap_ids(mapping_doc, records: list[dict]) -> list[str]:
+	prefix = getattr(mapping_doc, "sap_id_prefix", "") or ""
+	ids = (_sap_record_id(record, mapping_doc.sap_id_field) for record in records)
+	return [f"{prefix}{raw_id}" for raw_id in ids if raw_id not in (None, "")]
 
 
 def _account_party_types(client: SAPB1Client) -> dict[str, str]:

@@ -33,11 +33,14 @@ class SAPDoctypeMapping(Document):
 	def _validate_sync_mode(self):
 		if not self.full_snapshot_sync and not (
 			self.creation_date_filter_field or self.date_filter_field
+			or getattr(self, "cursor_field", None)
 		):
 			raise frappe.ValidationError(
-				"Incremental sync requires a SAP creation or update date field. "
-				"Enable Full Snapshot Sync when neither field is available."
+				"Incremental sync requires a SAP creation or update date field, or a cursor key field. "
+				"Enable Full Snapshot Sync when none is available."
 			)
+		if getattr(self, "cursor_field", None) and cint(getattr(self, "cursor_overlap", 0)) < 0:
+			raise frappe.ValidationError("Cursor Overlap cannot be negative.")
 
 	def _validate_external_doctype(self):
 		meta = frappe.get_meta(self.external_doctype)

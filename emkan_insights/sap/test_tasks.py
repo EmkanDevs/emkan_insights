@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -608,3 +608,78 @@ class TestSAPTasks(FrappeTestCase):
 			name="ROW-1", parent="SAP - Company", parenttype="External SAP Configuration",
 			parentfield="mappings", sap_mapping="SAP Item", ref_doctype="Item", exported_doctype="External Item",
 		)
+
+
+class TestStopConfigurationSynchronization(FrappeTestCase):
+	def _job(self, job_id, status, **arguments):
+		job = Mock()
+		job.id = job_id
+		job.kwargs = {"site": frappe.local.site, "kwargs": arguments}
+		job.get_status.return_value = status
+		return job
+
+	def test_job_configurations_reads_every_way_a_job_names_a_company(self):
+		from emkan_insights.sap.tasks import _job_configurations
+
+		with patch("emkan_insights.sap.tasks.frappe.db.get_value", return_value="Samif"):
+			self.assertEqual(_job_configurations(self._job("a", "queued", configuration_name="Emkan")), {"Emkan"})
+			self.assertEqual(
+				_job_configurations(self._job("b", "queued", configuration_names=["Emkan", "Samif"])),
+				{"Emkan", "Samif"},
+			)
+			self.assertEqual(_job_configurations(self._job("c", "queued", row_name="ROW-1")), {"Samif"})
+		self.assertEqual(_job_configurations(self._job("d", "queued", unrelated=1)), set())
+
+	def test_stops_only_this_companys_jobs_and_clears_its_locks(self):
+		from emkan_insights.sap import tasks
+
+		jobs = {
+			"site::mine_queued": self._job("site::mine_queued", "queued", configuration_name="Emkan"),
+			"site::mine_running": self._job("site::mine_running", "started", configuration_name="Emkan"),
+			"site::other": self._job("site::other", "queued", configuration_name="Samif"),
+			"site::shared": self._job("site::shared", "started", configuration_names=["Emkan", "Samif"]),
+		}
+		queue = Mock(job_ids=["site::mine_queued", "site::other"])
+		registry = Mock()
+		registry.get_job_ids.return_value = ["site::mine_running", "site::shared"]
+		cache = Mock()
+		cache.delete.side_effect = [1, 0]
+		with patch("frappe.utils.background_jobs.get_queues", return_value=[queue]), patch(
+			"frappe.utils.background_jobs.get_redis_conn", return_value="redis"
+		), patch("rq.job.Job.fetch", side_effect=lambda job_id, connection: jobs[job_id]), patch(
+			"rq.registry.StartedJobRegistry", return_value=registry
+		), patch("rq.command.send_stop_job_command") as stop, patch(
+			"emkan_insights.sap.tasks.frappe.get_all", return_value=["ROW-1", "ROW-2"]
+		), patch("emkan_insights.sap.tasks.frappe.cache", return_value=cache):
+			result = tasks.stop_configuration_synchronization("Emkan")
+
+		self.assertEqual(result, {
+			"stopped": ["mine_running"], "cancelled": ["mine_queued"],
+			"left_running": ["shared"], "locks_cleared": 1,
+		})
+		jobs["site::mine_queued"].cancel.assert_called_once()
+		jobs["site::other"].cancel.assert_not_called()
+		stop.assert_called_once_with("redis", "site::mine_running")
+		self.assertEqual(
+			[call.args[0] for call in cache.delete.call_args_list],
+			[tasks._mapping_lock_key("ROW-1"), tasks._mapping_lock_key("ROW-2")],
+		)
+
+	def test_a_stale_started_job_is_removed_when_its_worker_is_gone(self):
+		from emkan_insights.sap import tasks
+
+		job = self._job("site::stale", "started", configuration_name="Emkan")
+		queue = Mock(job_ids=[])
+		registry = Mock()
+		registry.get_job_ids.return_value = ["site::stale"]
+		with patch("frappe.utils.background_jobs.get_queues", return_value=[queue]), patch(
+			"frappe.utils.background_jobs.get_redis_conn", return_value="redis"
+		), patch("rq.job.Job.fetch", return_value=job), patch(
+			"rq.registry.StartedJobRegistry", return_value=registry
+		), patch("rq.command.send_stop_job_command", side_effect=RuntimeError("not running")), patch(
+			"emkan_insights.sap.tasks.frappe.get_all", return_value=[]
+		):
+			result = tasks.stop_configuration_synchronization("Emkan")
+
+		registry.remove.assert_called_once_with(job, delete_job=True)
+		self.assertEqual(result["stopped"], ["stale"])

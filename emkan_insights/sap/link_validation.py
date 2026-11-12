@@ -14,15 +14,27 @@ def resolve_account_links(documents: list[dict[str, list[dict]]]) -> None:
 				batch_accounts[(account["company"], str(account["account_number"]))] = account["name"]
 
 	resolved = {}
+	# A batch repeats the same accounts on every row, so ask the database once per value.
+	account_fields = {}
+	exists = {}
+
+	def account_exists(value) -> bool:
+		if value not in exists:
+			exists[value] = bool(frappe.db.exists("Account", value))
+		return exists[value]
+
 	for tree in documents:
 		company = next((row.get("company") for rows in tree.values() for row in rows if row.get("company")), None)
 		for doctype, rows in tree.items():
+			if doctype not in account_fields:
+				account_fields[doctype] = [
+					field.fieldname for field in frappe.get_meta(doctype).fields
+					if field.fieldtype == "Link" and field.options == "Account"
+				]
 			for row in rows:
-				for field in frappe.get_meta(doctype).fields:
-					if field.fieldtype != "Link" or field.options != "Account":
-						continue
-					value = row.get(field.fieldname)
-					if value in (None, "") or frappe.db.exists("Account", value):
+				for fieldname in account_fields[doctype]:
+					value = row.get(fieldname)
+					if value in (None, "") or account_exists(value):
 						continue
 					account_company = row.get("company") or row.get("company_name") or company
 					key = (account_company, str(value))
@@ -37,7 +49,7 @@ def resolve_account_links(documents: list[dict[str, list[dict]]]) -> None:
 							batch_accounts.get(key) if not matches else None
 						)
 					if resolved[key]:
-						row[field.fieldname] = resolved[key]
+						row[fieldname] = resolved[key]
 
 
 def validate_document_links(documents: list[dict[str, list[dict]]]) -> None:

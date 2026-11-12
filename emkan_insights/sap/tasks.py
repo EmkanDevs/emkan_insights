@@ -87,7 +87,7 @@ def synchronize_sap_data(
 		_log_fetch(row, "Started")
 		mapping = frappe.get_doc("SAP Doctype Mapping", row.sap_mapping)
 		fetch_options = {"from_date": from_date, "to_date": to_date} if from_date else {}
-		if not fetch_options and not mapping.full_snapshot_sync and (
+		if not fetch_options and not mapping.full_snapshot_sync and not getattr(mapping, "cursor_field", None) and (
 			_has_staged_mapping_errors(mapping, row.parent)
 			or (getattr(row, "last_sync", None) and _has_empty_staging(mapping, row.parent))
 		):
@@ -318,11 +318,14 @@ def _ensure_company_cost_centers() -> None:
 def _has_staged_mapping_errors(mapping, configuration: str) -> bool:
 	if not frappe.db.table_exists(mapping.external_doctype):
 		return False
-	return bool(frappe.db.get_value(
-		mapping.external_doctype,
-		{"external_sap_configuration": configuration, "json": ["like", "%_sap_mapping_errors%"]},
-		"name",
-	))
+	# Plain conditions let MariaDB use the configuration index; get_value wraps columns in
+	# IFNULL, which turned this check into a scan of the whole staging table.
+	table = frappe.qb.DocType(mapping.external_doctype)
+	return bool(
+		frappe.qb.from_(table).select(table.name)
+		.where((table.external_sap_configuration == configuration) & table.json.like("%_sap_mapping_errors%"))
+		.limit(1)
+	.run())
 
 
 def _has_empty_staging(mapping, configuration: str) -> bool:
@@ -517,6 +520,82 @@ def _log_fetch(row, status, result=None, elapsed=None, traceback=None):
 		reference_name=row.parent,
 	)
 	frappe.db.commit()
+
+
+def stop_configuration_synchronization(configuration_name: str) -> dict:
+	"""Stop this company's SAP background jobs and clear its mapping locks.
+
+	A job stopped by force never reaches its `finally` block, so its mapping lock stays in
+	Redis until the two-hour expiry and every later run of that mapping is skipped.
+	Jobs that also cover other companies are left running and reported.
+	"""
+	from frappe.utils.background_jobs import get_queues, get_redis_conn
+	from rq.command import send_stop_job_command
+	from rq.exceptions import NoSuchJobError
+	from rq.job import Job
+	from rq.registry import StartedJobRegistry
+
+	row_names = frappe.get_all(
+		"External Site Configuration CT",
+		filters={
+			"parent": configuration_name,
+			"parenttype": "External SAP Configuration",
+			"parentfield": "mappings",
+		},
+		pluck="name",
+		limit_page_length=0,
+	)
+	connection = get_redis_conn()
+	result = {"stopped": [], "cancelled": [], "left_running": [], "locks_cleared": 0}
+	seen = set()
+	for queue in get_queues():
+		registry = StartedJobRegistry(queue=queue)
+		for job_id in [*queue.job_ids, *registry.get_job_ids()]:
+			if job_id in seen:
+				continue
+			seen.add(job_id)
+			try:
+				job = Job.fetch(job_id, connection=connection)
+			except NoSuchJobError:
+				continue
+			if job.kwargs.get("site") != frappe.local.site:
+				continue
+			configurations = _job_configurations(job)
+			if configuration_name not in configurations:
+				continue
+			label = job_id.split("::", 1)[-1]
+			if configurations != {configuration_name}:
+				result["left_running"].append(label)
+				continue
+			status = job.get_status()
+			if status == "queued":
+				job.cancel()
+				result["cancelled"].append(label)
+			elif status == "started":
+				try:
+					send_stop_job_command(connection, job.id)
+				except Exception:
+					# The worker is gone, so the job is stale: drop it from the started registry.
+					registry.remove(job, delete_job=True)
+				result["stopped"].append(label)
+
+	for row_name in row_names:
+		result["locks_cleared"] += int(frappe.cache().delete(_mapping_lock_key(row_name)) or 0)
+	return result
+
+
+def _job_configurations(job) -> set[str]:
+	"""External SAP Configurations a queued or running SAP job works on."""
+	arguments = job.kwargs.get("kwargs") or {}
+	configurations = set()
+	if arguments.get("configuration_name"):
+		configurations.add(arguments["configuration_name"])
+	configurations.update(arguments.get("configuration_names") or [])
+	if arguments.get("row_name"):
+		parent = frappe.db.get_value("External Site Configuration CT", arguments["row_name"], "parent")
+		if parent:
+			configurations.add(parent)
+	return configurations
 
 
 def _mapping_lock_key(row_name: str) -> str:

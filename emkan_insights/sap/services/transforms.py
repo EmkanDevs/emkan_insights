@@ -151,14 +151,29 @@ def sap_bool(value: Any) -> int:
 	return int(str(value or "").strip().lower() in {"tyes", "yes", "y", "true", "1"})
 
 
+def _memo_get_value(context, doctype, filters, fieldname, *, as_dict=False):
+	"""frappe.db.get_value, remembering found values for one fetch pass.
+
+	Not-found results are never remembered, so a record created mid-pass is still seen.
+	"""
+	memo = context.setdefault("_lookup_memo", {}) if context is not None else None
+	key = ("get_value", doctype, tuple(sorted(filters.items())), str(fieldname), as_dict)
+	if memo is not None and key in memo:
+		return memo[key]
+	result = frappe.db.get_value(doctype, filters, fieldname, as_dict=as_dict)
+	if memo is not None and result:
+		memo[key] = result
+	return result
+
+
 def journal_party(value: Any, context: dict[str, Any]) -> str | None:
 	source = context.get("source") or {}
 	account_code = source.get("AccountCode")
 	if not value or not account_code or str(value) == str(account_code):
 		return None
 
-	account = frappe.db.get_value(
-		"Account", {"account_number": account_code, "company": context.get("company")},
+	account = _memo_get_value(
+		context, "Account", {"account_number": account_code, "company": context.get("company")},
 		["name", "account_type"], as_dict=True,
 	)
 	if not account:
@@ -184,8 +199,8 @@ def journal_cost_center(value: Any, context: dict[str, Any]) -> str | None:
 		return name
 
 	account_code = (context.get("source") or {}).get("AccountCode")
-	account = frappe.db.get_value(
-		"Account", {"account_number": account_code, "company": company}, "report_type"
+	account = _memo_get_value(
+		context, "Account", {"account_number": account_code, "company": company}, "report_type"
 	)
 	if account != "Profit and Loss":
 		return None
@@ -615,7 +630,15 @@ def lookup(value: Any, rule: dict[str, Any], context: dict[str, Any] | None = No
 			raise frappe.ValidationError("Account lookup requires a configured company.")
 		filters["company"] = company
 	return_field = config.get("return_field", "name")
+	# One fetch pass maps thousands of rows against the same few Accounts. Only found
+	# values are remembered for the pass, so a missing record is still looked up again.
+	memo = context.setdefault("_lookup_memo", {}) if context is not None else None
+	memo_key = (doctype, tuple(sorted(filters.items())), return_field)
+	if memo is not None and memo_key in memo:
+		return memo[memo_key]
 	result = frappe.db.get_value(doctype, filters, return_field)
+	if memo is not None and result not in (None, ""):
+		memo[memo_key] = result
 	if (
 		result in (None, "") and doctype == "Account" and return_field == "account_currency"
 		and filters.get("company") and frappe.db.exists("Account", filters)
@@ -750,8 +773,8 @@ def sap_account_type(value: Any, rule: dict[str, Any], context: dict[str, Any]) 
 		raise frappe.ValidationError("SAP Account classification needs a company and account code.")
 	if party_type := (context.get("account_party_types") or {}).get(code):
 		return party_type
-	return frappe.db.get_value(
-		"Account", {"company": company, "account_number": code}, "account_type"
+	return _memo_get_value(
+		context, "Account", {"company": company, "account_number": code}, "account_type"
 	)
 
 
@@ -760,6 +783,10 @@ def company_root_cost_center(context: dict[str, Any]) -> str:
 	if not company:
 		raise frappe.ValidationError("Cost Center parent mapping requires a configured company.")
 
+	# The root is the same for every row of a pass; only a valid single root is remembered.
+	memo = context.setdefault("_lookup_memo", {})
+	if ("root_cost_center", company) in memo:
+		return memo[("root_cost_center", company)]
 	roots = frappe.get_all(
 		"Cost Center",
 		filters={
@@ -775,6 +802,7 @@ def company_root_cost_center(context: dict[str, Any]) -> str:
 		raise frappe.ValidationError(
 			f"ERPNext company {company} must have one root Cost Center named {company}."
 		)
+	memo[("root_cost_center", company)] = roots[0]
 	return roots[0]
 
 
@@ -1094,8 +1122,8 @@ def purchase_invoice_item_description(value: Any, context: dict[str, Any]) -> st
 	company = context.get("company")
 	if not account_code or not company:
 		raise frappe.ValidationError("SAP service invoice line needs an expense account.")
-	account_name = frappe.db.get_value(
-		"Account", {"account_number": account_code, "company": company}, "account_name"
+	account_name = _memo_get_value(
+		context, "Account", {"account_number": account_code, "company": company}, "account_name"
 	)
 	if not account_name:
 		raise frappe.ValidationError("ERPNext service expense Account was not found.")

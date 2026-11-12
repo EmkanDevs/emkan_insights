@@ -13,13 +13,17 @@
   "external_doctype",
   "erp_doctype",
   "sap_filter",
+  "sap_select_fields",
   "source_array_field",
   "fetch_only",
   "raw_payload",
   "fetch_limit",
+  "fetch_workers",
   "full_snapshot_sync",
   "creation_date_filter_field",
   "date_filter_field",
+  "cursor_field",
+  "cursor_overlap",
   "sap_id_field",
   "sap_id_prefix",
   "erp_sap_id_fieldname",
@@ -73,6 +77,12 @@
    "label": "SAP Filter"
   },
   {
+   "description": "Optional comma-separated SAP properties to request ($select), for example ItemCode,ItemName. Leave empty to fetch every property. It must list every SAP field the mapping reads, including the ID field and any array field.",
+   "fieldname": "sap_select_fields",
+   "fieldtype": "Small Text",
+   "label": "SAP Select Fields"
+  },
+  {
    "description": "Optional array on each SAP record to flatten into separate staging records, for example ContactEmployees.",
    "fieldname": "source_array_field",
    "fieldtype": "Data",
@@ -102,6 +112,13 @@
   },
   {
    "default": "1",
+   "description": "Number of SAP pages to read at the same time after the first page. Use 1 for one request at a time. Pages are ordered by the first part of the SAP ID field.",
+   "fieldname": "fetch_workers",
+   "fieldtype": "Int",
+   "label": "Parallel Page Fetches"
+  },
+  {
+   "default": "1",
    "description": "Fetch every SAP record on each run. Use this when reliable creation and update dates are unavailable.",
    "fieldname": "full_snapshot_sync",
    "fieldtype": "Check",
@@ -121,6 +138,21 @@
    "fieldname": "date_filter_field",
    "fieldtype": "Data",
    "label": "SAP Update Date Filter Field"
+  },
+  {
+   "description": "For records without usable dates. Incremental fetches request only SAP records whose numeric key in this field is above the highest key already staged, for example JdtNum for journals. Edits to existing SAP records are not seen; run a fetch with an explicit date window to refresh everything.",
+   "depends_on": "eval:!doc.full_snapshot_sync",
+   "fieldname": "cursor_field",
+   "fieldtype": "Data",
+   "label": "SAP Cursor Key Field"
+  },
+  {
+   "default": "500",
+   "description": "Records before the highest staged key to fetch again, in case SAP committed them out of order.",
+   "depends_on": "eval:!doc.full_snapshot_sync && doc.cursor_field",
+   "fieldname": "cursor_overlap",
+   "fieldtype": "Int",
+   "label": "Cursor Overlap"
   },
   {
    "fieldname": "sap_id_field",

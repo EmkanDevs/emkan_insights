@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from time import monotonic
 from typing import Any
 from urllib.parse import urljoin
@@ -14,7 +15,14 @@ from urllib3.util.retry import Retry
 
 class SAPB1Client:
 	REAUTHENTICATE_STATUSES = {401, 403, 440}
-	FETCH_PAGE_SIZE = 200
+	# Page size adapts to how long SAP takes: wide documents (about 20 KB each) make a
+	# 1,000-record page slower than the default read timeout.
+	FETCH_PAGE_SIZE = 1000
+	FETCH_PAGE_SIZE_START = 500
+	MIN_PAGE_SIZE = 100
+	SLOW_PAGE_SECONDS = 8
+	FAST_PAGE_SECONDS = 2
+	PAGE_TIMEOUT = 180
 
 	def __init__(
 		self,
@@ -35,6 +43,7 @@ class SAPB1Client:
 			"Password": password,
 		}
 		self.session_timeout_seconds = max(cint(session_timeout_minutes), 1) * 60
+		self.read_timeout = 30
 		self.session = requests.Session()
 		adapter = HTTPAdapter(max_retries=Retry(
 				total=3,
@@ -98,10 +107,10 @@ class SAPB1Client:
 
 	def get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 		self._ensure_session()
-		response = self.session.get(self._url(endpoint), params=params, timeout=30)
+		response = self.session.get(self._url(endpoint), params=params, timeout=self.read_timeout)
 		if response.status_code in self.REAUTHENTICATE_STATUSES:
 			self.login()
-			response = self.session.get(self._url(endpoint), params=params, timeout=30)
+			response = self.session.get(self._url(endpoint), params=params, timeout=self.read_timeout)
 		response.raise_for_status()
 		return response.json()
 
@@ -110,16 +119,36 @@ class SAPB1Client:
 		endpoint: str,
 		params: dict[str, Any] | None = None,
 		max_records: int | None = None,
+		workers: int = 1,
+		order_by: str | None = None,
 	) -> list[dict[str, Any]]:
+		if workers > 1 and order_by and max_records is None and not endpoint.startswith(("http://", "https://")):
+			try:
+				return self._fetch_all_parallel(endpoint, params, workers, order_by)
+			except Exception:
+				# Any problem (unsupported $orderby, expired session, throttling) falls back to
+				# the sequential path below, which handles re-login and retries.
+				frappe.log_error(title="SAP parallel fetch fell back to sequential"[:140], defer_insert=True)
 		records = []
 		next_endpoint: str | None = endpoint
 		next_params = params
 
 		previous_prefer = self.session.headers.get("Prefer")
-		self.session.headers["Prefer"] = f"odata.maxpagesize={self.FETCH_PAGE_SIZE}"
+		previous_timeout = self.read_timeout
+		page_size = self.FETCH_PAGE_SIZE_START
+		self.session.headers["Prefer"] = f"odata.maxpagesize={page_size}"
+		self.read_timeout = self.PAGE_TIMEOUT
 		try:
 			while next_endpoint:
+				started = monotonic()
 				payload = self.get(next_endpoint, params=next_params)
+				elapsed = monotonic() - started
+				# The next link carries an absolute $skip, so the page size can change between pages.
+				if elapsed > self.SLOW_PAGE_SECONDS and page_size > self.MIN_PAGE_SIZE:
+					page_size = max(self.MIN_PAGE_SIZE, page_size // 2)
+				elif elapsed < self.FAST_PAGE_SECONDS and page_size < self.FETCH_PAGE_SIZE:
+					page_size = min(self.FETCH_PAGE_SIZE, page_size * 2)
+				self.session.headers["Prefer"] = f"odata.maxpagesize={page_size}"
 				page = payload.get("value", [])
 				if not isinstance(page, list):
 					raise ValueError("SAP OData response 'value' must be an array.")
@@ -129,12 +158,56 @@ class SAPB1Client:
 				next_endpoint = payload.get("@odata.nextLink") or payload.get("odata.nextLink")
 				next_params = None
 		finally:
+			self.read_timeout = previous_timeout
 			if previous_prefer is None:
 				self.session.headers.pop("Prefer", None)
 			else:
 				self.session.headers["Prefer"] = previous_prefer
 
 		return records
+
+	def _fetch_all_parallel(
+		self, endpoint: str, params: dict[str, Any] | None, workers: int, order_by: str,
+	) -> list[dict[str, Any]]:
+		"""Read the first page, then the following pages in waves of concurrent $skip requests.
+
+		Pages are ordered by `order_by`, so the pages of one run line up. A page shorter than
+		the first marks the end.
+		"""
+		self._ensure_session()
+		query = {**(params or {}), "$orderby": order_by}
+		headers = {"Prefer": f"odata.maxpagesize={self.FETCH_PAGE_SIZE_START}"}
+		first = self.session.get(self._url(endpoint), params=query, headers=headers, timeout=self.PAGE_TIMEOUT)
+		first.raise_for_status()
+		payload = first.json()
+		records = list(payload.get("value", []))
+		if not (payload.get("@odata.nextLink") or payload.get("odata.nextLink")):
+			return records
+		page_size = len(records)
+		if page_size == 0:
+			return records
+
+		def read_page(skip: int) -> list[dict[str, Any]]:
+			session = requests.Session()
+			session.headers.update(self.session.headers)
+			session.headers.update(headers)
+			session.cookies.update(self.session.cookies)
+			session.verify = self.session.verify
+			session.mount("https://", self.session.get_adapter("https://"))
+			session.mount("http://", self.session.get_adapter("http://"))
+			response = session.get(self._url(endpoint), params={**query, "$skip": skip}, timeout=self.PAGE_TIMEOUT)
+			response.raise_for_status()
+			return response.json().get("value", [])
+
+		page = 1
+		with ThreadPoolExecutor(max_workers=workers) as pool:
+			while True:
+				wave = list(pool.map(read_page, [(page + index) * page_size for index in range(workers)]))
+				for rows in wave:
+					records.extend(rows)
+					if len(rows) < page_size:
+						return records
+				page += workers
 
 	def _ensure_session(self) -> None:
 		if self.logged_in_at is None or monotonic() - self.logged_in_at >= self.session_timeout_seconds:

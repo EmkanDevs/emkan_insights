@@ -463,3 +463,27 @@ class TestSAPSync(FrappeTestCase):
 		self.assertEqual(result["items"], [
 			{"item_code": "ITEM-1", "qty": 2, "uom": "Nos", "stock_uom": "Nos"}
 		])
+
+
+class TestSAPCursorFetch(FrappeTestCase):
+	def _mapping(self, **values):
+		from types import SimpleNamespace
+		return SimpleNamespace(**{
+			"sap_filter": None, "full_snapshot_sync": 0, "creation_date_filter_field": None,
+			"date_filter_field": None, "cursor_field": "JdtNum", "sap_select_fields": None, **values,
+		})
+
+	def test_cursor_filter_requests_only_newer_keys(self):
+		from emkan_insights.sap.services.fetch import _query_params
+		params = _query_params(self._mapping(sap_filter="OriginalJournal eq 'ttJournalEntry'"), None, None, 1200)
+		self.assertEqual(params["$filter"], "(OriginalJournal eq 'ttJournalEntry') and (JdtNum gt 1200)")
+
+	def test_no_cursor_fetches_everything(self):
+		from emkan_insights.sap.services.fetch import _query_params
+		self.assertIsNone(_query_params(self._mapping(), "2000-01-01", "2026-11-12", None))
+
+	def test_cursor_field_must_be_an_identifier(self):
+		import frappe
+		from emkan_insights.sap.services.fetch import _query_params
+		with self.assertRaises(frappe.ValidationError):
+			_query_params(self._mapping(cursor_field="JdtNum gt 0 or 1 eq 1"), None, None, 5)

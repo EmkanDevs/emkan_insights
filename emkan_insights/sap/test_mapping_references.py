@@ -41,7 +41,10 @@ class TestMappingReferences(FrappeTestCase):
 		with patch("emkan_insights.sap.services.transforms.frappe.db.get_value", return_value=SimpleNamespace(
 			name="Supplier Advances", account_type=None,
 		)):
-			self.assertIsNone(journal_party("V00118", context))
+			# A new context models a new fetch pass; one pass remembers found Accounts.
+			self.assertIsNone(journal_party(
+				"V00118", {key: value for key, value in context.items() if key != "_lookup_memo"},
+			))
 
 	def test_scoped_item_lookup_uses_prefixed_unique_code(self):
 		context = {"company_abbr": "PV", "prefixed_doctypes": frozenset({"Item"})}

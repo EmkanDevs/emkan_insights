@@ -9,10 +9,15 @@ import frappe
 class SAPReferenceResolver:
 	PURCHASE_REQUEST_TYPE = 1470000113
 	PURCHASE_QUOTATION_TYPE = 540000006
+	BATCH_ID_CHUNK = 20
+	EXISTS_PRELOAD_AFTER = 10
+	# Batching only fills the cache sooner; set False to force one request per lookup.
+	batching_enabled = True
 
 	def __init__(self, client):
 		self.client = client
 		self.cache = {}
+		self._exists_misses = {}
 
 	def resolve(self, value, config):
 		if value in (None, "") or value in config.get("empty_values", []):
@@ -20,6 +25,12 @@ class SAPReferenceResolver:
 		entity, key, field = self._identifiers(config)
 		literal = self._literal(value, config.get("key_type", "string"))
 		cache_key = (entity, key, field, literal)
+		if config.get("preload") and cache_key not in self.cache:
+			rows = self._preloaded(entity, key)
+			matches = rows.get(self._index_value(value, config.get("key_type", "string")), [])
+			if len(matches) != 1 or field not in matches[0]:
+				raise frappe.ValidationError(f"SAP reference {entity}.{key} did not resolve uniquely.")
+			self.cache[cache_key] = matches[0][field]
 		if cache_key not in self.cache:
 			payload = self.client.get(
 				entity,
@@ -30,6 +41,21 @@ class SAPReferenceResolver:
 				raise frappe.ValidationError(f"SAP reference {entity}.{key} did not resolve uniquely.")
 			self.cache[cache_key] = rows[0][field]
 		return self.cache[cache_key]
+
+	def _preloaded(self, entity: str, key: str) -> dict[str, list[dict]]:
+		"""Fetch a small lookup entity once per run instead of one request per record."""
+		cache_key = ("preload", entity, key)
+		if cache_key not in self.cache:
+			rows: dict[str, list[dict]] = {}
+			for row in self.client.fetch_all(entity):
+				if row.get(key) not in (None, ""):
+					rows.setdefault(str(row[key]), []).append(row)
+			self.cache[cache_key] = rows
+		return self.cache[cache_key]
+
+	@staticmethod
+	def _index_value(value, key_type) -> str:
+		return str(int(value)) if key_type == "integer" and re.fullmatch(r"-?\d+", str(value)) else str(value)
 
 	def purchase_request_line(self, source_line: dict) -> tuple[str, int] | None:
 		key = (
@@ -288,6 +314,10 @@ class SAPReferenceResolver:
 		if extra_filter:
 			filter_expression = f"({filter_expression}) and ({extra_filter.strip()})"
 		cache_key = ("exists", entity, key, literal, extra_filter)
+		if cache_key not in self.cache and self._exists_from_preload(
+			entity, key, value, config, extra_filter, cache_key
+		):
+			return self.cache[cache_key]
 		if cache_key not in self.cache:
 			payload = self.client.get(
 				entity,
@@ -298,6 +328,93 @@ class SAPReferenceResolver:
 				raise frappe.ValidationError(f"SAP reference {entity}.{key} returned invalid data.")
 			self.cache[cache_key] = int(bool(rows))
 		return self.cache[cache_key]
+
+	def _exists_from_preload(self, entity, key, value, config, extra_filter, cache_key) -> bool:
+		"""After many point lookups, read the matching keys once and answer from memory.
+
+		Only integer keys qualify: string comparison in SAP may be case-insensitive.
+		"""
+		if not self.batching_enabled or config.get("key_type") != "integer":
+			return False
+		group = ("exists_group", entity, key, extra_filter)
+		keys = self.cache.get(("exists_keys",) + group[1:])
+		if keys is None:
+			self._exists_misses[group] = self._exists_misses.get(group, 0) + 1
+			if self._exists_misses[group] <= self.EXISTS_PRELOAD_AFTER:
+				return False
+			params = {"$select": key}
+			if extra_filter:
+				params["$filter"] = extra_filter.strip()
+			try:
+				rows = self.client.fetch_all(entity, params=params)
+				keys = {str(int(row[key])) for row in rows if row.get(key) is not None}
+			except Exception:
+				self._exists_misses[group] = float("-inf")
+				return False
+			self.cache[("exists_keys",) + group[1:]] = keys
+		self.cache[cache_key] = int(str(int(value)) in keys)
+		return True
+
+	def prime_documents(self, entity: str, key: str, ids, value_field: str) -> None:
+		"""Fetch several source documents per request and cache what resolve() would return.
+
+		A document that is missing or not unique is left uncached, so resolve() still runs
+		its own query and raises its own error.
+		"""
+		if not self.batching_enabled:
+			return
+		literal = self._literal
+		wanted = []
+		for value in dict.fromkeys(ids):
+			if value in (None, "") or isinstance(value, bool) or not str(value).lstrip("-").isdigit():
+				continue
+			if (entity, key, value_field, literal(value, "integer")) not in self.cache:
+				wanted.append(int(value))
+		for start in range(0, len(wanted), self.BATCH_ID_CHUNK):
+			chunk = wanted[start:start + self.BATCH_ID_CHUNK]
+			try:
+				rows = self.client.fetch_all(entity, params={
+					"$filter": " or ".join(f"{key} eq {value}" for value in chunk),
+					"$select": f"{key},{value_field}",
+				})
+			except Exception:
+				continue
+			by_id: dict[str, list] = {}
+			for row in rows:
+				by_id.setdefault(str(row.get(key)), []).append(row)
+			for value in chunk:
+				matches = by_id.get(str(value), [])
+				if len(matches) == 1 and value_field in matches[0]:
+					self.cache[(entity, key, value_field, literal(value, "integer"))] = matches[0][value_field]
+
+	def prime_purchase_order_sources(self, orders: list[dict]) -> None:
+		lines = [line for order in orders for line in order.get("DocumentLines") or []]
+		quotes = [l.get("BaseEntry") for l in lines if l.get("BaseType") == self.PURCHASE_QUOTATION_TYPE]
+		requests = [l.get("BaseEntry") for l in lines if l.get("BaseType") == self.PURCHASE_REQUEST_TYPE]
+		self.prime_documents("PurchaseQuotations", "DocEntry", quotes, "DocumentLines")
+		for line in lines:
+			if line.get("BaseType") != self.PURCHASE_QUOTATION_TYPE:
+				continue
+			quote_lines = self.cache.get((
+				"PurchaseQuotations", "DocEntry", "DocumentLines", self._literal_or_none(line.get("BaseEntry"))
+			))
+			for quote_line in quote_lines or []:
+				if quote_line.get("LineNum") == line.get("BaseLine") and quote_line.get("BaseType") == self.PURCHASE_REQUEST_TYPE:
+					requests.append(quote_line.get("BaseEntry"))
+		self.prime_documents("PurchaseRequests", "DocEntry", requests, "DocumentLines")
+
+	def prime_purchase_invoice_receipts(self, invoices: list[dict]) -> None:
+		receipts = [
+			line.get("BaseEntry") for invoice in invoices for line in invoice.get("DocumentLines") or []
+			if str(line.get("BaseType")) == "20"
+		]
+		self.prime_documents("PurchaseDeliveryNotes", "DocEntry", receipts, "DocumentLines")
+
+	def _literal_or_none(self, value):
+		try:
+			return self._literal(value, "integer")
+		except Exception:
+			return None
 
 	@staticmethod
 	def _identifiers(config):

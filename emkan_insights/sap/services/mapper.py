@@ -19,6 +19,8 @@ class Mapper:
 		self.mapping_doc = mapping_doc
 		self.field_mapping = parse_mapping(mapping_doc.field_mapping)
 		self.context = context or {}
+		# Transforms get a copy of the context per field; the memo dict is shared by those copies.
+		self.context.setdefault("_lookup_memo", {})
 		self.mapping_errors = []
 
 	def map(self, sap_record: dict[str, Any]) -> dict[str, Any]:

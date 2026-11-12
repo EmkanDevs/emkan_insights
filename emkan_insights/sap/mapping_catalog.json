@@ -202,7 +202,8 @@
                 "field": "account_number",
                 "company_context": true,
                 "required": true
-              }
+              },
+              "preload": true
             }
           },
           "accumulated_depreciation_account": {
@@ -216,7 +217,8 @@
                 "doctype": "Account",
                 "field": "account_number",
                 "company_context": true
-              }
+              },
+              "preload": true
             }
           },
           "depreciation_expense_account": {
@@ -230,7 +232,8 @@
                 "doctype": "Account",
                 "field": "account_number",
                 "company_context": true
-              }
+              },
+              "preload": true
             }
           }
         },
@@ -343,7 +346,8 @@
           "normalize": "lower"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Cost Center",
@@ -636,7 +640,8 @@
           "key_type": "string",
           "empty_values": [
             "-1"
-          ]
+          ],
+          "preload": true
         }
       },
       "bank_ac_no": "BankAccount",
@@ -694,7 +699,8 @@
           "key_type": "integer",
           "empty_values": [
             -1
-          ]
+          ],
+          "preload": true
         },
         "default": "Nos"
       },
@@ -783,7 +789,8 @@
               "key_type": "integer",
               "empty_values": [
                 -1
-              ]
+              ],
+              "preload": true
             }
           }
         }
@@ -798,7 +805,8 @@
           "key_type": "integer",
           "empty_values": [
             -1
-          ]
+          ],
+          "preload": true
         }
       },
       "sales_uom": {
@@ -811,7 +819,8 @@
           "key_type": "integer",
           "empty_values": [
             -1
-          ]
+          ],
+          "preload": true
         }
       },
       "has_serial_no": {
@@ -889,7 +898,8 @@
           "key_type": "integer",
           "empty_values": [
             -1
-          ]
+          ],
+          "preload": true
         }
       },
       "asset_category": {
@@ -946,7 +956,8 @@
                 "key_type": "integer",
                 "empty_values": [
                   -1
-                ]
+                ],
+                "preload": true
               },
               "default": "Nos"
             },
@@ -966,7 +977,8 @@
                 "key_type": "integer",
                 "empty_values": [
                   -1
-                ]
+                ],
+                "preload": true
               }
             },
             "conversion_factor": "PurchaseItemsPerUnit"
@@ -982,7 +994,8 @@
                 "key_type": "integer",
                 "empty_values": [
                   -1
-                ]
+                ],
+                "preload": true
               }
             },
             "conversion_factor": "SalesItemsPerUnit"
@@ -1017,7 +1030,9 @@
           "default": null
         }
       }
-    }
+    },
+    "sap_select_fields": "ItemCode,ItemName,ItemType,ItemsGroupCode,Frozen,InventoryItem,PurchaseItem,SalesItem,InventoryUoMEntry,DefaultPurchasingUoMEntry,DefaultSalesUoMEntry,InventoryWeight,InventoryWeightUnit,ItemBarCodeCollection,ItemCountryOrg,LeadTime,ManageBatchNumbers,ManageSerialNumbers,Manufacturer,ProcurementMethod,AssetClass,AvgStdPrice,DefaultWarehouse,Mainsupplier,MinOrderQuantity,PurchaseItemsPerUnit,SalesItemsPerUnit,SupplierCatalogNo,User_Text",
+    "fetch_workers": 4
   },
   {
     "name": "SAP Fixed Asset",
@@ -1141,7 +1156,9 @@
           "strict": true
         }
       }
-    }
+    },
+    "sap_select_fields": "ItemCode,AssetClass,AssetStatus,CapitalizationDate,CreateDate",
+    "fetch_workers": 4
   },
   {
     "name": "SAP Item Group",
@@ -1592,7 +1609,8 @@
           "entity": "BusinessPartnerGroups",
           "key": "Code",
           "value_field": "Code",
-          "key_type": "integer"
+          "key_type": "integer",
+          "preload": true
         }
       },
       "country": {
@@ -2011,7 +2029,8 @@
         },
         "fieldname": "Cancelled"
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Supplier Quotation",
@@ -2142,7 +2161,8 @@
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
       "project": "Project"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Purchase Order",
@@ -2240,7 +2260,8 @@
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
       "project": "Project"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Purchase Receipt",
@@ -2332,7 +2353,8 @@
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
       "project": "Project"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Purchase Invoice",
@@ -2492,7 +2514,8 @@
           "value": 1
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Quotation",
@@ -2605,7 +2628,8 @@
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
       "customer_name": "CardName"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Sales Order",
@@ -2719,7 +2743,8 @@
       "additional_discount_percentage": "DiscountPercent",
       "discount_amount": "TotalDiscount",
       "project": "Project"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Delivery Note",
@@ -2845,7 +2870,8 @@
           }
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Sales Invoice",
@@ -2968,7 +2994,8 @@
           "value": 1
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Work Order",
@@ -3082,7 +3109,8 @@
           "default": 0
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Entry Issue",
@@ -3189,7 +3217,8 @@
         "fieldname": "Cancelled"
       },
       "project": "Project"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Entry Receipt",
@@ -3295,7 +3324,8 @@
           "strict": true
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Entry Incoming",
@@ -3499,7 +3529,8 @@
           "incoming": true
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Entry Outgoing",
@@ -3702,7 +3733,8 @@
           "kind": "amount"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Journal Entry",
@@ -3716,7 +3748,7 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": null,
     "date_filter_field": null,
     "sap_id_field": "JdtNum",
@@ -3806,7 +3838,10 @@
           "value": "ACC-JV-.YYYY.-"
         }
       }
-    }
+    },
+    "cursor_field": "JdtNum",
+    "cursor_overlap": 500,
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Reconciliation",
@@ -4071,7 +4106,8 @@
           "default": 0
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Inventory Posting",
@@ -4238,9 +4274,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "SequentialNo",
     "sap_id_prefix": null,
     "erp_sap_id_fieldname": null,
@@ -4315,7 +4351,8 @@
           "target": {
             "doctype": "Lead Source",
             "field": "name"
-          }
+          },
+          "preload": true
         }
       },
       "sales_stage": {
@@ -4330,7 +4367,8 @@
             "doctype": "Sales Stage",
             "field": "stage_name",
             "required": true
-          }
+          },
+          "preload": true
         }
       },
       "naming_series": {
@@ -4483,7 +4521,7 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
+    "full_snapshot_sync": 0,
     "creation_date_filter_field": null,
     "date_filter_field": null,
     "sap_id_field": "JdtNum+Line_ID",
@@ -4570,7 +4608,10 @@
       },
       "voucher_subtype": "OriginalJournal",
       "voucher_detail_no": "Line_ID"
-    }
+    },
+    "cursor_field": "JdtNum",
+    "cursor_overlap": 500,
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Incoming Allocation Detail",
@@ -5006,7 +5047,8 @@
         "transform": "sap_bool"
       },
       "remarks": "__parent_Remarks"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Outgoing Detail",
@@ -5133,7 +5175,8 @@
         "transform": "sap_bool"
       },
       "remarks": "Remarks"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Purchase Down Payment Detail",
@@ -5147,9 +5190,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry",
     "sap_id_prefix": "purchase-down-payment:",
     "erp_sap_id_fieldname": null,
@@ -5278,9 +5321,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry",
     "sap_id_prefix": "purchase-invoice:",
     "erp_sap_id_fieldname": null,
@@ -5397,7 +5440,8 @@
         "transform": "sap_bool"
       },
       "remarks": "JournalMemo"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Payment Sales Invoice Detail",
@@ -5411,9 +5455,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry",
     "sap_id_prefix": "sales-invoice:",
     "erp_sap_id_fieldname": null,
@@ -5528,7 +5572,8 @@
         "transform": "sap_bool"
       },
       "remarks": "JournalMemo"
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Production Plan",
@@ -5596,9 +5641,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 0,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry",
     "sap_id_prefix": "down-payment:",
     "erp_sap_id_fieldname": null,
@@ -5720,7 +5765,8 @@
           "value": 1
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Purchase Taxes and Charges Template",
@@ -5841,9 +5887,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "delivery:",
     "erp_sap_id_fieldname": null,
@@ -5877,7 +5923,8 @@
           "value": "Delivery Note"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Goods Issue Detail",
@@ -5891,9 +5938,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "goods-out:",
     "erp_sap_id_fieldname": null,
@@ -5933,7 +5980,8 @@
           "value": "Stock Entry"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Goods Receipt Detail",
@@ -5947,9 +5995,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "goods-in:",
     "erp_sap_id_fieldname": null,
@@ -5990,7 +6038,8 @@
           "value": "Stock Entry"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Item Warehouse Detail",
@@ -6078,9 +6127,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "grpo:",
     "erp_sap_id_fieldname": null,
@@ -6115,7 +6164,8 @@
           "value": "Purchase Receipt"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Transfer Detail",
@@ -6129,9 +6179,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "transfer:",
     "erp_sap_id_fieldname": null,
@@ -6165,7 +6215,8 @@
           "value": "Stock Entry"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Stock Transfer Receipt Detail",
@@ -6179,9 +6230,9 @@
     "fetch_only": 0,
     "raw_payload": 0,
     "fetch_limit": 20,
-    "full_snapshot_sync": 1,
-    "creation_date_filter_field": null,
-    "date_filter_field": null,
+    "full_snapshot_sync": 0,
+    "creation_date_filter_field": "CreationDate",
+    "date_filter_field": "UpdateDate",
     "sap_id_field": "DocEntry+LineNum",
     "sap_id_prefix": "transfer-in:",
     "erp_sap_id_fieldname": null,
@@ -6215,7 +6266,8 @@
           "value": "Stock Entry"
         }
       }
-    }
+    },
+    "fetch_workers": 4
   },
   {
     "name": "SAP Warehouse Location",

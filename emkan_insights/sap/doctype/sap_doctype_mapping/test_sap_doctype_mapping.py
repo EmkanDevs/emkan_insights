@@ -733,3 +733,34 @@ class TestStagingWriter(FrappeTestCase):
 
 		self.assertEqual((action, name), ("unchanged", "STAGE-1"))
 		staging_doc.save.assert_not_called()
+
+
+class TestStagingWriterBatchCreate(FrappeTestCase):
+	def test_new_rows_wait_for_flush_and_repeats_update_the_waiting_copy(self):
+		with patch("emkan_insights.sap.services.staging.frappe") as frappe_mock:
+			frappe_mock.as_json.side_effect = lambda payload: str(payload)
+			frappe_mock.parse_json.side_effect = lambda value: __import__("ast").literal_eval(value)
+			frappe_mock.get_all.return_value = []
+			frappe_mock.utils.now.return_value = "2026-11-12 10:00:00"
+			frappe_mock.session.user = "Administrator"
+			writer = StagingWriter("External Uom", "SAP Esacon")
+			writer.prefetch(["A", "B"])
+
+			self.assertEqual(writer.upsert("A", {"v": 1})[0], "created")
+			self.assertEqual(writer.upsert("B", {"v": 1})[0], "created")
+			frappe_mock.db.bulk_insert.assert_not_called()
+			# A repeat inside the batch changes the waiting row; it must not be lost.
+			self.assertEqual(writer.upsert("A", {"v": 1})[0], "unchanged")
+			self.assertEqual(writer.upsert("A", {"v": 2})[0], "updated")
+			frappe_mock.db.set_value.assert_not_called()
+
+			writer.flush()
+			args = frappe_mock.db.bulk_insert.call_args
+			self.assertEqual(args.args[0], "External Uom")
+			rows = {row[7]: row for row in args.args[2]}
+			self.assertEqual(rows["A"][11], str({"v": 2}))
+			self.assertEqual(rows["B"][9], "SAP Esacon")
+			names = [row[0] for row in args.args[2]]
+			self.assertEqual(names, sorted(names))
+			writer.flush()
+			self.assertEqual(frappe_mock.db.bulk_insert.call_count, 1)

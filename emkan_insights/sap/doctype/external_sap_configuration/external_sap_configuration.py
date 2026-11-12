@@ -76,6 +76,16 @@ def fetch_and_sync_configuration(name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def stop_synchronization(name: str) -> dict:
+	configuration = frappe.get_doc("External SAP Configuration", name)
+	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
+
+	from emkan_insights.sap.tasks import stop_configuration_synchronization
+
+	return stop_configuration_synchronization(configuration.name)
+
+
+@frappe.whitelist(methods=["POST"])
 def fetch_review_configuration(name: str) -> dict:
 	configuration = frappe.get_doc("External SAP Configuration", name)
 	frappe.has_permission("External SAP Configuration", "write", doc=configuration, throw=True)
