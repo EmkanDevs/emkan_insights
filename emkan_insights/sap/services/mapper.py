@@ -238,6 +238,7 @@ def _validate_rule(target_field: str, rule: Any) -> None:
 		"journal_cost_center",
 		"journal_staged_voucher",
 		"journal_against",
+		"journal_original_voucher",
 		"staged_document",
 		"payment_allocation_reference",
 		"sap_project_link",

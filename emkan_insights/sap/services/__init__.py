@@ -21,7 +21,13 @@ def get_mapped_data(
 	to_date: str | None = None,
 	configuration_name: str | None = None,
 	row_name: str | None = None,
+	only_ids: list[int | str] | None = None,
 ) -> dict[str, Any]:
+	"""Fetch, map and stage SAP records.
+
+	only_ids refetches just those SAP keys. It leaves last_sync and the fetch cursor
+	alone, so it can repair rows that failed mapping without a snapshot refetch.
+	"""
 	mapping_doc = frappe.get_doc("SAP Doctype Mapping", mapping_name)
 	if not mapping_doc.enabled:
 		return {"skipped": True, "reason": "Mapping disabled"}
@@ -29,8 +35,11 @@ def get_mapped_data(
 	configuration = _get_configuration(mapping_name, configuration_name)
 	row = _get_mapping_row(configuration.name, mapping_name, row_name)
 	window_end = now_datetime()
-	automatic_window = not from_date and not to_date
-	uses_cursor = bool(getattr(mapping_doc, "cursor_field", None)) and not mapping_doc.full_snapshot_sync
+	automatic_window = not from_date and not to_date and only_ids is None
+	uses_cursor = (
+		bool(getattr(mapping_doc, "cursor_field", None)) and not mapping_doc.full_snapshot_sync
+		and only_ids is None
+	)
 	cursor_after = None
 	if uses_cursor:
 		# An explicit date window is a request for a full refresh, so it skips the cursor.
@@ -38,9 +47,12 @@ def get_mapped_data(
 	elif automatic_window and row and row.last_sync and not mapping_doc.full_snapshot_sync:
 		from_date = getdate(row.last_sync).isoformat()
 		to_date = getdate(window_end).isoformat()
-	_mark_started(row, window_end)
+	if only_ids is None:
+		_mark_started(row, window_end)
 	client = SAPB1Client.from_configuration(configuration.name)
-	if uses_cursor:
+	if only_ids is not None:
+		records = fetch(client, mapping_doc, only_ids=only_ids)
+	elif uses_cursor:
 		records = fetch(client, mapping_doc, from_date, to_date, cursor_after=cursor_after)
 	else:
 		records = fetch(client, mapping_doc, from_date, to_date)
@@ -89,7 +101,8 @@ def get_mapped_data(
 			frappe.db.commit()
 	writer.flush()
 
-	_mark_completed(row, window_end, result, automatic_window)
+	if only_ids is None:
+		_mark_completed(row, window_end, result, automatic_window)
 	return result
 
 

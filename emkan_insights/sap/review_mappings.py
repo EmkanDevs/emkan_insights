@@ -209,8 +209,14 @@ REVIEW_MAPPINGS = {
 			"party": {"fieldname": "ShortName", "transform": "journal_party"},
 			"project": "ProjectCode",
 			"remarks": "LineMemo",
-			"voucher_type": _constant("Journal Entry"),
-			"voucher_no": {"fieldname": "JdtNum", "transform": "journal_staged_voucher"},
+			"voucher_type": {
+				"fieldname": "JdtNum", "transform": "journal_original_voucher",
+				"transform_config": {"part": "type"},
+			},
+			"voucher_no": {
+				"fieldname": "JdtNum", "transform": "journal_original_voucher",
+				"transform_config": {"part": "name"},
+			},
 			"docstatus": _constant(1),
 			"voucher_subtype": "OriginalJournal",
 			"voucher_detail_no": "Line_ID",

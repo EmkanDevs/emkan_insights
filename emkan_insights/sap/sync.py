@@ -489,8 +489,9 @@ def _fill_gl_entry_fields(context: SAPSyncContext, raw: dict, remote_id: str) ->
 	except ValueError as error:
 		raise frappe.ValidationError(f"Invalid SAP GL row ID: {remote_id}") from error
 	raw["docstatus"] = 1
-	raw["voucher_type"] = "Journal Entry"
-	raw["voucher_no"] = journal_target(raw.get("company"), sap_journal_id)
+	if not (raw.get("voucher_type") and raw.get("voucher_no")):
+		raw["voucher_type"] = "Journal Entry"
+		raw["voucher_no"] = journal_target(raw.get("company"), sap_journal_id)
 	raw["against"] = journal_against(raw.get("against"), {"company": raw.get("company")})
 	raw["fiscal_year"] = _fiscal_year(raw.get("posting_date"), raw.get("company"))
 	raw["is_opening"] = "No"
@@ -610,6 +611,12 @@ def _skip_conflicting_unique_values(
 			and (owner := owners_by_field[fieldname].get(_unique_value_key(value)))
 			and owner != parent["name"]
 		), None)
+		if conflict and context.target_doctype == "Project" and conflict[0] == "project_name":
+			# SAP project names repeat across project codes; keep both by appending the code.
+			unique_name = f"{parent['project_name']} ({source_row.remote_id})"
+			if not owners_by_field["project_name"].get(_unique_value_key(unique_name)):
+				parent["project_name"] = unique_name
+				conflict = None
 		if conflict:
 			fieldname, owner = conflict
 			_log(
@@ -782,8 +789,9 @@ def _recover_mislinked_gl_entries(context: SAPSyncContext) -> None:
 		LEFT JOIN `tabJournal Entry` journal ON journal.name = entry.voucher_no
 		SET staged.last_synced_on = NULL
 		WHERE staged.external_sap_configuration = %s
-			AND (entry.docstatus != 1 OR entry.voucher_type != 'Journal Entry'
-				OR journal.name IS NULL OR entry.fiscal_year IS NULL)
+			AND (entry.docstatus != 1
+				OR (entry.voucher_type = 'Journal Entry' AND journal.name IS NULL)
+				OR entry.fiscal_year IS NULL)
 		""",
 		(prefix, context.configuration),
 	)

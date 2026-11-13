@@ -59,6 +59,28 @@ class TestPartnerLedgerMappings(FrappeTestCase):
 		self.assertEqual(mapped["debit_in_account_currency"], 25)
 		self.assertEqual(mapped["account_currency"], "SAR")
 
+	def test_gl_line_points_to_imported_original_document(self):
+		definition = REVIEW_MAPPINGS["SAP GL Journal Detail"]
+		rows = _flatten_records([{
+			"JdtNum": 92, "ReferenceDate": "2026-10-01",
+			"OriginalJournal": "ttGeneralReleaseFromStock", "Original": 51212,
+			"JournalEntryLines": [{"Line_ID": 0, "AccountCode": "1000", "Debit": 25, "Credit": 0, "FCDebit": 0}],
+		}], definition["source_array"], include_parent=True)
+		transforms = "emkan_insights.sap.services.transforms"
+		with patch(f"{transforms}.frappe.db.get_value") as get_value, \
+				patch(f"{transforms}.frappe.db.exists") as exists:
+			get_value.side_effect = lambda doctype, filters, *args, **kwargs: {
+				"Account": "Cash - EX", "Journal Entry": "S-92",
+			}.get(doctype)
+			exists.return_value = True
+			mapped = self._map("GL Entry", definition, rows[0])
+			self.assertEqual((mapped["voucher_type"], mapped["voucher_no"]), ("Stock Entry", "issue:51212"))
+			exists.return_value = False
+			transforms_module = __import__(transforms, fromlist=["_imported_document"])
+			transforms_module._imported_document.cache_clear()
+			mapped = self._map("GL Entry", definition, rows[0])
+			self.assertEqual((mapped["voucher_type"], mapped["voucher_no"]), ("Journal Entry", "S-92"))
+
 	def test_stock_issue_is_negative_and_uses_parent_voucher(self):
 		definition = REVIEW_MAPPINGS["SAP Stock Goods Issue Detail"]
 		row = _flatten_records([{

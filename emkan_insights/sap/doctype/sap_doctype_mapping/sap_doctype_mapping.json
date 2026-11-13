@@ -12,6 +12,7 @@
   "sap_doctype",
   "external_doctype",
   "erp_doctype",
+  "abbr_required",
   "sap_filter",
   "sap_select_fields",
   "source_array_field",
@@ -69,6 +70,14 @@
    "label": "ERPNext DocType",
    "options": "DocType",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Prefix the company abbreviation to names created from this mapping. Copied to the Abbr Required column of External SAP Configuration mappings on save.",
+   "fieldname": "abbr_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Abbr Required"
   },
   {
    "description": "Optional OData filter, for example CardType eq 'cCustomer'.",

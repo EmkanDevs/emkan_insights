@@ -21,13 +21,27 @@ class ExternalSAPConfiguration(Document):
 			raise frappe.ValidationError("SAP Base URL must start with http:// or https://.")
 		if cint(self.session_timeout_minutes) < 1:
 			raise frappe.ValidationError("Session Timeout must be at least one minute.")
+		self._sync_abbr_required()
+
+	def _sync_abbr_required(self):
+		"""Copy Abbr Required from each SAP Doctype Mapping onto its row in the mappings table."""
+		names = [row.sap_mapping for row in self.mappings or [] if row.sap_mapping]
+		if not names:
+			return
+		abbr_required = dict(frappe.get_all(
+			"SAP Doctype Mapping", filters={"name": ["in", names]},
+			fields=["name", "abbr_required"], as_list=True,
+		))
+		for row in self.mappings:
+			if row.sap_mapping in abbr_required:
+				row.abbr_required = cint(abbr_required[row.sap_mapping])
 
 	def _add_missing_mappings(self):
 		existing = {row.sap_mapping for row in self.mappings or []}
 		mappings = frappe.get_all(
 			"SAP Doctype Mapping",
 			filters={"enabled": 1},
-			fields=["name", "erp_doctype", "external_doctype"],
+			fields=["name", "erp_doctype", "external_doctype", "abbr_required"],
 			order_by="name asc",
 		)
 		if not existing:
@@ -45,6 +59,7 @@ class ExternalSAPConfiguration(Document):
 						"sap_mapping": mapping.name,
 						"ref_doctype": mapping.erp_doctype,
 						"exported_doctype": mapping.external_doctype,
+						"abbr_required": cint(mapping.abbr_required),
 					},
 				)
 

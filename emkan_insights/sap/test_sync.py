@@ -193,6 +193,23 @@ class TestSAPSync(FrappeTestCase):
 		self.assertEqual(skipped, 1)
 		self.assertEqual(log.call_args.kwargs["existing_document"], "1")
 
+	@patch("emkan_insights.sap.sync._log")
+	@patch("emkan_insights.sap.sync.frappe.get_all")
+	@patch("emkan_insights.sap.sync.frappe.get_meta")
+	def test_duplicate_project_name_gets_sap_code(self, get_meta, get_all, log):
+		get_meta.return_value.fields = [SimpleNamespace(fieldname="project_name", unique=1)]
+		get_all.return_value = [frappe._dict(name="S-PO-0053", project_name="PURGER")]
+		context = SimpleNamespace(target_doctype="Project")
+		rows = [SimpleNamespace(name="STAGE-1", remote_id="PO-0073")]
+		documents = [{"Project": [{"name": "S-PO-0073", "project_name": "PURGER"}]}]
+
+		accepted_rows, accepted, skipped = _skip_conflicting_unique_values(context, rows, documents)
+
+		self.assertEqual(accepted_rows, rows)
+		self.assertEqual(accepted[0]["Project"][0]["project_name"], "PURGER (PO-0073)")
+		self.assertEqual(skipped, 0)
+		log.assert_not_called()
+
 	def test_item_name_keeps_full_sap_value(self):
 		catalog = json.loads(Path(__file__).with_name("mapping_catalog.json").read_text())
 		mapping = next(row for row in catalog if row["name"] == "SAP Item")

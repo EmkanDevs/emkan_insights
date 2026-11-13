@@ -4591,14 +4591,18 @@
       "project": "ProjectCode",
       "remarks": "LineMemo",
       "voucher_type": {
-        "transform": "constant",
+        "fieldname": "JdtNum",
+        "transform": "journal_original_voucher",
         "transform_config": {
-          "value": "Journal Entry"
+          "part": "type"
         }
       },
       "voucher_no": {
         "fieldname": "JdtNum",
-        "transform": "journal_staged_voucher"
+        "transform": "journal_original_voucher",
+        "transform_config": {
+          "part": "name"
+        }
       },
       "docstatus": {
         "transform": "constant",

@@ -103,6 +103,8 @@ def apply_transform(value: Any, rule: dict[str, Any], context: dict[str, Any] | 
 		return journal_staged_voucher(value, context or {})
 	if transform == "journal_against":
 		return journal_against(value, context or {})
+	if transform == "journal_original_voucher":
+		return journal_original_voucher(value, rule, context or {})
 	if transform == "staged_document":
 		return staged_document(value, rule, context or {})
 	if transform == "payment_allocation_reference":
@@ -228,6 +230,62 @@ def journal_target(company: str, sap_journal_id: str) -> str:
 	if not name:
 		raise frappe.ValidationError(f"SAP journal {sap_journal_id} has no ERPNext Journal Entry.")
 	return name
+
+
+# SAP OriginalJournal -> (ERPNext doctype, staged-name prefix). The imported document is
+# named "<prefix><DocEntry>", with the company abbreviation added for prefixed doctypes.
+ORIGINAL_JOURNAL_VOUCHERS = {
+	"ttARInvoice": ("Sales Invoice", ""),
+	"ttAPInvoice": ("Purchase Invoice", ""),
+	"ttPurchaseDownPayment": ("Purchase Invoice", "down-payment:"),
+	"ttPurchaseDeliveryNote": ("Purchase Receipt", ""),
+	"ttDelivery": ("Delivery Note", ""),
+	"ttGeneralReleaseFromStock": ("Stock Entry", "issue:"),
+	"ttGeneralReceiptToStock": ("Stock Entry", "receipt:"),
+	"ttTransferBetweenWarehouses": ("Stock Entry", "transfer:"),
+	"ttReceipt": ("Payment Entry", "incoming:"),
+	"ttVendorPayment": ("Payment Entry", "outgoing:"),
+}
+
+
+def journal_original_voucher(value: Any, rule: dict[str, Any], context: dict[str, Any]) -> str:
+	"""Return the voucher type or name of the document that posted a SAP journal line.
+
+	Falls back to the ERPNext Journal Entry when the journal was not posted by a document
+	that is imported (manual journals, credit notes, valuations, or not yet synced).
+	"""
+	part = _transform_config(rule).get("part")
+	if part not in {"type", "name"}:
+		raise frappe.ValidationError("SAP original voucher needs part 'type' or 'name'.")
+	source = context.get("source") or {}
+	company = context.get("company")
+	original = source.get("Original")
+	target = ORIGINAL_JOURNAL_VOUCHERS.get(str(source.get("OriginalJournal")))
+	if target and original not in (None, "", 0) and company:
+		doctype, prefix = target
+		name = f"{prefix}{original}"
+		if doctype in frozenset(context.get("prefixed_doctypes", ())):
+			name = add_prefix(name, context.get("company_abbr"))
+		if _document_exists(doctype, name, company):
+			return doctype if part == "type" else name
+	if part == "type":
+		return "Journal Entry"
+	return journal_staged_voucher(value, context)
+
+
+def _document_exists(doctype: str, name: str, company: str) -> bool:
+	try:
+		return _imported_document(doctype, name, company)
+	except LookupError:
+		return False
+
+
+@lru_cache(maxsize=65536)
+def _imported_document(doctype: str, name: str, company: str) -> bool:
+	# lru_cache keeps only hits, so a document imported later is found on the next call.
+	if frappe.db.exists(doctype, {"name": name, "company": company}):
+		return True
+	raise LookupError(name)
 
 
 def journal_against(value: Any, context: dict[str, Any]) -> str | None:
@@ -451,7 +509,9 @@ def _payment_unallocated_amount(
 ) -> Decimal:
 	paid = _payment_total(source, currency_kind, context)
 	applied = _payment_allocation_total(source, currency_kind, context)
-	if applied - paid > Decimal("0.01"):
+	# A cancelled SAP payment keeps its allocation lines, which no longer match the payment
+	# methods, and its ledger entries are delinked, so the mismatch is not an error.
+	if applied - paid > Decimal("0.01") and not sap_bool(source.get("Cancelled")):
 		raise frappe.ValidationError(
 			f"SAP payment {source.get('DocEntry')} applies {applied} but payment methods total {paid}."
 		)
@@ -487,7 +547,47 @@ def _payment_allocation_total(
 	), Decimal(0))
 
 
+MAX_ALLOCATION_ROUNDING = Decimal("10")
+
+
 def _payment_allocation_amount(
+	row: dict[str, Any], payment: dict[str, Any], currency_kind: str,
+	context: dict[str, Any],
+) -> Decimal:
+	amount = _raw_payment_allocation_amount(row, payment, currency_kind, context)
+	return amount - _allocation_overage(row, payment, currency_kind, context)
+
+
+def _allocation_overage(
+	row: dict[str, Any], payment: dict[str, Any], currency_kind: str,
+	context: dict[str, Any],
+) -> Decimal:
+	"""Overage to remove from this row so allocations never exceed what was paid.
+
+	SAP can apply a few riyals more than the payment methods total (rounding or discounts).
+	The small excess is taken from the last positive allocation line.
+	"""
+	rows = payment.get("PaymentInvoices") or []
+	if not isinstance(rows, list) or not rows or payment.get("DocCurrency") != context.get("currency"):
+		return Decimal(0)
+	paid = _payment_total(payment, currency_kind, context)
+	if paid <= 0:
+		return Decimal(0)
+	amounts = [_raw_payment_allocation_amount(line, payment, currency_kind, context) for line in rows]
+	overage = sum(amounts, Decimal(0)) - paid
+	if not Decimal("0.01") < overage <= MAX_ALLOCATION_ROUNDING:
+		return Decimal(0)
+	last_positive = max((i for i, amount in enumerate(amounts) if amount > 0), default=None)
+	if last_positive is None or amounts[last_positive] <= overage:
+		return Decimal(0)
+	target = rows[last_positive]
+	same = target is row or (
+		target.get("LineNum") is not None and target.get("LineNum") == row.get("LineNum")
+	)
+	return overage if same else Decimal(0)
+
+
+def _raw_payment_allocation_amount(
 	row: dict[str, Any], payment: dict[str, Any], currency_kind: str,
 	context: dict[str, Any],
 ) -> Decimal:
@@ -1003,7 +1103,7 @@ def _payment_method_account_code(source: dict[str, Any]) -> str:
 	methods = (
 		("TransferSum", "TransferAccount"),
 		("CashSum", "CashAccount"),
-		("CheckSum", None),
+		("CheckSum", "CheckAccount"),
 		("CreditSum", None),
 	)
 	try:

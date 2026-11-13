@@ -15,7 +15,10 @@ def fetch(
 	from_date: str | None = None,
 	to_date: str | None = None,
 	cursor_after: int | None = None,
+	only_ids: list[int | str] | None = None,
 ) -> list[dict]:
+	if only_ids is not None:
+		return _finish(_fetch_ids(client, mapping_doc, only_ids), mapping_doc)
 	params = _query_params(mapping_doc, from_date, to_date, cursor_after)
 	limit = cint(getattr(mapping_doc, "fetch_limit", 0))
 	if limit:
@@ -28,6 +31,37 @@ def fetch(
 		)
 	else:
 		records = client.fetch_all(mapping_doc.sap_doctype, params=params)
+	return _finish(records, mapping_doc)
+
+
+ID_FETCH_CHUNK = 100
+
+
+def _fetch_ids(client: SAPB1Client, mapping_doc, ids: list[int | str]) -> list[dict]:
+	"""Fetch only the SAP records whose numeric key is in ids, a chunk per request.
+
+	This repairs staged rows that failed mapping without a full snapshot or cursor refetch.
+	The key is the first part of the mapping's ID field, so line-level mappings
+	(for example journal lines or payment allocations) refetch the whole parent document.
+	"""
+	field = mapping_doc.sap_id_field.split("+")[0].strip().removeprefix("__parent_")
+	if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", field):
+		raise frappe.ValidationError(f"Invalid SAP ID field '{field}'.")
+	unique = sorted({int(value) for value in ids})
+	base = f"({mapping_doc.sap_filter.strip()}) and " if mapping_doc.sap_filter else ""
+	select = _select_fields(mapping_doc)
+	records: list[dict] = []
+	for start in range(0, len(unique), ID_FETCH_CHUNK):
+		chunk = unique[start:start + ID_FETCH_CHUNK]
+		params = {"$filter": base + "(" + " or ".join(f"{field} eq {value}" for value in chunk) + ")"}
+		if select:
+			params["$select"] = select
+		records.extend(client.fetch_all(mapping_doc.sap_doctype, params=params))
+	return records
+
+
+def _finish(records: list[dict], mapping_doc) -> list[dict]:
+	records = _with_cheque_totals(records)
 	flattened = _flatten_records(
 		records, mapping_doc.source_array_field,
 		include_parent="+" in mapping_doc.sap_id_field,
@@ -35,6 +69,25 @@ def fetch(
 	if mapping_doc.name == "SAP GL Journal Detail":
 		return [row for row in flattened if flt(row.get("Debit")) or flt(row.get("Credit"))]
 	return flattened
+
+
+def _with_cheque_totals(records: list[dict]) -> list[dict]:
+	"""SAP payments made by cheque carry the money in PaymentChecks, not in a header sum."""
+	for record in records:
+		checks = record.get("PaymentChecks")
+		if not checks or not isinstance(checks, list) or record.get("CheckSum"):
+			continue
+		same_currency = [
+			line for line in checks
+			if isinstance(line, dict) and line.get("Currency") == record.get("DocCurrency")
+		]
+		if len(same_currency) != len(checks):
+			continue
+		record["CheckSum"] = sum(flt(line.get("CheckSum")) for line in checks)
+		accounts = {line.get("CheckAccount") for line in checks}
+		if len(accounts) == 1 and None not in accounts and "" not in accounts:
+			record["CheckAccount"] = accounts.pop()
+	return records
 
 
 def _query_params(

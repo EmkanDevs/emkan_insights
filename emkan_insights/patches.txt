@@ -122,3 +122,6 @@ emkan_insights.patches.v0_0_1.index_sap_staging_remote_id
 emkan_insights.patches.v0_0_1.index_sap_staging_creation
 emkan_insights.patches.v0_0_1.index_journal_entry_sap_id
 emkan_insights.patches.v0_0_1.enable_parallel_sap_page_fetch
+emkan_insights.patches.v0_0_1.link_sap_gl_entries_to_original_documents
+emkan_insights.patches.v0_0_1.create_fiscal_year_2023
+emkan_insights.patches.v0_0_1.add_abbr_required_to_sap_mappings

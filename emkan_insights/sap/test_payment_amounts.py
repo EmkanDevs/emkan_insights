@@ -234,3 +234,59 @@ class TestPaymentAmounts(FrappeTestCase):
 		line = {**{f"__parent_{key}": value for key, value in payment.items()}, **credit_note}
 		self.assertEqual(payment_ledger_amount(allocation_rule, {**context, "source": line}), 1300)
 		resolver.purchase_credit_note_journal.assert_any_call(112, "V00460", Decimal("1300"))
+
+
+class TestPaymentRounding(FrappeTestCase):
+	context = {"currency": "SAR"}
+
+	def _payment(self, applied, transfer):
+		return {
+			"DocCurrency": "SAR", "TransferSum": transfer,
+			"PaymentInvoices": [{"LineNum": i, "SumApplied": amount} for i, amount in enumerate(applied)],
+		}
+
+	def test_small_overage_is_taken_from_last_allocation(self):
+		from emkan_insights.sap.services.transforms import _payment_allocation_amount, _payment_unallocated_amount
+
+		payment = self._payment([527257.42, 244125.0], 771381.86)
+		amounts = [
+			_payment_allocation_amount(row, payment, "company", self.context)
+			for row in payment["PaymentInvoices"]
+		]
+		self.assertEqual(sum(amounts), Decimal("771381.86"))
+		self.assertEqual(amounts[0], Decimal("527257.42"))
+		self.assertEqual(_payment_unallocated_amount(payment, "company", self.context), 0)
+
+	def test_large_overage_still_fails(self):
+		from emkan_insights.sap.services.transforms import _payment_unallocated_amount
+
+		with self.assertRaises(frappe.ValidationError):
+			_payment_unallocated_amount(self._payment([200.0], 100.0), "company", self.context)
+
+
+class TestChequeTotals(FrappeTestCase):
+	def test_cheque_lines_become_header_total_and_account(self):
+		from emkan_insights.sap.services.fetch import _with_cheque_totals
+		from emkan_insights.sap.services.transforms import _payment_method_account_code
+
+		record = {"DocCurrency": "SAR", "CashSum": 0, "TransferSum": 0, "PaymentChecks": [
+			{"CheckSum": 50000.0, "CheckAccount": "1113101", "Currency": "SAR"},
+			{"CheckSum": 25000.0, "CheckAccount": "1113101", "Currency": "SAR"},
+		]}
+		_with_cheque_totals([record])
+		self.assertEqual(record["CheckSum"], 75000.0)
+		self.assertEqual(_payment_method_account_code(record), "1113101")
+
+
+	def test_cancelled_payment_may_apply_more_than_it_paid(self):
+		line = {"LineNum": 0, "DocEntry": 14955, "InvoiceType": "it_JournalEntry", "SumApplied": 171867.05}
+		payment = {
+			"DocEntry": 2389, "DocType": "rSupplier", "DocCurrency": "SAR",
+			"TransferSum": 166711.04, "Cancelled": "tYES", "PaymentInvoices": [line],
+		}
+		context = {"source": payment, "currency": "SAR", "sap_references": Mock()}
+		rule = {"transform_config": {"source_kind": "payment", "currency_kind": "company"}}
+		self.assertEqual(payment_ledger_amount(rule, context), 0)
+		payment["Cancelled"] = "tNO"
+		with self.assertRaisesRegex(frappe.ValidationError, "applies"):
+			payment_ledger_amount(rule, context)
